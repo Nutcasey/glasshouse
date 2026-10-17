@@ -40,10 +40,14 @@
  * two are what the dashboard's own controls depend on, and the rest the
  * microcontroller handles before any filter sees them.
  *
- * Home is set only by Glasshouse Home (lib/home.js), to open its own app:
- * webOS 9 opens LG's Home on the Home key whatever general.defaultApps says,
- * so without this LG's Home shows for a moment first. It is kept beside the
- * keys, as `home`, and passes the key to LG's filters while it is empty.
+ * Home: earlier builds of Glasshouse Home pointed it at their own app, kept
+ * beside the keys as `home`; lib/home.js clears it. Glasshouse Home now runs
+ * under LG's Home's id, mounted by the boot hook about 25 s into a cold start,
+ * so while it is on `starting` holds a message instead: until the app manager
+ * reports LG's Home as Glasshouse Home's web app, the filter keeps the Home key
+ * from LG's filters and shows the message as a toast, and once it does it
+ * opens Home. The filter loads from configd before any of Glasshouse's own
+ * code runs, so this is the earliest Glasshouse can answer a key.
  *
  * Strict ES5: runs on node 0.12.
  */
@@ -169,13 +173,24 @@ function readMap() {
   }
 }
 
-function writeMap(map, home) {
-  if (!Object.keys(map).length && !home) {
+// The toast for Home while Glasshouse Home is not yet in place, or ''.
+function readStarting() {
+  try {
+    var j = JSON.parse(fs.readFileSync(mapFile(), 'utf8'));
+    return j && typeof j.starting === 'string' ? j.starting : '';
+  } catch (e) {
+    return '';
+  }
+}
+
+function writeMap(map, home, starting) {
+  if (!Object.keys(map).length && !home && !starting) {
     try { fs.unlinkSync(mapFile()); } catch (e) { if (e.code !== 'ENOENT') throw e; }
     return;
   }
   var j = { keys: map, updated: new Date().toISOString() };
   if (home) j.home = home;
+  if (starting) j.starting = starting;
   fs.writeFileSync(mapFile(), JSON.stringify(j, null, 2) + '\n', 'utf8');
 }
 
@@ -191,6 +206,10 @@ function filterSource() {
     ' * configd value ' + MAP_KEY + '. First in ' + CONFIG_KEY + ',',
     ' * so a key set there never reaches LG\'s filters. */',
     'var glasshouseKeyIds = {};',
+    '// Glasshouse Home: the toast for Home until it is in place, and whether it is.',
+    'var glasshouseStarting = "";',
+    'var glasshouseHomeReady = false;',
+    'var glasshouseHoldingHome = false;',
     '',
     '// Key code by name; a name this firmware lacks is left out.',
     'function glasshouseKeyCodes() {',
@@ -215,9 +234,29 @@ function filterSource() {
     '        // Home, only while Glasshouse Home sets it.',
     '        if (typeof value.home === "string" && value.home) ids[Qt.Key_Super_L] = value.home;',
     '        glasshouseKeyIds = ids;',
+    '        glasshouseStarting = typeof value.starting === "string" ? value.starting : "";',
     '    } catch (e) {',
     '        console.warn("glasshouse keyfilter: " + e + "; keys left as they were");',
     '    }',
+    '}',
+    '',
+    '// Opens Home once the app manager runs Glasshouse Home under its id, and',
+    '// says it is starting until then. The key has been kept from LG\'s filters.',
+    'function glasshouseHomePressed() {',
+    '    lunaCall.send("com.webos.applicationManager", "/getAppInfo", JSON.stringify({ "id": "com.webos.app.home" }), function (payload) {',
+    '        try {',
+    '            var r = typeof payload === "string" ? JSON.parse(payload) : payload;',
+    '            if (r && r.appInfo && r.appInfo.type === "web") {',
+    '                glasshouseHomeReady = true;',
+    '                applicationManager.launch("com.webos.app.home", JSON.stringify({ "activateType": "home", "launchType": "homeKey" }));',
+    '                return;',
+    '            }',
+    '            lunaCall.send("com.webos.notification", "/createToast",',
+    '                JSON.stringify({ "sourceId": lunaCall.appId, "message": glasshouseStarting }), function () {});',
+    '        } catch (e) {',
+    '            console.warn("glasshouse keyfilter: " + e);',
+    '        }',
+    '    });',
     '}',
     '',
     'function init() {',
@@ -233,6 +272,17 @@ function filterSource() {
     // error here must hand the key on to LG's filters, never stop the chain.
     'function ' + HANDLER + '(key, pressed, autoRepeat) {',
     '    try {',
+    '        // LG\'s filters open Home on the release, so a release whose press was kept',
+    '        // here is kept too, even where Home has opened in between.',
+    '        if (key === Qt.Key_Super_L && !pressed && glasshouseHoldingHome) {',
+    '            glasshouseHoldingHome = false;',
+    '            return KeyPolicy.Accepted;',
+    '        }',
+    '        if (key === Qt.Key_Super_L && pressed && glasshouseStarting && !glasshouseHomeReady) {',
+    '            glasshouseHoldingHome = true;',
+    '            if (!autoRepeat) glasshouseHomePressed();',
+    '            return KeyPolicy.Accepted;',
+    '        }',
     '        if (!glasshouseKeyIds.hasOwnProperty(key)) return KeyPolicy.NextPolicy;',
     '        var id = glasshouseKeyIds[key];',
     '        if (pressed && !autoRepeat && id) {',
@@ -258,10 +308,13 @@ function readChain(cb) {
 }
 
 // What each key does, for the filter. cb(ok).
-function writeKeys(map, cb, home) {
+function writeKeys(map, cb, home, starting) {
   var configs = {};
-  // The whole value is replaced on each write, so leaving home out clears it.
-  configs[MAP_KEY] = home ? { keys: map, home: home } : { keys: map };
+  // The whole value is replaced on each write, so leaving one out clears it.
+  var value = { keys: map };
+  if (home) value.home = home;
+  if (starting) value.starting = starting;
+  configs[MAP_KEY] = value;
   lunaFn('com.webos.service.config/setConfigs', { configs: configs }, function (r) {
     cb(!!(r && r.returnValue));
   });
@@ -294,12 +347,13 @@ function withoutOurs(list) {
 function apply(cb) {
   var map = readMap();
   var home = readHome();
+  var starting = readStarting();
   readChain(function (list) {
     if (!list) return cb(false);
     var inChain = list.some(ours);
     // Nothing set and nothing installed: configd is not written, as it can
     // never forget the value again, and a TV that never sets a key keeps none.
-    if (!Object.keys(map).length && !home && !inChain) return cb(true);
+    if (!Object.keys(map).length && !home && !starting && !inChain) return cb(true);
     var src = filterSource();
     var current = null;
     try { current = fs.readFileSync(filterFile(), 'utf8'); } catch (e) {}
@@ -329,7 +383,7 @@ function apply(cb) {
         if (!ok2) return cb(false);
         writeChain(full, done);
       });
-    }, home);
+    }, home, starting);
   });
 }
 
@@ -430,9 +484,9 @@ function setRemoteKey(key, action, id, cb) {
   });
 }
 
-function save(map, cb, home) {
+function save(map, cb, home, starting) {
   try {
-    writeMap(map, home === undefined ? readHome() : home);
+    writeMap(map, home === undefined ? readHome() : home, starting === undefined ? readStarting() : starting);
   } catch (e) {
     return cb({ ok: false, error: msg('srv.remoteKeys.saveFailed', 'Could not save the change: {error}', { error: e.message }) });
   }
@@ -464,6 +518,18 @@ function ensure(cb) {
   apply(cb);
 }
 
+/*
+ * The toast for Home while Glasshouse Home is not yet in place after a cold
+ * start, or '' while it is off. Written only when it changes, as configd keeps
+ * every value written. cb({ ok, error }).
+ */
+function setStarting(text, cb) {
+  if (!lunaFn) return cb({ ok: false, error: 'no luna wrapper' });
+  text = String(text || '');
+  if (text === readStarting()) return cb({ ok: true, unchanged: true });
+  save(readMap(), cb, undefined, text);
+}
+
 // Everything as LG has it: the map deleted, the keys emptied in configd (it
 // cannot delete the value), and the filter out of the chain and deleted.
 function restore(cb) {
@@ -493,6 +559,8 @@ module.exports = {
   getRemoteKeys: getRemoteKeys,
   setRemoteKey: setRemoteKey,
   setHome: setHome,
+  setStarting: setStarting,
+  homeApp: readHome,
   ensure: ensure,
   restore: restore,
   filterSource: filterSource,

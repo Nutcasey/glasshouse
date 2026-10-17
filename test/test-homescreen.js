@@ -165,6 +165,17 @@ hs.getHomeScreen(checked(function (none) {
             assert.ok(ourLayout().indexOf('type="AppList"') !== -1);
             console.log('  ✓ the last part showing cannot be hidden');
 
+            // Glasshouse Home's empty starting layout in its place (lib/home-takeover.js).
+            var mine = ourLayout();
+            var starting = '<home>' + require('../server/lib/home-takeover').BLANK_MARK + '</home>';
+            fs.writeFileSync(path.join(layoutDir, 'home_layoutShelfView.xml'), starting);
+            hs.setPart('banner', true, checked(function (held) {
+              assert.strictEqual(held.ok, false);
+              assert.ok(/Glasshouse Home/.test(held.error));
+              assert.strictEqual(ourLayout(), starting, 'its layout is left in place');
+              fs.writeFileSync(path.join(layoutDir, 'home_layoutShelfView.xml'), mine);
+              console.log('  ✓ while Glasshouse Home has LG\'s Home\'s place, its layout is not changed');
+
             hs.setInput('hdmi2', true, checked(function (a) {
               assert.strictEqual(a.ok, true);
               var add = tv.calls.filter(function (c) { return /addLaunchPoint$/.test(c.uri); })[0];
@@ -203,6 +214,7 @@ hs.getHomeScreen(checked(function (none) {
                   }));
                 }));
               });
+            }));
             }));
           }));
         }));

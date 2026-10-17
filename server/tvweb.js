@@ -964,16 +964,12 @@ if (CLI_MODE) {
     }
     oled.detectOled(function () {});   // resolve and log panel type up front
     telemetry.detectLogoLight(function () {});
-    // Glasshouse Home's app is refreshed after the dashboard's: the install
-    // service takes one at a time.
-    var refreshHomeApp = function () { glasshouseHome.refreshApp(); };
     if (fromHomebrewChannel()) {
       // The Homebrew Channel app is the tile, so the one deploy.sh added goes.
       // Boot is the moment to do it: nothing is open, and it is never removed
       // while open. Once it is gone this finds nothing to do.
       tvApp('retire', function (r) {
         if (r && r.retired) console.log('tvapp: old tile removed; Homebrew Channel replaces it');
-        refreshHomeApp();
       });
     } else {
       // The home-screen app packages its own loading screen, name and icons at
@@ -981,7 +977,6 @@ if (CLI_MODE) {
       // date with this release. A removed app is left removed.
       tvApp('refresh', function (r) {
         if (r && r.refreshed && r.ok) console.log('tvapp: refreshed to current release');
-        refreshHomeApp();
       });
     }
   });
@@ -1713,8 +1708,12 @@ if (!CLI_MODE) {
     stateDir: __dirname,
     webosVersion: telemetry.detectWebosVersion(),
     port: CONFIG.port,
+    samrescan: samrescan,
+    // Only to remove the separate app earlier builds installed.
     installApp: function (action, cb) { tvApp(action, cb, 'home-app'); },
     setHomeKey: remoteKeys.setHome,
+    homeKeyApp: remoteKeys.homeApp,
+    setStarting: remoteKeys.setStarting,
     build: TVWEB_DISPLAY_VERSION + '@' + Date.now(),
     homeKeys: function (on) { if (remotebuttons.isSupported()) remotebuttons.want('home', on); }
   });

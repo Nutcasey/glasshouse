@@ -2,32 +2,25 @@
  * lib/home.js - Glasshouse Home: a home screen of Glasshouse's own in place
  * of LG's, and the way back to LG's
  *
- * The view is a second small web app, com.tvweb.home, installed beside the
- * dashboard's app the same way (assets/dashboard-app/install-app.sh) and made
- * the system's Home with general.defaultApps.home. Its app declares
- * appCategory "home", which the settings service needs before it treats the
- * app as one. Everything it shows comes from here: the TV's launch points for
- * the Apps row, EIM's CEC devices for the Inputs row, and the tuner's channel
- * list for the Channels row. The layout the dashboard's Home tab and the view's
- * arrange mode edit is one file, /var/lib/tvweb/home.json.
+ * Switched on, Glasshouse Home's app runs under LG's Home's id
+ * (lib/home-takeover), so everything the TV opens as Home opens it. Everything
+ * it shows comes from here: the TV's launch points for the Apps row, EIM's
+ * CEC devices for the Inputs row, and the tuner's channel list for the
+ * Channels row. The layout the dashboard's Home tab and the view's arrange
+ * mode edit is one file, /var/lib/tvweb/home.json.
  *
- * Switching on takes a snapshot of every setting this changes, once: a later
- * switch-on never replaces it, so switching off always puts back what the TV
- * had before Glasshouse Home first ran. While on, a guard here keeps it Home:
- *   - defaultApps.home is put back if something else changes it;
- *   - LG's Home coming to the front is sent back to Glasshouse Home, at most
- *     BOUNCE_MAX times in BOUNCE_WINDOW_MS, after which LG's is left alone;
- *   - while the view is in front, lastInputApp and physicalLastInputApp name
- *     it, so the TV starts on it. Switched off on an input, the TV sets them
- *     to the input, and starts there.
- * The TV's screen saver setting is left alone.
  * Three ways lead back to LG's Home without switching anything off: the view's
  * LG Home tile, holding the remote's Home button, and the view not answering.
- * Each opens LG's Home and stops the guard sending it back until something
- * else comes to the front.
+ * Each puts LG's app back in its place and opens it; Glasshouse Home takes
+ * the place again once something else is in front, or on a short press of
+ * Home.
+ *
+ * Earlier builds made a separate app (com.tvweb.home) the TV's Home
+ * through its settings, and kept a snapshot of them. What those left behind
+ * is undone once at start (cleanLegacy).
  *
  * Run as `node home.js --restore` (tvwebctl restore-glasshouse-home), it puts
- * the snapshot back without the server, for an SSH session.
+ * LG's Home back without the server, for an SSH session.
  *
  * Strict ES5: runs on node 0.12.
  */
@@ -37,9 +30,11 @@ var msg = require('./say').msg;
 var names = require('./names');
 var writeJsonAtomic = require('./util').writeJsonAtomic;
 var wallpapers = require('./home-wallpapers');
+var takeover = require('./home-takeover');
 
+// The separate app earlier builds installed: removed, and its settings undone.
 var HOME_APP = 'com.tvweb.home';
-var LG_HOME = 'com.webos.app.home';
+var LG_HOME = takeover.LG_HOME;
 var LIVE_TV = 'com.webos.app.livetv';
 var SETTINGS = 'com.webos.service.settings/';
 
@@ -55,35 +50,18 @@ var PROMO_APPS = ['com.webos.app.lgchannels', 'com.webos.app.sportsteamsettings'
 var LG_HOME_TILE = 'lg-home';
 var MAX_CHANNELS = 40;
 
-// The settings switching on changes, read before it does and written back as read.
-var SNAPSHOT_KEYS = ['defaultApps', 'lastInputApp', 'physicalLastInputApp',
-  'lastInputAppType', 'physicalLastInputType'];
+// The settings earlier builds changed, as their snapshot kept them.
+var LEGACY_INPUT_KEYS = ['lastInputApp', 'physicalLastInputApp'];
 
 /*
- * Minimal Home measured LG's Home pushing itself back up to a few times in a
- * row during system flows (a first-run notice, an update prompt). Past this
- * the guard gives up rather than fight it.
- */
-var BOUNCE_MAX = 8;
-var BOUNCE_WINDOW_MS = 10000;
-var REASSERT_MS = 10 * 60 * 1000;
-/*
  * The view says it is alive every 5 s; twice that with none, after a first
- * beat, is a dead view. Before its first beat the app's own page and the view
- * fall back themselves: after a cold start a G3 (webOS 9.2) names the app as
- * in front while Live TV shows and the page never loads the view, and a watchdog
- * started then replaced Live TV with LG's Home with nothing pressed.
+ * beat, is a dead view. Its page waits on black for the server after a cold
+ * start, so before the first beat the wait is longer.
  */
 var BEAT_GRACE_MS = 10000;
-/*
- * That app is opened again once, this long after the server starts, if it is
- * named in front and its view has not beaten: opened by the server it draws,
- * and the TV shows Glasshouse Home rather than Live TV after a cold start.
- */
-var START_OPEN_MS = 8000;
+var FIRST_BEAT_GRACE_MS = 20000;
 // Holding Home this long opens LG's Home.
 var HOLD_MS = 1200;
-var PIN_MIN_MS = 3000;
 var GUIDE_TTL_MS = 60000;
 var LIST_TTL_MS = 30000;
 
@@ -99,37 +77,46 @@ var installFn = null;
 var homeKeysFn = function () {};
 /*
  * Points the remote's Home key at an app through the compositor's key filter
- * (lib/remotekeys), or gives it back to LG's filters with ''. Without it the
- * TV shows LG's Home before the guard brings Glasshouse Home back.
+ * (lib/remotekeys), or gives it back to LG's filters with ''. Earlier builds
+ * pointed it at their app; only cleanLegacy calls it now.
  * @type {function(string, function(Object): void): void}
  */
 var setHomeKeyFn = function (id, cb) { cb({ ok: true, none: true }); };
+/*
+ * The toast the remote key filter shows for Home until Glasshouse Home is in
+ * place after a cold start (lib/remotekeys setStarting), or '' while it is off.
+ * @type {function(string, function(Object): void): void}
+ */
+var setStartingFn = function (text, cb) { cb({ ok: true, none: true }); };
+// The app the Home key opens through that filter, '' where LG's filters have it.
+/** @type {function(): string} */
+var homeKeyAppFn = function () { return ''; };
 // This release, which the view compares to reload itself after an update.
 var buildId = '';
 var nowMs = Date.now;
 
 var config = null;
 var configMtime = 0;
-var guardOn = false;
-var reassertTimer = null;
-var bounces = [];
+var wasEnabled = false;
+// LG's Home is in its place, opened by one of the ways back to it.
 var escaped = false;
 var foreground = '';
 var lastSource = null;
 var beatTimer = null;
 var lastBeatAt = 0;
-var startTimer = null;
 var holdTimer = null;
 var homeDownAt = 0;
-var pinnedAt = 0;
 var powerActive = true;
 var guideCache = { at: 0, data: {} };
 var listCache = {};
 var changing = false;
 var settingsQueue = [];
 var settingsBusy = false;
-var appRefreshPending = false;
-var appRefreshing = false;
+var switchBusy = false;
+var switchWant = null;
+var switchWaiting = [];
+var legacyAppPending = false;
+var legacyAppRemoving = false;
 
 function configFile() { return path.join(stateDir, 'home.json'); }
 
@@ -205,7 +192,7 @@ function validSnapshot(s) {
 
 /*
  * Read again whenever the file changes, so `tvwebctl restore-glasshouse-home`
- * run over SSH beside a running server switches its guard off too.
+ * run over SSH beside a running server is seen by it too.
  */
 function readConfig() {
   var mtime = 0;
@@ -215,9 +202,13 @@ function readConfig() {
   try { raw = JSON.parse(fs.readFileSync(configFile(), 'utf8')); } catch (e) {}
   config = normalise(raw);
   configMtime = mtime;
-  if (guardOn && !config.enabled) {
+  // tvwebctl restore-glasshouse-home, run beside the server, switches it off here.
+  if (wasEnabled && !config.enabled) {
     console.log('home: switched off in home.json');
-    stopGuard();
+    wasEnabled = false;
+    escaped = false;
+    stopBeatWatch();
+    homeKeysFn(false);
   }
   return config;
 }
@@ -552,7 +543,7 @@ function open(body, cb) {
   var id = body && typeof body.id === 'string' ? body.id : '';
   console.log('home: open ' + kind + ' ' + id);
   if (kind === 'lg' || (kind === 'app' && id === LG_HOME_TILE)) {
-    if (body.recovery && foreground !== HOME_APP) return cb({ ok: true, done: false });
+    if (body.recovery && !viewInFront()) return cb({ ok: true, done: false });
     return toLgHome('tile', cb);
   }
   if (kind === 'app') {
@@ -587,14 +578,49 @@ function open(body, cb) {
   cb({ ok: false, error: 'kind must be app, dev, ch or lg' });
 }
 
+
 /*
- * LG's Home, and the guard holds off until something else is in front: the
- * LG Home tile, holding Home, and a view that is not answering.
+ * LG's Home, by the LG Home tile, holding Home, or a view that is not
+ * answering. Glasshouse Home takes its place again once something else is in
+ * front, or on a short press of Home.
  */
 function toLgHome(why, cb) {
-  escaped = true;
+  cb = cb || function () {};
   console.log('home: opening LG\'s Home (' + why + ')');
-  launch(LG_HOME, null, cb || function () {});
+  if (!readConfig().enabled) return launch(LG_HOME, null, cb);
+  escaped = true;
+  stopBeatWatch();
+  switchTo(false, function (r) {
+    if (!r.ok) {
+      console.error('home: ' + r.error);
+      return cb(r);
+    }
+    // Where the view was in front, the TV is opening LG's Home already.
+    launch(LG_HOME, null, cb);
+  });
+}
+
+// ---------------------------------------------------------------- the switch
+
+/*
+ * Taking LG's Home's place and giving it back, one at a time: a switch asked
+ * for while one runs waits, and only the last one asked for runs.
+ */
+function switchTo(on, cb) {
+  switchWant = on;
+  switchWaiting.push(cb);
+  if (switchBusy) return;
+  switchBusy = true;
+  (function run() {
+    var want = switchWant;
+    var batch = switchWaiting.splice(0, switchWaiting.length);
+    (want ? takeover.take : takeover.release)(function (r) {
+      if (r.ok) console.log('home: ' + (want ? 'Glasshouse Home is in LG\'s Home\'s place' : 'LG\'s Home is in its place'));
+      batch.forEach(function (f) { f(r); });
+      if (switchWaiting.length) return run();
+      switchBusy = false;
+    });
+  })();
 }
 
 // ---------------------------------------------------------------- settings
@@ -610,7 +636,6 @@ function writeSettings(settings, cb) {
   nextSettingsWrite();
 }
 
-// A restore must follow every guard write already sent to the settings service.
 function nextSettingsWrite() {
   if (settingsBusy || !settingsQueue.length) return;
   settingsBusy = true;
@@ -622,7 +647,7 @@ function nextSettingsWrite() {
   });
 }
 
-// Settings reads and app installs can outlive another request from a dashboard.
+// Switching and layout saves can outlive another request from a dashboard.
 function change(action, cb) {
   if (changing) return cb({ ok: false, error: msg('srv.home.busy', 'Glasshouse Home is being changed; try again when it has finished') });
   changing = true;
@@ -645,6 +670,77 @@ function supported() {
   };
 }
 
+/*
+ * Switching on: the app's files staged and mounted over LG's Home, and sam
+ * made to read them. Where the view cannot take the place, nothing is left
+ * changed.
+ */
+function enable(cb) {
+  var sup = supported();
+  if (!sup.ok) return cb({ ok: false, error: sup.reason });
+  var c = readConfig();
+  if (c.restorePending) return cb({ ok: false, error: msg('srv.home.restoreFirst', 'LG\'s Home is not fully back yet; switch Glasshouse Home off again first') });
+  escaped = false;
+  switchTo(true, function (r) {
+    if (!r.ok) return cb({ ok: false, error: msg('srv.home.setFailed', 'the TV would not make Glasshouse Home its Home') + ' (' + r.error + ')' });
+    c = readConfig();
+    c.enabled = true;
+    if (!saveConfig()) {
+      c.enabled = false;
+      return switchTo(false, function () { cb({ ok: false, error: msg('srv.home.saveFailed', 'could not save the layout') }); });
+    }
+    wasEnabled = true;
+    startingNotice(true);
+    console.log('home: Glasshouse Home switched on');
+    cb({ ok: true });
+  });
+}
+
+/*
+ * Switching off: LG's Home back in its place. Recorded as pending first, so
+ * one cut short is finished at the next start.
+ */
+function disable(cb) {
+  var c = readConfig();
+  var before = { enabled: c.enabled, restorePending: c.restorePending };
+  c.enabled = false;
+  c.restorePending = true;
+  if (!saveConfig()) {
+    c.enabled = before.enabled;
+    c.restorePending = before.restorePending;
+    return cb({ ok: false, error: msg('srv.home.saveFailed', 'could not save the layout') });
+  }
+  wasEnabled = false;
+  escaped = false;
+  stopBeatWatch();
+  startingNotice(false);
+  switchTo(false, function (r) {
+    if (!r.ok) return cb({ ok: false, error: msg('srv.home.restoreFailed', 'the TV would not take its earlier Home settings back') + ' (' + r.error + ')' });
+    c = readConfig();
+    c.restorePending = false;
+    if (!saveConfig()) return cb({ ok: false, error: msg('srv.home.saveFailed', 'could not save the layout') });
+    console.log('home: Glasshouse Home switched off');
+    cb({ ok: true });
+  });
+}
+
+function startingNotice(on) {
+  var text = on ? msg('srv.home.startingToast', 'Glasshouse Home is starting. It opens in a few seconds.') : '';
+  setStartingFn(text, function (r) {
+    if (!r || !r.ok) console.error('home: could not ' + (on ? 'set' : 'clear') + ' the Home key\'s starting notice');
+  });
+}
+
+// For the Homebrew Channel's removal: LG's Home back, and the old app gone.
+function uninstall(cb) {
+  disable(function (r) {
+    if (!r.ok) return cb(r);
+    removeLegacyApp(function () { cb({ ok: true }); });
+  });
+}
+
+// ---------------------------------------------------------------- what earlier builds left
+
 function appInstalled(cb) {
   luna('com.webos.applicationManager/getAppInfo', { id: HOME_APP }, function (r, raw) {
     // A definite absent-app reply can accompany a non-zero luna-send exit.
@@ -656,329 +752,143 @@ function appInstalled(cb) {
   });
 }
 
-// HBC cleanup also runs on older TVs which have never used this feature.
-function uninstall(cb) {
-  var c = readConfig();
-  appInstalled(function (installed) {
-    if (installed === null) return cb({ ok: false, error: msg('srv.home.cannotRemove', 'the app could not be removed') });
-    var needsRestore = c.enabled || c.restorePending || c.snapshot;
-    if (!needsRestore) return installed ? remove(cb) : cb({ ok: true });
-    disable(function (r) {
-      if (!r.ok || !installed) return cb(r);
-      remove(cb);
-    });
-  });
-}
-
 /*
- * Switching on: the snapshot first, then the Home app, then defaultApps.home.
- * The snapshot is the settings as they are before Glasshouse Home first ran,
- * and is never taken again while one is kept.
+ * Earlier builds set defaultApps.home and the start-up app to their own app,
+ * and the remote's Home key to open it. Each that still names it is put back:
+ * the start-up app as the snapshot had it, or Live TV.
  */
-function enable(cb) {
-  var sup = supported();
-  if (!sup.ok) return cb({ ok: false, error: sup.reason });
+function cleanLegacy(cb) {
   var c = readConfig();
-  function takeSnapshot(next) {
-    if (c.restorePending) return cb(homeKeyRestoreError());
-    if (c.snapshot) return next();
-    readSettings(SNAPSHOT_KEYS, function (s) {
-      if (!s || !s.defaultApps || typeof s.defaultApps !== 'object') {
-        return cb({ ok: false, error: msg('srv.home.noSettings', 'could not read the TV\'s Home settings, so nothing was changed') });
-      }
-      var snap = { takenAt: nowMs(), webos: webosVersion, settings: {} };
-      SNAPSHOT_KEYS.forEach(function (k) { if (s[k] !== undefined) snap.settings[k] = copy(s[k]); });
-      c.snapshot = snap;
-      if (!saveConfig()) {
-        c.snapshot = null;
-        return cb({ ok: false, error: msg('srv.home.saveFailed', 'could not save the layout') });
-      }
-      console.log('home: settings snapshot taken');
-      next();
-    });
-  }
-  takeSnapshot(function () {
-    ensureApp(function (installed) {
-      if (!installed) return cb({ ok: false, error: msg('srv.home.notInstalled', 'the Glasshouse Home app could not be added to the TV') });
-      readSettings(['defaultApps'], function (s) {
-        var apps = s && s.defaultApps && typeof s.defaultApps === 'object' ? copy(s.defaultApps) : copy(c.snapshot.settings.defaultApps || {});
-        apps.home = HOME_APP;
-        var wasEnabled = c.enabled;
-        c.enabled = true;
-        if (!saveConfig()) {
-          c.enabled = wasEnabled;
-          return cb({ ok: false, error: msg('srv.home.saveFailed', 'could not save the layout') });
-        }
-        writeSettings({ defaultApps: apps }, function (ok) {
-          if (!ok) {
-            c.enabled = wasEnabled;
-            saveConfig();
-            return cb({ ok: false, error: msg('srv.home.setFailed', 'the TV would not make Glasshouse Home its Home') });
-          }
-          startGuard();
-          console.log('home: Glasshouse Home switched on');
-          setHomeKeyFn(HOME_APP, function (k) {
-            if (!k || !k.ok) console.error('home: the Home key still opens LG\'s Home first; the guard brings Glasshouse Home back');
-            cb({ ok: true, homeKey: !!(k && k.ok && !k.none) });
-          });
-        });
-      });
-    });
-  });
-}
-
-function ensureApp(cb) {
-  appInstalled(function (have) {
-    if (have === true || !installFn) return cb(have === true);
-    installFn('install', function () {
-      appInstalled(function (now) { cb(now === true); });
-    });
-  });
-}
-
-/*
- * The Glasshouse Home app on the TV, added or taken away from the dashboards.
- * Taking it away is refused while Glasshouse Home is on: the TV's Home would
- * name an app that is not there.
- */
-function install(cb) {
-  var sup = supported();
-  if (!sup.ok) return cb({ ok: false, error: sup.reason });
-  ensureApp(function (installed) {
-    if (!installed) return cb({ ok: false, error: msg('srv.home.notInstalled', 'the Glasshouse Home app could not be added to the TV') });
-    console.log('home: app installed');
-    cb({ ok: true, installed: true });
-  });
-}
-
-function remove(cb) {
-  if (readConfig().enabled) return cb({ ok: false, error: msg('srv.home.removeWhileOn', 'Switch Glasshouse Home off before removing its app') });
-  if (!installFn) return cb({ ok: false, error: msg('srv.home.cannotRemove', 'the app could not be removed') });
-  readSettings(['defaultApps', 'lastInputApp', 'physicalLastInputApp'], function (s) {
-    if (!s || !s.defaultApps) return cb({ ok: false, error: msg('srv.home.cannotRemove', 'the app could not be removed') });
-    if (s.defaultApps.home === HOME_APP || s.defaultApps.idleApp === HOME_APP ||
-        s.lastInputApp === HOME_APP || s.physicalLastInputApp === HOME_APP) {
-      return cb({ ok: false, error: msg('srv.home.removeStillTarget', 'Restore LG Home before removing the app; the TV still names Glasshouse Home as Home or its start-up app') });
-    }
-    removeApp(cb);
-  });
-}
-
-function removeApp(cb) {
-  // A failed switch-off may have left the compositor targeting this app.
-  setHomeKeyFn('', function (k) {
-    if (!k || !k.ok) return cb(homeKeyRestoreError());
-    installFn('remove', function () {
-      appInstalled(function (now) {
-        if (now !== false) return cb({ ok: false, error: msg('srv.home.cannotRemove', 'the app could not be removed') });
-        console.log('home: app removed');
-        cb({ ok: true, installed: false });
-      });
-    });
-  });
-}
-
-function homeKeyRestoreError() {
-  return { ok: false, error: msg('srv.home.keyRestoreFailed', 'the TV would not give the Home button back to LG; try switching Glasshouse Home off again') };
-}
-
-/*
- * Switching off: every snapshot value written back as it was read, then read
- * again to check. The guard stops first, so it cannot put anything back in
- * between. The snapshot is kept for a later switch-on.
- */
-function disable(cb) {
-  var c = readConfig();
-  var wasEnabled = c.enabled;
-  var wasPending = c.restorePending;
-  c.enabled = false;
-  c.restorePending = true;
-  if (!saveConfig()) {
-    c.enabled = wasEnabled;
-    c.restorePending = wasPending;
-    return cb({ ok: false, error: msg('srv.home.saveFailed', 'could not save the layout') });
-  }
-  stopGuard();
-  setHomeKeyFn('', function (k) {
-    if (!k || !k.ok) console.error('home: could not give the Home key back to LG\'s filters');
-    // Restore the other settings even when configd refuses the Home key.
-    restoreAll(c, function (r) {
-      if (r.ok && (!k || !k.ok)) r = homeKeyRestoreError();
-      if (r.ok) {
-        c.restorePending = false;
-        if (!saveConfig()) {
-          c.restorePending = true;
-          return cb({ ok: false, error: msg('srv.home.saveFailed', 'could not save the layout') });
-        }
-      }
-      cb(r);
-    });
-  });
-}
-
-function restoreAll(c, cb) {
-  if (!c.snapshot) {
-    return readSettings(['defaultApps'], function (s) {
-      var apps = s && s.defaultApps && typeof s.defaultApps === 'object' ? copy(s.defaultApps) : null;
-      if (!apps || (apps.home !== HOME_APP && apps.idleApp !== HOME_APP)) return cb({ ok: true, restored: false });
+  var snap = c.snapshot && c.snapshot.settings ? c.snapshot.settings : {};
+  readSettings(['defaultApps'].concat(LEGACY_INPUT_KEYS), function (s) {
+    if (!s) return finishLegacy(c, cb);
+    var put = {};
+    if (s.defaultApps && typeof s.defaultApps === 'object' &&
+        (s.defaultApps.home === HOME_APP || s.defaultApps.idleApp === HOME_APP)) {
+      var apps = copy(s.defaultApps);
       if (apps.home === HOME_APP) delete apps.home;
       if (apps.idleApp === HOME_APP) delete apps.idleApp;
-      writeSettings({ defaultApps: apps }, function (ok) { cb({ ok: ok, restored: false }); });
-    });
-  }
-  restoreSnapshot(c.snapshot, function (r) {
-    console.log('home: Glasshouse Home switched off' + (r.ok ? ', settings restored' : ': ' + r.error));
-    cb(r);
-  });
-}
-
-function restoreSnapshot(snap, cb) {
-  var want = copy(snap.settings);
-  writeSettings(want, function (ok) {
-    if (!ok) return cb({ ok: false, error: msg('srv.home.restoreFailed', 'the TV would not take its earlier Home settings back') });
-    readSettings(Object.keys(want), function (got) {
-      var differ = Object.keys(want).filter(function (k) {
-        return !got || JSON.stringify(got[k]) !== JSON.stringify(want[k]);
-      });
-      if (differ.length) {
-        return cb({ ok: false, error: msg('srv.home.restoreDiffers', 'the TV kept different values for {keys}', { keys: differ.join(', ') }), differ: differ });
-      }
-      cb({ ok: true, restored: true });
-    });
-  });
-}
-
-// ---------------------------------------------------------------- the guard
-
-/*
- * At server start, LG's Home in front is sent back to Glasshouse Home, once:
- * the Home button pressed in the first seconds after a cold start opens LG's
- * Home (a G3, webOS 9.2), as does OK on the app's starting page.
- */
-function startGuard() {
-  if (guardOn) return;
-  guardOn = true;
-  escaped = false;
-  bounces = [];
-  if (liveState) liveState.startGroup('application');
-  homeKeysFn(true);
-  reassert();
-  reassertTimer = setInterval(reassert, REASSERT_MS);
-  var snap = liveState ? liveState.state.snapshot() : {};
-  var fg = snap.application && snap.application.app_id;
-  if (fg) foregroundChanged(fg);
-}
-
-function stopGuard() {
-  if (startTimer) clearTimeout(startTimer);
-  startTimer = null;
-  if (!guardOn) return;
-  guardOn = false;
-  if (liveState) liveState.stopGroup('application');
-  homeKeysFn(false);
-  if (holdTimer) clearTimeout(holdTimer);
-  holdTimer = null;
-  if (reassertTimer) clearInterval(reassertTimer);
-  reassertTimer = null;
-  if (beatTimer) clearTimeout(beatTimer);
-  beatTimer = null;
-}
-
-/*
- * defaultApps.home back if something changed it, and taken off if the app has
- * gone: pointing at an app that is not there, the Home button would do
- * nothing. An answer that is not definite changes nothing.
- */
-function reassert() {
-  if (guardOn) readConfig();
-  if (!guardOn) return;
-  appInstalled(function (installed) {
-    if (!guardOn || installed === null) return;
-    if (!installed) {
-      console.error('home: the Glasshouse Home app is not installed; restoring LG\'s Home');
-      return change(disable, function (r) {
-        if (!r.ok) console.error('home: ' + r.error);
-      });
+      put.defaultApps = apps;
     }
-    readSettings(['defaultApps'], function (s) {
-      if (!guardOn || !s || !s.defaultApps || typeof s.defaultApps !== 'object') return;
-      var apps = copy(s.defaultApps);
-      if (apps.home === HOME_APP) return;
-      apps.home = HOME_APP;
-      console.log('home: defaultApps.home was ' + (s.defaultApps.home || 'unset') + ', set back');
-      writeSettings({ defaultApps: apps }, function () {});
+    LEGACY_INPUT_KEYS.forEach(function (k) {
+      if (s[k] !== HOME_APP) return;
+      put[k] = typeof snap[k] === 'string' && snap[k] && snap[k] !== HOME_APP ? snap[k] : LIVE_TV;
+    });
+    if (!Object.keys(put).length) return finishLegacy(c, cb);
+    writeSettings(put, function (ok) {
+      console.log(ok ? 'home: settings an earlier build changed put back (' + Object.keys(put).join(', ') + ')'
+                     : 'home: could not put back the settings an earlier build changed');
+      finishLegacy(c, cb);
     });
   });
 }
 
-function bounceAllowed() {
-  var t = nowMs();
-  bounces = bounces.filter(function (b) { return t - b < BOUNCE_WINDOW_MS; });
-  if (bounces.length >= BOUNCE_MAX) return false;
-  bounces.push(t);
-  return true;
+function finishLegacy(c, cb) {
+  function done() {
+    if (c.snapshot) {
+      c = readConfig();
+      c.snapshot = null;
+      saveConfig();
+    }
+    legacyAppPending = true;
+    tryRemoveLegacyApp();
+    cb();
+  }
+  if (homeKeyAppFn() !== HOME_APP) return done();
+  setHomeKeyFn('', function (k) {
+    if (!k || !k.ok) console.error('home: the Home key still opens the old Glasshouse Home app');
+    done();
+  });
 }
 
-function foregroundChanged(id) {
-  var was = foreground;
-  foreground = id;
-  if (appRefreshPending) tryRefreshApp();
-  if (id !== HOME_APP && id !== LG_HOME && id) lastSource = { appId: id, at: nowMs() };
-  if (guardOn) readConfig();
-  if (!guardOn) return;
-  if (id !== LG_HOME && id !== HOME_APP) escaped = false;
-  if (id === HOME_APP) {
-    pinLastInput();
-    // Armed again by the view's next beat.
-    if (beatTimer) clearTimeout(beatTimer);
-    beatTimer = null;
-  }
-  if (id === LG_HOME && !escaped && was !== LG_HOME && powerActive) {
-    if (!bounceAllowed()) {
-      escaped = true;
-      console.error('home: LG\'s Home keeps coming back; leaving it in front');
+/*
+ * The old app, once nothing has it open. After a cold start the TV could have
+ * opened it through its input app (com.webos.app.inputcommon), which sam then
+ * names as its process and cannot close, and a removal waits on "app closing"
+ * with the app locked until the TV restarts (a G3, webOS 9.2).
+ */
+function tryRemoveLegacyApp() {
+  if (!legacyAppPending || legacyAppRemoving || !installFn) return;
+  if (foreground === HOME_APP) return;
+  legacyAppRemoving = true;
+  appInstalled(function (installed) {
+    if (installed !== true) {
+      legacyAppRemoving = false;
+      if (installed === false) legacyAppPending = false;
       return;
     }
-    launch(HOME_APP, null, function (r) {
-      if (!r.ok) console.error('home: could not bring Glasshouse Home back to the front');
+    luna('com.webos.applicationManager/running', {}, function (r) {
+      var list = r && isArray(r.running) ? r.running : null;
+      if (!list || list.some(function (a) { return a && a.id === HOME_APP; })) {
+        legacyAppRemoving = false;
+        return;
+      }
+      removeLegacyApp(function () { legacyAppRemoving = false; });
     });
-  }
+  });
 }
 
-/*
- * The TV starts on whichever app lastInputApp and physicalLastInputApp name,
- * which an input sets as it opens; with the view's id there, it starts on the
- * view. Read first, so a setting that is already right is not written.
- */
-function pinLastInput() {
-  if (nowMs() - pinnedAt < PIN_MIN_MS) return;
-  pinnedAt = nowMs();
-  readSettings(['lastInputApp', 'physicalLastInputApp'], function (s) {
-    if (!s || !guardOn || foreground !== HOME_APP) return;
-    if (s.lastInputApp === HOME_APP && s.physicalLastInputApp === HOME_APP) return;
-    writeSettings({ lastInputApp: HOME_APP, physicalLastInputApp: HOME_APP }, function (ok) {
-      if (!ok) console.error('home: could not make the TV start on Glasshouse Home');
+function removeLegacyApp(cb) {
+  if (!installFn) return cb();
+  appInstalled(function (installed) {
+    if (installed !== true) return cb();
+    installFn('remove', function () {
+      appInstalled(function (now) {
+        if (now === false) {
+          legacyAppPending = false;
+          console.log('home: the old Glasshouse Home app removed');
+        }
+        cb();
+      });
     });
   });
 }
 
 // ---------------------------------------------------------------- the view
 
-function watchBeat() {
+function viewInFront() {
+  return foreground === LG_HOME && !escaped && readConfig().enabled && takeover.mounted();
+}
+
+function stopBeatWatch() {
   if (beatTimer) clearTimeout(beatTimer);
+  beatTimer = null;
+}
+
+function watchBeat(ms) {
+  stopBeatWatch();
   beatTimer = setTimeout(function () {
     beatTimer = null;
     // Switched off into standby the view stops beating; nothing is on screen to replace.
-    if (!guardOn || foreground !== HOME_APP || !powerActive) return;
+    if (!viewInFront() || !powerActive) return;
     console.error('home: the Glasshouse Home view is not answering');
     toLgHome('view not answering');
-  }, BEAT_GRACE_MS);
+  }, ms);
 }
 
 function beat() {
   lastBeatAt = nowMs();
-  if (guardOn && foreground === HOME_APP) watchBeat();
+  if (viewInFront()) watchBeat(BEAT_GRACE_MS);
   return { ok: true, enabled: readConfig().enabled, build: buildId, wallpapers: wallpapers.status() };
+}
+
+function foregroundChanged(id) {
+  var was = foreground;
+  foreground = id;
+  if (legacyAppPending) tryRemoveLegacyApp();
+  if (id !== HOME_APP && id !== LG_HOME && id) lastSource = { appId: id, at: nowMs() };
+  if (!readConfig().enabled) return;
+  if (id === LG_HOME) {
+    if (was !== LG_HOME && viewInFront() && powerActive) watchBeat(FIRST_BEAT_GRACE_MS);
+    return;
+  }
+  stopBeatWatch();
+  // sam names nothing in front for a moment between apps.
+  if (!id || !escaped) return;
+  escaped = false;
+  switchTo(true, function (r) {
+    if (!r.ok) console.error('home: could not take LG\'s Home\'s place again: ' + r.error);
+  });
 }
 
 // The remote's Home button, as remotebuttons reports it: held, LG's Home.
@@ -986,22 +896,23 @@ function homeKey(down) {
   var wasHeld = !holdTimer && homeDownAt && nowMs() - homeDownAt >= HOLD_MS;
   if (holdTimer) clearTimeout(holdTimer);
   holdTimer = null;
-  if (!guardOn) return;
+  if (!readConfig().enabled) return;
   if (!down) {
     /*
      * A short press on LG's Home, opened by one of the ways back to it: the TV
-     * opens LG's Home again, which changes nothing in front, so the guard is
-     * not told. This brings Glasshouse Home back.
+     * opens LG's Home again, which changes nothing in front. Stopping LG's
+     * Home once the view has its place makes the TV open the view.
      */
     var shortPress = homeDownAt && !wasHeld;
     homeDownAt = 0;
     if (shortPress && escaped && foreground === LG_HOME) {
       escaped = false;
-      launch(HOME_APP, null, function () {});
+      switchTo(true, function () {});
     }
     return;
   }
   homeDownAt = nowMs();
+  if (escaped) return;
   holdTimer = setTimeout(function () {
     holdTimer = null;
     toLgHome('Home held');
@@ -1012,25 +923,21 @@ function powerChanged(active) { powerActive = active; }
 
 function status(cb) {
   var c = readConfig();
-  appInstalled(function (installed) {
-    readSettings(['defaultApps'], function (s) {
-      var apps = s && s.defaultApps;
-      var sup = supported();
-      cb({
-        ok: true,
-        // Both dashboards leave Home out where it is false, as for other features a TV lacks.
-        available: sup.ok || c.enabled || c.restorePending,
-        supported: sup,
-        installed: installed === true,
-        enabled: c.enabled,
-        restorePending: c.restorePending,
-        active: !!(apps && apps.home === HOME_APP),
-        guard: guardOn,
-        snapshot: c.snapshot ? { takenAt: c.snapshot.takenAt, settings: c.snapshot.settings } : null,
-        history: !!(historyModule && historyModule.enabled && historyModule.enabled()),
-        wallpapers: wallpapers.status(),
-        layout: layoutOf(c)
-      });
+  var sup = supported();
+  takeover.samType(function (type) {
+    cb({
+      ok: true,
+      // Both dashboards leave Home out where it is false, as for other features a TV lacks.
+      available: sup.ok || c.enabled || c.restorePending,
+      supported: sup,
+      enabled: c.enabled,
+      restorePending: c.restorePending,
+      // In LG's Home's place now; false while one of the ways back has LG's Home open.
+      active: takeover.mounted() && type === 'web',
+      lgHomeOpen: escaped,
+      history: !!(historyModule && historyModule.enabled && historyModule.enabled()),
+      wallpapers: wallpapers.status(),
+      layout: layoutOf(c)
     });
   });
 }
@@ -1042,21 +949,34 @@ function init(opts) {
   historyModule = opts.history || null;
   if (opts.stateDir) stateDir = opts.stateDir;
   wallpapers.init(stateDir);
+  takeover.init({
+    luna: lunaFn,
+    samrescan: opts.samrescan || null,
+    stageDir: opts.takeoverDir || path.join(stateDir, 'home-takeover'),
+    sourceDir: opts.appSource,
+    appDir: opts.lgHomeDir,
+    procDir: opts.procDir,
+    layoutDir: opts.lgLayoutDir,
+    keptDir: path.join(stateDir, 'home-takeover-lg-layout'),
+    checkpointDirs: opts.checkpointDirs,
+    exec: opts.exec,
+    kill: opts.kill
+  });
   webosVersion = opts.webosVersion || null;
   serverPort = opts.port === undefined ? 8080 : Number(opts.port);
   installFn = opts.installApp || null;
   homeKeysFn = opts.homeKeys || function () {};
   setHomeKeyFn = opts.setHomeKey || function (id, cb) { cb({ ok: true, none: true }); };
+  homeKeyAppFn = opts.homeKeyApp || function () { return ''; };
+  setStartingFn = opts.setStarting || function (text, cb) { cb({ ok: true, none: true }); };
   buildId = opts.build || '';
   nowMs = opts.now || Date.now;
   config = null;
   configMtime = 0;
-  guardOn = false;
+  wasEnabled = false;
   escaped = false;
   foreground = '';
   lastSource = null;
-  bounces = [];
-  pinnedAt = 0;
   powerActive = true;
   lastBeatAt = 0;
   guideCache = { at: 0, data: {} };
@@ -1064,8 +984,11 @@ function init(opts) {
   changing = false;
   settingsQueue = [];
   settingsBusy = false;
-  appRefreshPending = false;
-  appRefreshing = false;
+  switchBusy = false;
+  switchWant = null;
+  switchWaiting = [];
+  legacyAppPending = false;
+  legacyAppRemoving = false;
   if (liveState) {
     liveState.state.onChange(function (ev) {
       if (ev.group === 'application' && ev.key === 'app_id') foregroundChanged(String(ev.value || ''));
@@ -1077,74 +1000,55 @@ function init(opts) {
 /*
  * An earlier build switched the screen saver off while the view was in front
  * and kept screenSaverEnabled in the snapshot. It is put back once, as the
- * snapshot had it, and dropped from the snapshot.
+ * snapshot had it.
  */
-function restoreLegacyScreenSaver() {
+function restoreLegacyScreenSaver(cb) {
   var c = readConfig();
-  if (!c.snapshot) return;
-  var saved = c.snapshot.settings.screenSaverEnabled;
-  if (saved === undefined) return;
+  var saved = c.snapshot && c.snapshot.settings.screenSaverEnabled;
+  if (saved === undefined || saved === null) return cb();
   writeSettings({ screenSaverEnabled: saved }, function (ok) {
-    if (!ok) return console.error('home: could not put the screen saver setting back');
-    delete readConfig().snapshot.settings.screenSaverEnabled;
-    saveConfig();
-    console.log('home: screen saver setting put back as ' + saved);
+    if (!ok) console.error('home: could not put the screen saver setting back');
+    else console.log('home: screen saver setting put back as ' + saved);
+    cb();
   });
 }
 
 /*
- * The app is a packaged copy, so a new release reaches it only by reinstalling
- * it, which closes it. After a cold start the TV opens it through its input
- * app (com.webos.app.inputcommon), which SAM then names as its process and
- * cannot close, and the install waits on "app closing" with the app locked
- * against launching (a G3, webOS 9.2). With Glasshouse Home on, the app is in
- * front at almost every start, so the refresh waits until something else is
- * in front and the view has sent a beat since the server started: the view
- * loads only in an app launched normally, which can be closed.
+ * At start: what earlier builds left undone, a switch-off cut short finished,
+ * and the place taken where Glasshouse Home is on. The boot hook has usually
+ * taken it already; taking it again restages the app's files for this release
+ * and stops an LG Home that started before the hook.
  */
-function refreshApp() {
-  appRefreshPending = true;
-  tryRefreshApp();
-}
-
-function tryRefreshApp() {
-  if (!appRefreshPending || appRefreshing || !installFn) return;
-  appRefreshing = true;
-  luna('com.webos.applicationManager/running', {}, function (r) {
-    var list = r && isArray(r.running) ? r.running : null;
-    var running = !list || list.some(function (a) { return a && a.id === HOME_APP; });
-    var closable = foreground && foreground !== HOME_APP && lastBeatAt > 0;
-    if (running && !closable) {
-      appRefreshing = false;
-      return;
-    }
-    appRefreshPending = false;
-    installFn('refresh', function (res) {
-      appRefreshing = false;
-      if (res && res.refreshed && res.ok) console.log('home: app refreshed to current release');
+function start() {
+  restoreLegacyScreenSaver(function () {
+    cleanLegacy(function () {
+      var c = readConfig();
+      if (c.enabled) homeKeysFn(true);
+      if (c.restorePending || (!c.enabled && takeover.mounted())) {
+        return disable(function (r) { if (!r.ok) console.error('home: ' + r.error); });
+      }
+      startingNotice(c.enabled);
+      if (!c.enabled) return;
+      wasEnabled = true;
+      switchTo(true, function (r) {
+        if (!r.ok) console.error('home: could not take LG\'s Home\'s place: ' + r.error);
+      });
     });
   });
 }
 
-// At start: a guard for a Glasshouse Home left switched on.
-function start() {
-  restoreLegacyScreenSaver();
-  if (!readConfig().enabled) return;
-  startGuard();
-  var startedAt = nowMs();
-  startTimer = setTimeout(function () {
-    startTimer = null;
-    if (!guardOn || foreground !== HOME_APP || lastBeatAt >= startedAt || !powerActive) return;
-    console.log('home: the app is named in front but its view has not loaded; opening it');
-    launch(HOME_APP, null, function () {});
-  }, START_OPEN_MS);
+function stop() {
+  stopBeatWatch();
+  if (holdTimer) clearTimeout(holdTimer);
+  holdTimer = null;
+  homeKeysFn(false);
 }
 
 module.exports = {
-  HOME_APP: HOME_APP,
+  LG_HOME: LG_HOME,
   init: init,
   start: start,
-  stop: stopGuard,
+  stop: stop,
   status: status,
   catalogue: catalogue,
   channelList: channelList,
@@ -1152,13 +1056,10 @@ module.exports = {
   now: now,
   open: open,
   setLayout: function (body, cb) { change(function (done) { setLayout(body, done); }, cb); },
-  enable: function (cb) { change(enable, cb); },
-  disable: function (cb) { change(disable, cb); },
-  install: function (cb) { change(install, cb); },
-  remove: function (cb) { change(remove, cb); },
+  enable: function (cb) { change(function (done) { enable(function (r) { if (r.ok) homeKeysFn(true); done(r); }); }, cb); },
+  disable: function (cb) { change(function (done) { disable(function (r) { homeKeysFn(false); done(r); }); }, cb); },
   uninstall: function (cb) { change(uninstall, cb); },
   beat: beat,
-  refreshApp: refreshApp,
   homeKey: homeKey,
   iconPath: iconPath,
   wallpaperPath: wallpapers.image,
@@ -1182,9 +1083,9 @@ module.exports = {
 // tvwebctl restore-glasshouse-home: no server running, so luna is found here.
 if (require.main === module && process.argv[2] === '--restore') {
   var lunaTransport = require('./luna');
-  var remoteKeys = require('./remotekeys');
-  remoteKeys.init({ luna: lunaTransport.call, stateDir: path.join(__dirname, '..') });
-  init({ luna: lunaTransport.call, stateDir: path.join(__dirname, '..'), webosVersion: '9', setHomeKey: remoteKeys.setHome });
+  var rescan = require('./samrescan');
+  rescan.init({ luna: lunaTransport.call });
+  init({ luna: lunaTransport.call, samrescan: rescan, stateDir: path.join(__dirname, '..'), webosVersion: '9' });
   disable(function (r) {
     console.log(r.ok ? 'home: LG\'s Home restored' : 'home: ' + r.error);
     process.exit(r.ok ? 0 : 1);

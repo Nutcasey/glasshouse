@@ -22,29 +22,25 @@ Uploads are stored in `/var/lib/tvweb/home-wallpaper-uploads`, outside the updat
 
 The TV's screen saver, LG's or one chosen on the [Screensaver](screen-savers.md) tab, is left as it is set.
 
-## Installing, and switching it on and off
+## Switching it on and off
 
-Before Glasshouse Home's app is on the TV the tab offers only **Install Glasshouse Home**. Installing changes nothing else: LG's Home stays the TV's Home until it is switched on. With Glasshouse Home switched off, the app can be removed again from the same place. The TV app's own **Home** section offers the same, driven by the remote.
+**Use Glasshouse Home** asks for a second press, then puts Glasshouse Home in LG's Home's place: the TV then opens it wherever it would open LG's Home, with the Home button, with Back out of the last app, and when it wakes on Home. None of the TV's settings is changed, and LG's Home is not altered: Glasshouse Home is laid over it while switched on. **Use LG Home** takes it away again, and LG's Home is back after about three seconds. The TV app's own **Home** section offers the same, driven by the remote.
 
-**Use Glasshouse Home** asks for a second press, then makes it the TV's Home. Before changing anything it saves the TV's own Home settings (which app is Home, and the input the TV starts on), once: switching on again later keeps that first copy. **Use LG Home** puts every saved setting back as it was and reads them back to check.
-
-While a switch or installation is in progress, further changes are refused with a retry message. A failed save is reported before changing the TV's Home. Switching off waits for pending settings writes before restoring the saved values.
-
-A failed Home-button restore is reported even when the other settings were restored. Both dashboards offer **Retry restoring LG Home** until recovery succeeds, including after a server restart. Removing the app first checks that neither the Home button nor the TV's Home and start-up settings still target it. If the app is removed elsewhere, the guard switches Glasshouse Home off and restores LG's settings and Home button.
+While a switch is in progress, further changes are refused with a retry message. A switch-off that is cut short is shown as **Retry restoring LG Home** on both dashboards, and is finished when the server next starts.
 
 Three ways lead back to LG's Home without switching anything off:
 
 * the **LG Home** tile;
-* holding the remote's **Home** button for a second or more; a short press then brings Glasshouse Home back;
-* Glasshouse Home not answering: if the view stops sending its heartbeat for ten seconds, LG's Home opens instead. A view that has not yet sent one is left alone.
+* holding the remote's **Home** button for a second or more; a short press on LG's Home then brings Glasshouse Home back;
+* Glasshouse Home not answering: if the view stops sending its heartbeat for ten seconds, LG's Home opens instead.
 
-The Home button opens Glasshouse Home directly: while it is on, Glasshouse's remote key filter sends the key to it, as [Remote keys](apps.md#remote-keys) does for the buttons set there. Back out of an app still shows LG's Home for a moment (about 0.2 seconds on a G3) before Glasshouse Home replaces it, since the TV opens LG's Home itself on Back.
+LG's Home opens about two seconds after any of them, and Glasshouse Home takes its place again as soon as something else is opened.
 
-After the TV starts from cold, the Glasshouse server takes about 45 seconds to answer (a G3). Until then the TV shows the input or channel it was last on, and Glasshouse Home opens by itself about 8 seconds after the server starts, about 53 seconds in on a G3. Home pressed before the server answers can open LG's Home, which Glasshouse Home replaces once the server is running. Back out of an app stays on LG's Home in that time. With Quick Boot on (Advanced → Power & standby), switching the TV off with the remote does not stop the server, so there is no wait when it switches on again.
+After the TV starts from cold, Glasshouse Home takes LG's Home's place about 27 seconds in (a G3). LG's Home is never shown before then. Home pressed in that time leaves the TV on what it is showing, with a message that Glasshouse Home is starting; once Glasshouse Home is in place, Home opens it as usual. Anything else that opens LG's Home in that time, such as Back out of an app, shows a black screen, which Glasshouse Home replaces: while Glasshouse Home is on, LG's Home starts on an empty layout. The Glasshouse server answers about ten seconds later; Glasshouse Home opened in between says it is starting, and opens once the server answers. It does the same whenever the server is not running, as during an update. Should the server stop, or fail three times in ten minutes, LG's Home is given its place back until the server is running again.
 
-Whenever Glasshouse Home opens while the server is not running, as during an update, it shows a black screen saying Glasshouse Home is starting, and opens once the server answers. OK on that screen opens LG's Home until then, as does no answer within 90 seconds; holding Home needs the server.
+Over SSH, `tvwebctl restore-glasshouse-home` does what **Use LG Home** does. Uninstalling Glasshouse from the Homebrew Channel switches Glasshouse Home off before deleting the server; a failed switch-off keeps the server for another attempt.
 
-Over SSH, `tvwebctl restore-glasshouse-home` does what **Use LG Home** does. Uninstalling Glasshouse from the Homebrew Channel restores LG Home and removes its replacement app before deleting the server. A failed restore keeps the server for another attempt. Removal through the general Apps tab is blocked; the Home section owns removal.
+Earlier builds installed a separate Glasshouse Home app and changed the TV's Home and start-up settings to it. The first start of a newer server puts back any of those settings that still name that app, gives the Home button back to LG's filters, and removes the app.
 
 ![The Home tab in the browser dashboard: the Channels row with its added channels, and Add channels below them](../screenshots/home-dashboard.png)
 
@@ -58,6 +54,6 @@ Rows and tiles can be moved here, or on the TV by holding **OK** on Glasshouse H
 
 The browser dashboard locks editing until each save and refresh finishes. A failed move keeps the accepted order. The view confirms a save or reset only after the server accepts it, and reports a failure otherwise.
 
-If the first catalogue fails, input waits for usable tiles, the view asks for LG Home and retries while visible. It sends its first heartbeat immediately after rendering. A catalogue reply arriving during arranging cannot replace the edits. Reset leaves the Apps row following its default order. A server update waits until arranging and saving finish before reloading the view.
+If the first catalogue fails, input waits for usable tiles, the view asks the server for LG Home and retries while visible. It sends its first heartbeat immediately after rendering. A catalogue reply arriving during arranging cannot replace the edits. Reset leaves the Apps row following its default order. A server update waits until arranging and saving finish before reloading the view.
 
 ![Arranging on the TV: Sky News focused in the Channels row, with the bar for removing it, resetting and finishing](../screenshots/home-arrange.jpg)

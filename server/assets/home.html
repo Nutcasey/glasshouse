@@ -154,7 +154,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
 
   <div id="fault">
     <h1 data-t="home.fault.title">Glasshouse is not answering</h1>
-    <p data-t="home.fault.desc">Opening LG's Home instead. Glasshouse Home comes back when it answers again.</p>
+    <p data-t="home.fault.desc">Glasshouse Home comes back when it answers. Should it stay silent, LG's Home comes back in a few minutes.</p>
   </div>
 </div>
 
@@ -688,7 +688,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
           // A live HTTP server is not enough: Home needs its tiles and escape tile.
           if (!document.hidden && !initialEscape) {
             initialEscape = true;
-            postJson('/api/home/open', { kind: 'lg', recovery: true }, function (opened) { if (!opened || !opened.ok) lgHomeDirect(); });
+            postJson('/api/home/open', { kind: 'lg', recovery: true });
           }
           clearTimeout(loadRetry);
           loadRetry = setTimeout(function () { if (!document.hidden) load(); }, 2000);
@@ -739,7 +739,8 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
   /*
    * The server watches for these: the view in front without them for ten
    * seconds is taken to be broken, and LG's Home opens instead. With the
-   * server gone, the page says so and asks the TV for LG's Home itself.
+   * server gone, the page says so; the page is LG's Home's app, so only the
+   * server's watchdog can put LG's back (tvwebctl).
    */
   function beat() {
     // With no usable catalogue, let the server's ten-second watchdog recover Home.
@@ -760,18 +761,8 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
         build = r.build || build;
         return;
       }
-      if (++beatFails === 3) {
-        $('fault').className = 'show';
-        lgHomeDirect();
-      }
+      if (++beatFails === 3) $('fault').className = 'show';
     });
-  }
-  function lgHomeDirect() {
-    if (document.hidden) return;
-    try {
-      var bridge = new window.PalmServiceBridge();
-      bridge.call('luna://com.webos.applicationManager/launch', JSON.stringify({ id: 'com.webos.app.home' }));
-    } catch (e) {}
   }
 
   function returned() {

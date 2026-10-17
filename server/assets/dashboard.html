@@ -729,21 +729,19 @@ function homeRows(d) {
     return r;
   }
   var can = d.writable !== false;
-  if (!d.installed && !d.restorePending) {
-    r.push({ label: t('home.install', 'Install Glasshouse Home'), value: t('home.notInstalled', 'Not installed'), cls: 'off',
-             act: can ? 'homeInstall' : null, press: t('tv.home.install.press', 'Press OK to install it'),
-             hint: t('home.installDesc', 'Adds the Glasshouse Home app to the TV. Nothing changes until it is switched on: LG\u2019s Home stays the TV\u2019s Home.') });
-    return r;
-  }
   r.push({ label: d.restorePending ? t('home.retryRestore', 'Retry restoring LG Home') : t('home.title', 'Glasshouse Home'),
            value: d.restorePending ? t('home.restorePending', 'LG Home restoration is incomplete') : d.enabled ? t('common.on', 'On') : t('common.off', 'Off'), cls: d.enabled ? 'on' : 'off',
            act: can ? 'homeSwitch' : null, on: d.enabled || d.restorePending,
            press: d.enabled ? t('tv.home.switch.off', 'Press OK to use LG Home again') : t('tv.home.switch.on', 'Press OK to use Glasshouse Home'),
-           hint: d.restorePending ? t('home.restoreRetry', 'Retry restoring LG Home before changing or removing Glasshouse Home.') : d.enabled ? t('home.isOnDesc', 'The Home and Back buttons open it, and the TV starts on it unless it was switched off on an input.')
-                           : t('home.isOffDesc', 'Switching on keeps a copy of the TV\u2019s Home settings first, and switching off puts them back exactly.') });
-  r.push({ label: t('tv.home.open', 'Open Glasshouse Home'), value: '\u2192', cls: 'act', act: 'homeOpen',
-           press: t('tv.home.open.press', 'Press OK to open it'),
-           hint: t('tv.home.open.hint', 'Hold OK on it to move tiles and rows. Back while a tile is held hides or shows it.') });
+           hint: d.restorePending ? t('home.restoreRetry', 'Retry restoring LG Home before switching Glasshouse Home on again.')
+                 : d.enabled ? t('home.isOnDesc', 'It opens in LG\u2019s Home\u2019s place: with the Home and Back buttons, and when the TV wakes on Home.')
+                 : t('home.isOffDesc', 'Nothing of LG\u2019s is changed: Glasshouse Home is laid over LG\u2019s Home while on, and switching off takes it away.') });
+  // Opening Home opens Glasshouse Home only while it has LG's Home's place.
+  if (d.enabled && d.active) {
+    r.push({ label: t('tv.home.open', 'Open Glasshouse Home'), value: '\u2192', cls: 'act', act: 'homeOpen',
+             press: t('tv.home.open.press', 'Press OK to open it'),
+             hint: t('tv.home.open.hint', 'Hold OK on it to move tiles and rows. Back while a tile is held hides or shows it.') });
+  }
 
   var c = d.catalogue, lay = d.layout;
   if (c && lay) {
@@ -796,11 +794,6 @@ function homeRows(d) {
     r.push({ label: t('home.reset', 'Reset the layout'), value: '', act: can ? 'homeReset' : null,
              press: t('tv.home.reset.press', 'Press OK, then again, to reset'),
              hint: t('home.resetDesc', 'The rows, apps and inputs go back to their first order, with LG\u2019s promotions hidden again. Channels stay as they are.') });
-  }
-  if (!d.enabled && !d.restorePending) {
-    r.push({ label: t('home.remove', 'Remove the Glasshouse Home app'), value: '', act: can ? 'homeRemove' : null,
-             press: t('tv.home.remove.press', 'Press OK, then again, to remove it'),
-             hint: t('home.removeDesc', 'Takes the app off the TV. It can be installed again here.') });
   }
   return r;
 }
@@ -2284,15 +2277,6 @@ function activate() {
       return send({ action: 'refresherCancel' }, t('tv.oled.refresherCancelled', 'Refresher cancelled'));
     case 'saver':
       return send({ action: 'screensaverMode', value: r.key });
-    case 'homeInstall':
-      r.value = t('tv.home.installing', 'Installing\u2026');
-      render();
-      return sendPost('/api/home/install', {}, t('tv.home.installed', 'Glasshouse Home installed'));
-    case 'homeRemove':
-      if (confirmFirst(r, t('tv.home.remove.again', 'Press OK again to remove it'))) return;
-      r.value = t('tv.home.removing', 'Removing\u2026');
-      render();
-      return sendPost('/api/home/remove', {}, t('tv.home.removed', 'Glasshouse Home app removed'));
     case 'homeSwitch':
       if (confirmFirst(r, r.on ? t('home.confirmOff', 'Press again to use LG Home') : t('home.confirmOn', 'Press again to switch on'))) return;
       r.value = t('apps.service.updating', 'Updating\u2026');
@@ -2300,7 +2284,7 @@ function activate() {
       return sendPost(r.on ? '/api/home/disable' : '/api/home/enable', {},
                       r.on ? t('tv.home.off', 'LG\u2019s Home is the TV\u2019s Home again') : t('tv.home.on', 'Glasshouse Home is now the TV\u2019s Home'));
     case 'homeOpen':
-      return send({ action: 'launchApp', value: 'com.tvweb.home' });
+      return send({ action: 'launchApp', value: 'com.webos.app.home' });
     case 'homeRowUp':
       var rowsNow = homeData.layout.rows.slice(), ri = rowsNow.indexOf(r.key);
       rowsNow.splice(ri, 1);

@@ -1,6 +1,7 @@
 /**
  * test/test-tvwebctl.js - The watchdog restarts a wedged server, frees a stuck
- * child and clears a dead server's leftovers, and leaves a healthy one alone
+ * child and clears a dead server's leftovers, gives LG's Home its place back
+ * after repeated restarts, and leaves a healthy one alone
  *
  * Runs server/tvwebctl itself against test/mocks/fake-server.js, with its
  * files in a temporary directory and its timings shortened. Needs Linux's
@@ -145,6 +146,15 @@ waitFor('the server and its heartbeat', function () { return alive(serverPid()) 
                 if (alive(leftover.pid)) return finish(1, 'the leftover copy is still running');
                 console.log('  ✓ a dead server\'s leftover copy is cleared before a new one starts');
 
+                // 4b. A third restart inside ten minutes gives LG's Home its
+                // place back, as Glasshouse Home's page would wait on black
+                var third = serverPid();
+                process.kill(third, 'SIGKILL');
+                waitFor('LG\'s Home given back', function () {
+                  return /3 restarts in 600s - LG's Home given back/.test(read(RESTARTS)) && serverPid() !== third && alive(serverPid());
+                }, 20000, function () {
+                console.log('  ✓ a third restart in ten minutes gives LG\'s Home its place back, and the server still starts');
+
                 // 5. A second watchdog, as two starts at one moment leave, is
                 // cleared by a restart, and a start beside one adds none
                 var extra = child.spawn('sh', [fs.realpathSync(CTL), 'watch'], { env: env, detached: true, stdio: 'ignore' });
@@ -159,6 +169,7 @@ waitFor('the server and its heartbeat', function () { return alive(serverPid()) 
                     console.log('  ✓ a restart clears an extra watchdog, and a start adds none');
                     finish(0);
                   });
+                });
                 });
               });
             });

@@ -12,21 +12,20 @@ html,body{height:100%;background:#000;color:#ece7df;overflow:hidden;font-family:
 </style>
 </head>
 <body>
-<div id="status">Glasshouse Home is starting. Press OK for LG's Home.</div>
+<div id="status">Glasshouse Home is starting.</div>
 <script>
 /*
- * Glasshouse Home's app, which the TV opens as its Home. The view itself is
- * served by the Glasshouse server on this TV; this page opens it once the
- * server answers. After a cold start the TV opens this app about 15 s in and
- * the server answers some 30 s later (a G3, webOS 9.2), so the page waits on
- * black rather than showing LG's Home in between. OK opens LG's Home at once,
- * as does no answer within GIVE_UP_MS, so a server that never starts cannot
- * leave the TV on a black screen. Holding Home needs the server, so it does
- * not work here. Asking goes on: the server, once started, brings Glasshouse
- * Home back.
+ * Glasshouse Home's app, which the TV opens as its Home: mounted over LG's
+ * Home under its id (lib/home-takeover.js). The view itself is served by the
+ * Glasshouse server on this TV; this page opens it once the server answers.
+ * After a cold start the boot hook mounts it about 25 s in and the server
+ * answers some 10 s later (a G3, webOS 9.2), so the page waits on black in
+ * between. Being LG's Home's app, it cannot open LG's Home: a server that does
+ * not come back is the watchdog's to undo (tvwebctl), which puts LG's Home
+ * back in its place.
  */
 (function () {
-  var GIVE_UP_MS = 90000;
+  var SLOW_MS = 30000;
   var started = Date.now();
   var done = false;
 
@@ -47,20 +46,11 @@ html,body{height:100%;background:#000;color:#ece7df;overflow:hidden;font-family:
     location.replace('http://localhost:8080/assets/home.html?t=' + Date.now() + preview());
   }
 
-  var askedLg = false;
-  function lgHome() {
-    if (askedLg) return;
-    askedLg = true;
-    document.getElementById('status').textContent = 'Glasshouse is not answering yet. Opening LG\'s Home.';
-    try {
-      var bridge = new window.PalmServiceBridge();
-      bridge.call('luna://com.webos.applicationManager/launch', JSON.stringify({ id: 'com.webos.app.home' }));
-    } catch (e) {}
-  }
-
   function retry() {
-    if (Date.now() - started >= GIVE_UP_MS) lgHome();
-    setTimeout(probe, askedLg ? 2000 : 600);
+    if (Date.now() - started >= SLOW_MS) {
+      document.getElementById('status').textContent = 'Glasshouse is not answering yet. LG\'s Home comes back if it stays silent.';
+    }
+    setTimeout(probe, 600);
   }
 
   function probe() {
@@ -73,13 +63,6 @@ html,body{height:100%;background:#000;color:#ece7df;overflow:hidden;font-family:
     x.send();
   }
 
-  document.addEventListener('keydown', function (e) {
-    if (e.keyCode !== 13 || done) return;
-    e.preventDefault();
-    // Asked again on every press: LG's Home may not open this early after a cold start.
-    askedLg = false;
-    lgHome();
-  }, true);
   setTimeout(function () { if (!done) document.getElementById('status').className = 'on'; }, 1500);
   probe();
 })();

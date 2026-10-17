@@ -160,6 +160,32 @@ if [ -f /var/lib/tvweb/screensaver/.tvweb-screensaver ]; then
   fi
 fi
 
+# Glasshouse Home in LG's Home's place (lib/home-takeover.js). LG's Home has
+# started about 5 s into boot, in the background, on the empty layout the
+# server left it, so anything opening Home before now showed black; once sam
+# reads the mounted manifest it is stopped, and the TV opens Glasshouse Home's
+# page as Home from then on. Where sam does not take it, LG's files go back
+# under it, its own layout too, and it restarts on that. The server does the
+# same at its start, for a hook that did not run.
+homeapp=/usr/palm/applications/com.webos.app.home
+homestage=/var/lib/tvweb/home-takeover
+if [ "$webos_major" = "9" ] && [ -f "$homestage/appinfo.json" ] &&
+   grep -q '"enabled"[[:space:]]*:[[:space:]]*true' /var/lib/tvweb/home.json 2>/dev/null; then
+  mount --bind "$homestage" "$homeapp" 2>/dev/null || true
+  if sam_nudge && sam_reports com.webos.app.home '"type": *"web"'; then
+    pid=$(pidof com.webos.app.home)
+    [ -n "$pid" ] && kill $pid 2>/dev/null
+    echo "$(date): Glasshouse Home is in LG's Home's place"
+  else
+    umount "$homeapp" 2>/dev/null
+    sam_nudge
+    /usr/bin/node /var/lib/tvweb/lib/home-takeover.js --release >/dev/null 2>&1
+    pid=$(pidof com.webos.app.home)
+    [ -n "$pid" ] && kill $pid 2>/dev/null
+    echo "$(date): sam did not take Glasshouse Home - LG's Home kept"
+  fi
+fi
+
 # Restore hidden built-in app overrides if tile hiding is enabled and allowed.
 # Not on a Homebrew Channel install, which does not offer it: restarting the app
 # manager mid-boot is a risk that store asks its apps not to take.

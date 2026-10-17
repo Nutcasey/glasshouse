@@ -57,7 +57,7 @@ Switches parts of LG's Home screen off, for a Home screen with only the apps and
 * **App tiles**: the row of apps and inputs.
 * **Recent Input and Device Functions**: the last input used, and cards for editing the app list, the TV guide, the user guide and Home Hub.
 
-At least one part stays. A change takes a few seconds, while the Home screen starts again, and lasts through restarts and power cuts. The rows further down, such as Live TV and LG Channels, come from LG's servers and stay.
+At least one part stays. A change takes a few seconds, while the Home screen starts again, and lasts through restarts and power cuts. While [Glasshouse Home](home.md) is on, LG's Home screen is not changed here; the layout set here is kept, and is what LG's Home shows when opened from Glasshouse Home or once Glasshouse Home is switched off. The rows further down, such as Live TV and LG Channels, come from LG's servers and stay.
 
 **Inputs on Home** shows each HDMI input as a tile, dimmed while it is not on Home; choosing one adds or removes the Home screen's tile for it, named as the TV names the input. The input tiles go before the apps, in HDMI order; adding one moves any input tiles moved elsewhere back to the front, and starts the Home screen again to show it. It is LG's own tile for the input, so it can be moved or removed on the TV like any other.
 

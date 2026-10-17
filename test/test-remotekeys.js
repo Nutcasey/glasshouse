@@ -66,14 +66,24 @@ function exists(p) { try { fs.statSync(p); return true; } catch (e) { return fal
 // broken: 'launch' makes the launch throw, 'symbols' leaves WebOS undefined.
 function loadFilter(broken) {
   var launched = [];
+  var sent = [];
   var subscribed = null;
   var ctx = {
     WebOS: { Key_webOS_Netflix: 1001, Key_webOS_Amazon: 1002, Key_webOS_TVGuide: 1003, Key_webOS_Red: 1004 },
     Qt: { Key_Super_L: 2001 },
     KeyPolicy: { NextPolicy: 'next', Accepted: 'accepted', NotAccepted: 'notAccepted' },
-    lunaCall: { subscribe: function (service, method, payload, cb) {
-      subscribed = { service: service, method: method, payload: JSON.parse(payload), cb: cb };
-    } },
+    lunaCall: {
+      appId: 'com.webos.surfacemanager',
+      subscribe: function (service, method, payload, cb) {
+        subscribed = { service: service, method: method, payload: JSON.parse(payload), cb: cb };
+      },
+      // sam answers for LG's Home with the type tv.homeType gives.
+      send: function (service, method, payload, cb) {
+        sent.push({ uri: service + method, payload: JSON.parse(payload) });
+        if (method === '/getAppInfo') cb(JSON.stringify({ returnValue: true, appInfo: { type: tv.homeType } }));
+        else if (cb) cb(JSON.stringify({ returnValue: true }));
+      }
+    },
     applicationManager: { launch: function (id, params) {
       if (broken === 'launch') throw new Error('no such app');
       launched.push({ id: id, params: params });
@@ -89,7 +99,7 @@ function loadFilter(broken) {
     subscribed.cb(JSON.stringify({ returnValue: true, configs: configs }));
   }
   tell(tv.keys);
-  return { handle: ctx.handler, launched: launched, subscribed: subscribed, tell: tell };
+  return { handle: ctx.handler, launched: launched, sent: sent, subscribed: subscribed, tell: tell };
 }
 
 // Each step takes next(); a failure ends the run.
@@ -325,6 +335,38 @@ step(function (next) {
         console.log('  \u2713 Glasshouse Home gives the Home key back, and reports a failed save without claiming it was cleared');
         next();
       }));
+    }));
+  }));
+});
+
+step(function (next) {
+  rk.setStarting('Glasshouse Home is starting.', guard(function (s) {
+    assert.strictEqual(s.ok, true);
+    assert.strictEqual(tv.keys.starting, 'Glasshouse Home is starting.');
+    tv.homeType = 'native';
+    var f = loadFilter();
+    // Before the boot hook has put Glasshouse Home in LG's Home's place.
+    assert.strictEqual(f.handle(2001, true, false), 'accepted');
+    assert.strictEqual(f.handle(2001, false, false), 'accepted', 'the release is kept from LG\'s filters too');
+    assert.deepEqual(f.launched, []);
+    var toast = f.sent.filter(function (c) { return c.uri === 'com.webos.notification/createToast'; });
+    assert.strictEqual(toast.length, 1);
+    assert.strictEqual(toast[0].payload.message, 'Glasshouse Home is starting.');
+    // In place: the press opens Home, and later presses go to LG's filters as usual.
+    tv.homeType = 'web';
+    assert.strictEqual(f.handle(2001, true, false), 'accepted');
+    assert.strictEqual(f.handle(2001, false, false), 'accepted');
+    assert.deepEqual(f.launched.map(function (l) { return l.id; }), ['com.webos.app.home']);
+    assert.strictEqual(f.handle(2001, true, false), 'next');
+    assert.strictEqual(f.handle(2001, false, false), 'next');
+    rk.setStarting('', guard(function (s2) {
+      assert.strictEqual(s2.ok, true);
+      assert.strictEqual(tv.keys.starting, undefined);
+      tv.homeType = 'native';
+      var g = loadFilter();
+      assert.strictEqual(g.handle(2001, true, false), 'next', 'switched off, Home is LG\'s');
+      console.log('  \u2713 while Glasshouse Home is on and not yet in place, Home stays where it is and says it is starting; once in place it opens Home');
+      next();
     }));
   }));
 });

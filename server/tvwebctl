@@ -185,6 +185,34 @@ free_stuck_children() {
   done
 }
 
+# LG's Home back in its place, where Glasshouse Home has it. home.json is left
+# as it is, so the server takes the place again when it next starts.
+release_home() {
+  [ -x "$NODE" ] || return 0
+  "$NODE" "$(dirname "$SELF")/lib/home-takeover.js" --release >/dev/null 2>&1
+}
+
+# A server restarted this many times in RESTART_WINDOW seconds is not coming
+# back soon: Glasshouse Home's page would wait on black, so LG's Home gets its
+# place back until a server stays up.
+RESTART_LIMIT=${TVWEB_RESTART_LIMIT:-3}
+RESTART_WINDOW=${TVWEB_RESTART_WINDOW:-600}
+restarts_since=0
+restarts=0
+counted_restart() {
+  now=$(date +%s)
+  if [ $(( now - restarts_since )) -gt "$RESTART_WINDOW" ]; then
+    restarts_since=$now
+    restarts=0
+  fi
+  restarts=$(( restarts + 1 ))
+  [ "$restarts" -lt "$RESTART_LIMIT" ] && return
+  # Each restart past the limit too: a server that started has taken it again.
+  [ "$restarts" -eq "$RESTART_LIMIT" ] &&
+    echo "$(date): $restarts restarts in ${RESTART_WINDOW}s - LG's Home given back its place" >> "$RESTARTS"
+  release_home
+}
+
 # The watchdog loop. Runs as its own detached process; restarts only the app,
 # never itself, so a restart cannot orphan the watchdog.
 #
@@ -226,6 +254,7 @@ watch_loop() {
     free_stuck_children "$(cat "$PIDFILE" 2>/dev/null)"
     if ! kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null; then
       echo "$(date): process gone - starting" >> "$RESTARTS"
+      counted_restart
       # A child the server left stuck before exec outlives it, still holding
       # the port: each new server then died on EADDRINUSE, restarted every
       # round for ten minutes on a B8. stop_app clears every copy first.
@@ -258,6 +287,7 @@ watch_loop() {
     stale=$(( stale + 1 ))
     [ "$stale" -lt 2 ] && continue
     echo "$(date): heartbeat ${age}s old on two checks - event loop wedged, restarting" >> "$RESTARTS"
+    counted_restart
     stop_app; sleep 1; start_app
     stale=0
   done
@@ -298,7 +328,9 @@ rollback_app() {
 
 case "$1" in
   start)   start_app; start_watch ;;
-  stop)    stop_watch; stop_app ;;
+  # Glasshouse Home's page is only a wait for the server, so a server stopped
+  # on purpose gives LG's Home its place back; its next start takes it again.
+  stop)    stop_watch; stop_app; release_home ;;
   restart) stop_watch; stop_app; sleep 1; start_app; start_watch ;;
   watch)   watch_loop ;;
   update)  update_app "$2" ;;
@@ -307,7 +339,7 @@ case "$1" in
   restore-home) "$NODE" "$(dirname "$SELF")/lib/homescreen.js" --restore ;;
   # Before uninstalling: the remote's keys as LG has them.
   restore-keys) "$NODE" "$(dirname "$SELF")/lib/remotekeys.js" --restore ;;
-  # LG's Home as the TV's Home again, with the settings Glasshouse Home changed put back.
+  # LG's Home as the TV's Home again, and Glasshouse Home switched off.
   restore-glasshouse-home) "$NODE" "$(dirname "$SELF")/lib/home.js" --restore ;;
   status)
     if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then

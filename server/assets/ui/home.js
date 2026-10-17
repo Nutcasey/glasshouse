@@ -4,7 +4,7 @@ let homeStatus = null;
 let homeCat = null;      // what the TV's Home lists: apps, devices, picked channels, order
 let homeLayout = null;
 let homeChannels = null; // the TV's whole channel list, for picking
-let homeArmed = null;    // the button waiting for its second press: 'on', 'off' or 'remove'
+let homeArmed = null;    // the switch waiting for its second press: 'on' or 'off'
 let homeArmTimer = null;
 let homeSaving = false;
 let homeLoadRevision = 0;
@@ -72,37 +72,24 @@ function renderHome() {
   if (!st || !state) return;
   if (st.restorePending) {
     state.textContent = t('home.restorePending', 'LG Home restoration is incomplete');
-    desc.textContent = t('home.restoreRetry', 'Retry restoring LG Home before changing or removing Glasshouse Home.');
+    desc.textContent = t('home.restoreRetry', 'Retry restoring LG Home before switching Glasshouse Home on again.');
   } else if (!st.supported.ok) {
     state.textContent = t('home.unavailable', 'Not available on this TV');
     desc.textContent = st.supported.reason || '';
-  } else if (!st.installed) {
-    state.textContent = t('home.notInstalledTitle', 'Glasshouse Home is not installed');
-    desc.textContent = t('home.installDesc', 'Adds the Glasshouse Home app to the TV. Nothing changes until it is switched on: LG\u2019s Home stays the TV\u2019s Home.');
   } else if (st.enabled) {
     state.textContent = t('home.isOn', 'Glasshouse Home is the TV’s Home');
-    desc.textContent = st.active
-      ? t('home.isOnDesc', 'The Home and Back buttons open it, and the TV starts on it unless it was switched off on an input.')
-      : t('home.isOnPending', 'Switched on, but the TV does not yet name it as Home. It is set again within ten minutes.');
+    desc.textContent = st.lgHomeOpen
+      ? t('home.isOnLgOpen', 'LG’s Home is open for now. Glasshouse Home comes back when something else is opened, or Home is pressed.')
+      : st.active
+        ? t('home.isOnDesc', 'It opens in LG’s Home’s place: with the Home and Back buttons, and when the TV wakes on Home.')
+        : t('home.isOnPending', 'Switched on, but LG’s Home is still in its place. Switching off and on again tries once more.');
   } else {
     state.textContent = t('home.isOff', 'LG’s Home is the TV’s Home');
-    desc.textContent = t('home.isOffDesc', 'Switching on keeps a copy of the TV’s Home settings first, and switching off puts them back exactly.');
+    desc.textContent = t('home.isOffDesc', 'Nothing of LG’s is changed: Glasshouse Home is laid over LG’s Home while on, and switching off takes it away.');
   }
   const more = q('home-more');
-  if (more) more.hidden = !st.supported.ok || !st.installed;
-  const removeRow = q('home-remove-row');
-  if (removeRow) removeRow.hidden = !st.installed || st.enabled || st.restorePending;
-  const removeBtn = q('home-remove');
-  if (removeBtn) {
-    removeBtn.disabled = !homeWritable();
-    removeBtn.className = 'pill ' + (homeArmed === 'remove' ? 'warn' : 'idle');
-    removeBtn.textContent = homeArmed === 'remove' ? t('home.confirmRemove', 'Press again to remove') : t('home.removeBtn', 'Remove');
-  }
-  if (btn && st.supported.ok && !st.installed && !st.restorePending) {
-    btn.disabled = !homeWritable();
-    btn.className = 'pill idle';
-    btn.textContent = t('home.install', 'Install Glasshouse Home');
-  } else if (btn) {
+  if (more) more.hidden = !st.supported.ok;
+  if (btn) {
     const wantOn = !(st.enabled || st.restorePending);
     const armed = homeArmed === (wantOn ? 'on' : 'off');
     btn.disabled = !homeWritable();
@@ -111,33 +98,12 @@ function renderHome() {
       ? (wantOn ? t('home.confirmOn', 'Press again to switch on') : t('home.confirmOff', 'Press again to use LG Home'))
       : (st.restorePending ? t('home.retryRestore', 'Retry restoring LG Home') : wantOn ? t('home.switchOn', 'Use Glasshouse Home') : t('home.switchOff', 'Use LG Home'));
   }
-  const snap = q('home-snapshot');
-  if (snap) {
-    snap.hidden = !st.snapshot;
-    if (st.snapshot) {
-      const s = st.snapshot.settings;
-      snap.textContent = t('home.snapshotSaved', 'Saved {when}: Home was {home}, and the TV started on {input}.', {
-        when: new Date(st.snapshot.takenAt).toLocaleString(),
-        home: (s.defaultApps && s.defaultApps.home) || t('home.lgHome', 'LG Home'),
-        input: homeAppName(s.lastInputApp)
-      });
-    }
-  }
   const hist = q('home-history-note');
   if (hist) hist.hidden = st.history;
   renderHomeRows();
   renderHomeChannels();
   renderHomeWalls();
   q('home-reset').disabled = !homeWritable();
-}
-
-// An input's app id as the TV names the input: HDMI 2, Live TV.
-function homeAppName(id) {
-  const m = /^com\.webos\.app\.hdmi(\d)$/.exec(id || '');
-  if (m) return t('home.dev.port', 'HDMI {port}', { port: m[1] });
-  if (id === 'com.webos.app.livetv') return t('home.liveTv', 'Live TV');
-  if (id === 'com.tvweb.home') return t('home.title', 'Glasshouse Home');
-  return id || '\u2014';
 }
 
 function homeItem(kind, id) {
@@ -234,34 +200,9 @@ function homeToggleTile(kind, id) {
 
 function homeResetLayout() { homeSaveLayout({ reset: true }); }
 
-function homeArm(what) {
-  homeArmed = what;
-  clearTimeout(homeArmTimer);
-  homeArmTimer = setTimeout(() => { homeArmed = null; renderHome(); }, 5000);
-  renderHome();
-}
-
-async function homeInstall() {
-  const btn = q('home-switch');
-  if (btn) { btn.disabled = true; btn.textContent = t('tv.home.installing', 'Installing\u2026'); }
-  try { await homePost('/api/home/install'); } catch (e) { showErr(e.message); }
-  loadHome();
-}
-
-async function homeRemove() {
-  if (homeArmed !== 'remove') return homeArm('remove');
-  homeArmed = null;
-  clearTimeout(homeArmTimer);
-  const btn = q('home-remove');
-  if (btn) { btn.disabled = true; btn.textContent = t('tv.home.removing', 'Removing\u2026'); }
-  try { await homePost('/api/home/remove'); } catch (e) { showErr(e.message); }
-  loadHome();
-}
-
 // The master switch: one press arms it, a second within five seconds acts.
 async function homeSwitch() {
   if (!homeWritable()) return;
-  if (!homeStatus.installed && !homeStatus.enabled && !homeStatus.restorePending) return homeInstall();
   const want = homeStatus.enabled || homeStatus.restorePending ? 'off' : 'on';
   if (homeArmed !== want) {
     homeArmed = want;

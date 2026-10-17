@@ -24,6 +24,7 @@ var msg = require('./say').msg;
 
 var HOME_ID = 'com.webos.app.home';
 var MARK = '<!-- glasshouse -->';
+var TAKEOVER_MARK = require('./home-takeover').BLANK_MARK;
 
 // LG's item type for each part, in the order the Home screen shows them.
 var PARTS = [
@@ -90,6 +91,14 @@ function supported() {
   if (ok) ok = layoutFiles().every(function (f) { var t = readText(f); return t === null || t.indexOf(MARK) !== -1; });
   supportedCache = ok;
   return ok;
+}
+
+/*
+ * Glasshouse Home gives LG's Home an empty layout to start with while it has
+ * its place, and puts the files here back after (lib/home-takeover.js).
+ */
+function glasshouseHomeOn() {
+  return layoutFiles().some(function (f) { var t = readText(f); return t !== null && t.indexOf(TAKEOVER_MARK) !== -1; });
 }
 
 // { partId: shown }: everything is shown while there is no file of ours.
@@ -162,6 +171,7 @@ function removeOurs() {
  * error }) once the home app has been restarted.
  */
 function setPart(id, shown, cb) {
+  if (glasshouseHomeOn()) return cb({ ok: false, error: msg('srv.home.glasshouseHomeOn', 'Glasshouse Home is in LG\'s Home\'s place. Switch it off on the Home tab to change LG\'s Home screen.') });
   if (!supported()) return cb({ ok: false, error: msg('srv.home.unsupported', 'This TV\'s Home screen cannot be changed from here') });
   if (!PARTS.some(function (p) { return p.id === id; })) return cb({ ok: false, error: msg('srv.home.unknownPart', 'There is no such part of the Home screen') });
   var next = readParts();

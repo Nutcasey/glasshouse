@@ -952,22 +952,14 @@
 </section>
 
 <section class="priv panel" id="homepane" role="tabpanel" hidden>
-  <div class="pv-note warn" data-t="home.experimental">Experimental. Glasshouse Home replaces LG's Home screen with Glasshouse's own. It has been tried on webOS 9 only. After the TV starts from cold, Glasshouse Home takes about a minute to appear, and Home pressed before then can show LG's Home briefly. With Quick Boot on, switching off with the remote avoids this.</div>
+  <div class="pv-note warn" data-t="home.experimental">Experimental. Glasshouse Home replaces LG's Home screen with Glasshouse's own. It has been tried on webOS 9 only. In the first half minute after the TV starts from cold, Home opens LG's Home.</div>
   <div class="prot-table">
     <div class="prot-row">
       <div class="prot-main">
         <div class="prot-title" id="home-state">&mdash;</div>
         <div class="prot-desc" id="home-state-desc"></div>
-        <div class="prot-desc" id="home-snapshot" hidden></div>
       </div>
       <div class="prot-status"><button type="button" class="pill idle" id="home-switch" onclick="homeSwitch()">&mdash;</button></div>
-    </div>
-    <div class="prot-row" id="home-remove-row" hidden>
-      <div class="prot-main">
-        <div class="prot-title" data-t="home.remove">Remove the Glasshouse Home app</div>
-        <div class="prot-desc" data-t="home.removeDesc">Takes the app off the TV. It can be installed again here.</div>
-      </div>
-      <div class="prot-status"><button type="button" class="pill idle" id="home-remove" onclick="homeRemove()">&mdash;</button></div>
     </div>
   </div>
 

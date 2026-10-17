@@ -20,7 +20,7 @@ webOS 10's home app keeps its layout on the TV's read-only system and looks nowh
 
 ## Glasshouse Home
 
-A home screen of Glasshouse's own in place of LG's, switched on from its own [Home tab](dashboard/home.md) rather than under Advanced. It is offered only on webOS 9, where it has been tried (a G3 with webOS 9.2.2), and it changes LG's own settings for which app is Home and the input the TV starts on; switching it off puts back the values saved before it was first switched on. Its view, its server and its app each fall back to LG's Home when one of them is not answering.
+A home screen of Glasshouse's own in place of LG's, switched on from its own [Home tab](dashboard/home.md) rather than under Advanced. It is offered only on webOS 9, where it has been tried (a G3 with webOS 9.2.2), and while on it is laid over LG's Home app in its place, which switching off takes away; no TV setting is changed. A view that stops answering, and a server that stops or keeps failing, each give LG's Home its place back.
 
 ## Why the first two are experimental
 

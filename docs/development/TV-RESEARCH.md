@@ -77,6 +77,68 @@ Measured on 17 October 2026 by rebooting over SSH with `lastInputApp` naming `co
 - Home pressed (over SSAP) at about 37 s brought LG's Home to the front: drawn in one run, black for about 6 s in another. The compositor key filter that sends Home to `com.tvweb.home` from the server's start onwards had not done so.
 - `/var/log` holds CRIU dump and restore logs for `com.webos.app.home` and `com.webos.app.inputcommon`, so those two are restored from snapshots at boot; whether that is why the started app is not drawn is not established.
 
+## Replacing LG's Home under its id (webOS 9.2.2, G3)
+
+Measured on 17 October 2026 on an OLED55G36LA with a web app's directory
+bind-mounted over `/usr/palm/applications/com.webos.app.home`, its
+`appinfo.json` naming `com.webos.app.home` with `type: "web"`.
+
+- **sam takes the type change.** After a `profile.blockedAppList` nudge,
+  `getAppInfo` reported the app as `web` with `systemApp: true` and
+  `defaultWindowType: "card"`, read on the first poll. Unmounting and nudging
+  again brought back `native`.
+- **Everything that opens Home opens it.** The Home button (surface-manager,
+  `mode: "hotKey"`) drew it 0.08 s after the press, Back out of the last app
+  and closing the app in front (sam's `last_input_handler`, `mode:
+  "last_input"`) 0.06 s after the launch, and waking from standby
+  (`bootManager`) on Home. LG's Home never drew. LG's own Home is a card
+  window too (`NL_VSC` `_WEBOS_WINDOW_TYPE_CARD`), and WebAppMgr has no home
+  window type. The compositor launches it with `{"activateType": "home",
+  "launchType": "homeKey"}`.
+- **Nothing calls LG's Home as a service.** No `luna://com.webos.app.home`
+  appears under `/usr/lib/qt5/qml` or `/usr/palm/applications`; the
+  compositor's key filters name the id only to launch it. Toasts sent with
+  `sourceId` `com.webos.app.home` still showed.
+- **The type must not change under a running instance.** With the web page
+  still running, sam rereading LG's native manifest left `running` listing a
+  `native` app with the web page's process: `closeByAppId` answered
+  "Message status unknown", the next `launch` hung for 8 s, and the screen
+  went black until Live TV was launched. `closeByAppId` on the web app only
+  sends it to the background; WebAppMgr's `killApp { appId }` ends it, and
+  sam then drops it.
+- **The working order** is: mount or unmount, nudge, then stop the old
+  instance (kill LG's process, or `killApp` the page). Where that instance was
+  in front, `last_input_handler` launched Home again 1.0 to 1.2 s later, as
+  the new app. Each direction took 2.1 to 2.2 s, nearly all of it the nudge's
+  wait. Killed in the background, LG's Home was not started again.
+- **LG's Home started fresh** took about 3 s to draw: its window was visible
+  1.2 s after the switch and it logged `NL_HOME_SHOWN` 1.9 s after that.
+  Restored from its snapshot it drew in 0.2 to 0.3 s.
+- **Cold start.** LG's Home starts 5 s into boot (`BootTimeApps` in
+  `/etc/palm/sam-conf-tv.json`), in the background while the TV shows its last
+  input (12.6 s). A webosbrew `init.d` hook ran at 24.8 s; mounted, nudged and
+  with LG's process killed it was done at 28.5 s, and Home pressed afterwards
+  opened the web app. The mount does not survive a reboot.
+- **Standby.** The mount and sam's reading of it outlast suspend: switched on
+  with the remote, `bootManager` launched the web app as Home.
+- **An empty layout hides LG's Home before the hook.** With
+  `home_layoutShelfView.xml` and `home_layout.xml` in
+  `/mnt/lg/cmn_data/manifest` holding a `<layout type="ShelfView"
+  bgColor="#000000">` with an empty `<firstPage>`, LG's Home started fresh logged
+  `NL_HOME_SHOWN` and drew a completely black screen, keys included. At boot it
+  started fresh and read it: with the hooks held back 25 s by a test hook, Home
+  pressed at 32.8 s showed LG's Home, black (every captured pixel 0), until the
+  mount at about 53 s. Its wallpaper comes only from its own bundled images
+  (`backgroundImageId` opt1 to opt3), so the layout cannot show anything else.
+- **The key filter can answer Home before any hook.** Glasshouse's filter,
+  loaded by surface-manager from configd, called
+  `lunaCall.send("com.webos.applicationManager", "/getAppInfo", ...)` and
+  `lunaCall.send("com.webos.notification", "/createToast", ...)` with
+  `sourceId` `lunaCall.appId`, as LG's `appLaunch.js` does. With the hooks held
+  back, Home pressed at 27.9 s with nothing mounted showed the toast 0.04 s
+  later, over HDMI 4, and LG's Home was not launched; pressed at 54.2 s, after
+  the mount, it opened the web app in 0.19 s.
+
 ## Channels and the guide (G3, webOS 9.2.2)
 
 - `com.webos.service.apiadapter/tv/getChannelList` (the method behind SSAP's
