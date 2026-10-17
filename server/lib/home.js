@@ -850,14 +850,32 @@ function tryRemoveLegacyApp() {
       if (installed === false) legacyAppPending = false;
       return;
     }
-    luna('com.webos.applicationManager/running', {}, function (r) {
-      var list = r && isArray(r.running) ? r.running : null;
-      if (!list || list.some(function (a) { return a && a.id === HOME_APP; })) {
-        legacyAppRemoving = false;
-        return;
-      }
-      removeLegacyApp(function () { legacyAppRemoving = false; });
+    // Its appinfo keeps it running in the background, so on a G3 it stayed
+    // until the TV restarted. Its page is closed through WebAppMgr, and the
+    // removal still waits until sam no longer lists it.
+    legacyAppRunning(function (running) {
+      if (running !== true) return removeIfStopped(running);
+      luna('com.palm.webappmanager/killApp', { appId: HOME_APP }, function () {
+        legacyAppRunning(removeIfStopped);
+      });
     });
+  });
+}
+
+function removeIfStopped(running) {
+  if (running !== false) {
+    legacyAppRemoving = false;
+    return;
+  }
+  removeLegacyApp(function () { legacyAppRemoving = false; });
+}
+
+// true or false, or null where sam's list could not be read.
+function legacyAppRunning(cb) {
+  luna('com.webos.applicationManager/running', {}, function (r) {
+    var list = r && isArray(r.running) ? r.running : null;
+    if (!list) return cb(null);
+    cb(list.some(function (a) { return a && a.id === HOME_APP; }));
   });
 }
 

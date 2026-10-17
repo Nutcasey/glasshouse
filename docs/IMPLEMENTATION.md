@@ -1218,7 +1218,10 @@ Earlier builds made a separate app, `com.tvweb.home`, the TV's Home
 through `defaultApps.home`, the start-up app settings and the remote key
 filter. At start, `cleanLegacy` puts back each of those that still names it
 (the start-up app as the old snapshot had it, or Live TV), clears the key
-filter's Home, and removes the app once nothing has it open.
+filter's Home, and removes the app once nothing has it open. The old app's
+appinfo keeps it running in the background after it is left, so its page is
+closed through WebAppMgr's `killApp` first; removal still waits until sam no
+longer lists it as running.
 The snapshot and old app are kept until settings and key restoration succeed;
 snapshot values for an earlier Home or idle app are restored too. Switching
 off repeats this cleanup, including from the SSH recovery command.

@@ -138,6 +138,15 @@ bind-mounted over `/usr/palm/applications/com.webos.app.home`, its
   back, Home pressed at 27.9 s with nothing mounted showed the toast 0.04 s
   later, over HDMI 4, and LG's Home was not launched; pressed at 54.2 s, after
   the mount, it opened the web app in 0.19 s.
+- **Back out of an app before the hook** also reaches LG's Home, through
+  `last_input_handler`, not the key filter. Closing the browser at 45.9 s,
+  with the hooks held back, showed the empty layout's black screen (every
+  captured pixel 0); Home pressed over it at 51 s showed the toast.
+- **A left web app keeps running.** `com.tvweb.home`, an earlier build's Home
+  app with `closeOnBackground` false, stayed in `applicationManager/running`
+  after another app came to the front, for minutes, so a removal waiting for
+  it to stop never came. `com.palm.webappmanager/killApp` with its id closed
+  it; sam stopped listing it, and its removal went through.
 
 ## Channels and the guide (G3, webOS 9.2.2)
 

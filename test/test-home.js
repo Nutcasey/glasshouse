@@ -133,9 +133,12 @@ function luna(uri, p, cb) {
     if (p.id === LG_HOME) r.appInfo = { id: LG_HOME, type: tv.samType };
     else if (!tv.oldAppInstalled) r = { returnValue: false, errorText: 'Invalid appId specified' };
   } else if (uri === 'com.palm.webappmanager/killApp') {
-    tv.events.push('close page');
+    if (p.appId === OLD_APP) {
+      tv.events.push('close old app');
+      tv.oldAppRunning = !!tv.oldAppStuck;
+    } else tv.events.push('close page');
   } else if (uri === 'com.webos.applicationManager/running') {
-    r.running = [];
+    r.running = tv.oldAppRunning ? [{ id: OLD_APP }] : [];
   } else if (uri === 'com.webos.applicationManager/launch') {
     tv.launched.push(p.id);
   } else if (uri === 'com.webos.applicationManager/listLaunchPoints') {
@@ -401,6 +404,29 @@ step('settings and the Home key an earlier build pointed at its app are put back
     home.start();
     wait(50, function () {
       assert.deepEqual(tv.events, []);
+      done();
+    });
+  });
+});
+
+step('the old app left running in the background is closed, and removed only once it has stopped', function (done) {
+  var removed = 0;
+  function startWithOldApp(stuck) {
+    start({ enabled: true }, {
+      installApp: function (action, cb) { removed++; tv.oldAppInstalled = false; cb({ ok: true }); }
+    });
+    tv.oldAppInstalled = true;
+    tv.oldAppRunning = true;
+    tv.oldAppStuck = stuck;
+    home.start();
+  }
+  startWithOldApp(true);
+  wait(80, function () {
+    assert.ok(tv.events.indexOf('close old app') !== -1, 'its page is closed');
+    assert.strictEqual(removed, 0, 'not removed while sam still lists it');
+    startWithOldApp(false);
+    wait(80, function () {
+      assert.strictEqual(removed, 1, 'removed once it has stopped');
       done();
     });
   });
