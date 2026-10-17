@@ -119,9 +119,14 @@ function kill(pid) {
 function luna(uri, p, cb) {
   var r = { returnValue: true };
   if (uri === 'com.webos.service.settings/getSystemSettings') {
+    if (tv.settingsReadFails) return process.nextTick(function () { cb({ returnValue: false }); });
     r.settings = {};
     p.keys.forEach(function (k) { if (tv.settings[k] !== undefined) r.settings[k] = copy(tv.settings[k]); });
   } else if (uri === 'com.webos.service.settings/setSystemSettings') {
+    if ((tv.settingsWriteFails && p.settings.screenSaverEnabled === undefined) ||
+        (tv.saverWriteFails && p.settings.screenSaverEnabled !== undefined)) {
+      return process.nextTick(function () { cb({ returnValue: false }); });
+    }
     tv.events.push('settings ' + Object.keys(p.settings).join(','));
     for (var k in p.settings) tv.settings[k] = copy(p.settings[k]);
   } else if (uri === 'com.webos.applicationManager/getAppInfo') {
@@ -312,6 +317,7 @@ step('the LG Home tile gives LG\'s Home its place until something else is in fro
       assert.ok(r.ok, r.error);
       assert.strictEqual(tv.samType, 'native');
       assert.deepEqual(tv.launched, [LG_HOME]);
+      assert.strictEqual(tv.starting, '', 'the startup filter gives Home back even before the first remote Home press');
       assert.strictEqual(fs.readFileSync(path.join(layoutDir, 'home_layoutShelfView.xml'), 'utf8'), CUSTOM_LAYOUT, 'LG\'s Home opens on its own layout');
       lgRunning(true);
       foreground(LG_HOME);
@@ -319,6 +325,7 @@ step('the LG Home tile gives LG\'s Home its place until something else is in fro
       foreground('netflix');
       wait(50, function () {
         assert.ok(taken(), 'taken again once Netflix is in front');
+        assert.ok(tv.starting, 'the startup notice is armed again for the next boot');
         assert.notStrictEqual(fs.readFileSync(path.join(layoutDir, 'home_layoutShelfView.xml'), 'utf8'), CUSTOM_LAYOUT, 'and the empty layout back');
         assert.ok(tv.events.indexOf('stop LG ' + LG_PID) !== -1);
         done();
@@ -399,6 +406,73 @@ step('settings and the Home key an earlier build pointed at its app are put back
   });
 });
 
+step('a failed legacy restore keeps its snapshot and app until a later start restores them', function (done) {
+  var failures = ['settingsReadFails', 'settingsWriteFails', 'saverWriteFails', 'homeKey'];
+  (function retryCase() {
+    var failure = failures.shift();
+    if (!failure) return done();
+    var keyApp = OLD_APP;
+    var failKey = failure === 'homeKey';
+    var snapshot = { takenAt: 1, settings: {
+      defaultApps: { home: 'previous.home', idleApp: 'previous.idle' },
+      lastInputApp: 'com.webos.app.hdmi3', screenSaverEnabled: true
+    } };
+    start({ snapshot: snapshot }, {
+      homeKeyApp: function () { return keyApp; },
+      setHomeKey: function (id, cb) {
+        if (!failKey) keyApp = id;
+        cb({ ok: !failKey });
+      },
+      installApp: function (action, cb) { tv.oldAppInstalled = false; cb({ ok: true }); }
+    });
+    tv[failure] = true;
+    tv.oldAppInstalled = true;
+    tv.settings.defaultApps.home = OLD_APP;
+    tv.settings.defaultApps.idleApp = OLD_APP;
+    tv.settings.lastInputApp = OLD_APP;
+    tv.settings.screenSaverEnabled = false;
+    home.start();
+    wait(50, function () {
+      assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'home.json'), 'utf8')).snapshot, snapshot, failure);
+      assert.strictEqual(tv.oldAppInstalled, true, 'the old target remains available after ' + failure);
+      tv[failure] = false;
+      failKey = false;
+      home.start();
+      wait(50, function () {
+        assert.strictEqual(tv.settings.lastInputApp, 'com.webos.app.hdmi3');
+        assert.strictEqual(tv.settings.defaultApps.home, 'previous.home');
+        assert.strictEqual(tv.settings.defaultApps.idleApp, 'previous.idle');
+        assert.strictEqual(tv.settings.screenSaverEnabled, true);
+        assert.strictEqual(keyApp, '');
+        assert.strictEqual(tv.oldAppInstalled, false);
+        assert.strictEqual(JSON.parse(fs.readFileSync(path.join(dir, 'home.json'), 'utf8')).snapshot, null);
+        retryCase();
+      });
+    });
+  })();
+});
+
+step('a failed layout restore keeps the backup and can be retried', function (done) {
+  start(null);
+  home.enable(function (r) {
+    assert.ok(r.ok, r.error);
+    var blocked = path.join(layoutDir, 'home_layoutShelfView.xml');
+    fs.unlinkSync(blocked);
+    fs.mkdirSync(blocked);
+    home.disable(function (failed) {
+      assert.strictEqual(failed.ok, false);
+      assert.strictEqual(fs.readFileSync(path.join(dir, 'home-takeover-lg-layout', 'home_layoutShelfView.xml'), 'utf8'), CUSTOM_LAYOUT);
+      fs.rmdirSync(blocked);
+      home.disable(function (retried) {
+        assert.ok(retried.ok, retried.error);
+        assert.strictEqual(fs.readFileSync(blocked, 'utf8'), CUSTOM_LAYOUT);
+        assert.ok(!fs.existsSync(path.join(layoutDir, 'home_layout.xml')));
+        done();
+      });
+    });
+  });
+});
+
 step('a failed save switches nothing', function (done) {
   start(null);
   var blocked = path.join(dir, 'home.json.tmp');
@@ -412,6 +486,19 @@ step('a failed save switches nothing', function (done) {
       assert.strictEqual(home.enabled(), false);
       assert.strictEqual(tv.samType, 'native', 'the place taken is given back');
       fs.rmdirSync(blocked);
+      done();
+    });
+  });
+});
+
+step('switching on with Home already in front watches for the first heartbeat', function (done) {
+  start(null);
+  foreground(LG_HOME);
+  home.enable(function (r) {
+    assert.ok(r.ok, r.error);
+    wait(20500, function () {
+      assert.strictEqual(tv.samType, 'native', 'a view that never loaded gives LG Home back');
+      assert.deepEqual(tv.launched, [LG_HOME]);
       done();
     });
   });

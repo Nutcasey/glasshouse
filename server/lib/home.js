@@ -615,10 +615,20 @@ function switchTo(on, cb) {
     var want = switchWant;
     var batch = switchWaiting.splice(0, switchWaiting.length);
     (want ? takeover.take : takeover.release)(function (r) {
-      if (r.ok) console.log('home: ' + (want ? 'Glasshouse Home is in LG\'s Home\'s place' : 'LG\'s Home is in its place'));
-      batch.forEach(function (f) { f(r); });
-      if (switchWaiting.length) return run();
-      switchBusy = false;
+      function finish() {
+        if (r.ok) {
+          console.log('home: ' + (want ? 'Glasshouse Home is in LG\'s Home\'s place' : 'LG\'s Home is in its place'));
+          if (want && viewInFront() && powerActive) watchBeat(FIRST_BEAT_GRACE_MS);
+        }
+        batch.forEach(function (f) { f(r); });
+        if (switchWaiting.length) return run();
+        switchBusy = false;
+      }
+      if (!r.ok || (want && !readConfig().enabled)) return finish();
+      startingNotice(want && readConfig().enabled, function (k) {
+        if (!k || !k.ok) r = { ok: false, error: 'the TV did not take the Home key\'s starting notice' };
+        finish();
+      });
     });
   })();
 }
@@ -691,6 +701,7 @@ function enable(cb) {
     }
     wasEnabled = true;
     startingNotice(true);
+    if (viewInFront() && powerActive) watchBeat(FIRST_BEAT_GRACE_MS);
     console.log('home: Glasshouse Home switched on');
     cb({ ok: true });
   });
@@ -713,21 +724,24 @@ function disable(cb) {
   wasEnabled = false;
   escaped = false;
   stopBeatWatch();
-  startingNotice(false);
   switchTo(false, function (r) {
     if (!r.ok) return cb({ ok: false, error: msg('srv.home.restoreFailed', 'the TV would not take its earlier Home settings back') + ' (' + r.error + ')' });
-    c = readConfig();
-    c.restorePending = false;
-    if (!saveConfig()) return cb({ ok: false, error: msg('srv.home.saveFailed', 'could not save the layout') });
-    console.log('home: Glasshouse Home switched off');
-    cb({ ok: true });
+    cleanLegacy(function (cleaned) {
+      if (!cleaned) return cb({ ok: false, error: msg('srv.home.restoreFailed', 'the TV would not take its earlier Home settings back') });
+      c = readConfig();
+      c.restorePending = false;
+      if (!saveConfig()) return cb({ ok: false, error: msg('srv.home.saveFailed', 'could not save the layout') });
+      console.log('home: Glasshouse Home switched off');
+      cb({ ok: true });
+    });
   });
 }
 
-function startingNotice(on) {
+function startingNotice(on, cb) {
   var text = on ? msg('srv.home.startingToast', 'Glasshouse Home is starting. It opens in a few seconds.') : '';
   setStartingFn(text, function (r) {
     if (!r || !r.ok) console.error('home: could not ' + (on ? 'set' : 'clear') + ' the Home key\'s starting notice');
+    if (cb) cb(r);
   });
 }
 
@@ -758,16 +772,27 @@ function appInstalled(cb) {
  * the start-up app as the snapshot had it, or Live TV.
  */
 function cleanLegacy(cb) {
+  restoreLegacyScreenSaver(function (restored) {
+    if (!restored) return cb(false);
+    cleanLegacySettings(cb);
+  });
+}
+
+function cleanLegacySettings(cb) {
   var c = readConfig();
   var snap = c.snapshot && c.snapshot.settings ? c.snapshot.settings : {};
   readSettings(['defaultApps'].concat(LEGACY_INPUT_KEYS), function (s) {
-    if (!s) return finishLegacy(c, cb);
+    if (!s) return cb(false);
     var put = {};
     if (s.defaultApps && typeof s.defaultApps === 'object' &&
         (s.defaultApps.home === HOME_APP || s.defaultApps.idleApp === HOME_APP)) {
       var apps = copy(s.defaultApps);
-      if (apps.home === HOME_APP) delete apps.home;
-      if (apps.idleApp === HOME_APP) delete apps.idleApp;
+      ['home', 'idleApp'].forEach(function (key) {
+        if (apps[key] !== HOME_APP) return;
+        var saved = snap.defaultApps && snap.defaultApps[key];
+        if (typeof saved === 'string' && saved && saved !== HOME_APP) apps[key] = saved;
+        else delete apps[key];
+      });
       put.defaultApps = apps;
     }
     LEGACY_INPUT_KEYS.forEach(function (k) {
@@ -778,6 +803,7 @@ function cleanLegacy(cb) {
     writeSettings(put, function (ok) {
       console.log(ok ? 'home: settings an earlier build changed put back (' + Object.keys(put).join(', ') + ')'
                      : 'home: could not put back the settings an earlier build changed');
+      if (!ok) return cb(false);
       finishLegacy(c, cb);
     });
   });
@@ -787,16 +813,23 @@ function finishLegacy(c, cb) {
   function done() {
     if (c.snapshot) {
       c = readConfig();
+      var snapshot = c.snapshot;
       c.snapshot = null;
-      saveConfig();
+      if (!saveConfig()) {
+        c.snapshot = snapshot;
+        return cb(false);
+      }
     }
     legacyAppPending = true;
     tryRemoveLegacyApp();
-    cb();
+    cb(true);
   }
   if (homeKeyAppFn() !== HOME_APP) return done();
   setHomeKeyFn('', function (k) {
-    if (!k || !k.ok) console.error('home: the Home key still opens the old Glasshouse Home app');
+    if (!k || !k.ok) {
+      console.error('home: the Home key still opens the old Glasshouse Home app');
+      return cb(false);
+    }
     done();
   });
 }
@@ -1005,11 +1038,11 @@ function init(opts) {
 function restoreLegacyScreenSaver(cb) {
   var c = readConfig();
   var saved = c.snapshot && c.snapshot.settings.screenSaverEnabled;
-  if (saved === undefined || saved === null) return cb();
+  if (saved === undefined || saved === null) return cb(true);
   writeSettings({ screenSaverEnabled: saved }, function (ok) {
     if (!ok) console.error('home: could not put the screen saver setting back');
     else console.log('home: screen saver setting put back as ' + saved);
-    cb();
+    cb(ok);
   });
 }
 
@@ -1020,19 +1053,18 @@ function restoreLegacyScreenSaver(cb) {
  * and stops an LG Home that started before the hook.
  */
 function start() {
-  restoreLegacyScreenSaver(function () {
-    cleanLegacy(function () {
-      var c = readConfig();
-      if (c.enabled) homeKeysFn(true);
-      if (c.restorePending || (!c.enabled && takeover.mounted())) {
-        return disable(function (r) { if (!r.ok) console.error('home: ' + r.error); });
-      }
-      startingNotice(c.enabled);
-      if (!c.enabled) return;
-      wasEnabled = true;
-      switchTo(true, function (r) {
-        if (!r.ok) console.error('home: could not take LG\'s Home\'s place: ' + r.error);
-      });
+  cleanLegacy(function (cleaned) {
+    if (!cleaned) return;
+    var c = readConfig();
+    if (c.enabled) homeKeysFn(true);
+    if (c.restorePending || (!c.enabled && takeover.mounted())) {
+      return disable(function (r) { if (!r.ok) console.error('home: ' + r.error); });
+    }
+    startingNotice(c.enabled);
+    if (!c.enabled) return;
+    wasEnabled = true;
+    switchTo(true, function (r) {
+      if (!r.ok) console.error('home: could not take LG\'s Home\'s place: ' + r.error);
     });
   });
 }
@@ -1084,8 +1116,12 @@ module.exports = {
 if (require.main === module && process.argv[2] === '--restore') {
   var lunaTransport = require('./luna');
   var rescan = require('./samrescan');
+  var remoteKeys = require('./remotekeys');
+  var restoreStateDir = path.join(__dirname, '..');
   rescan.init({ luna: lunaTransport.call });
-  init({ luna: lunaTransport.call, samrescan: rescan, stateDir: path.join(__dirname, '..'), webosVersion: '9' });
+  remoteKeys.init({ luna: lunaTransport.call, stateDir: restoreStateDir });
+  init({ luna: lunaTransport.call, samrescan: rescan, stateDir: restoreStateDir, webosVersion: '9',
+    setStarting: remoteKeys.setStarting, setHomeKey: remoteKeys.setHome, homeKeyApp: remoteKeys.homeApp });
   disable(function (r) {
     console.log(r.ok ? 'home: LG\'s Home restored' : 'home: ' + r.error);
     process.exit(r.ok ? 0 : 1);

@@ -520,13 +520,14 @@ function ensure(cb) {
 
 /*
  * The toast for Home while Glasshouse Home is not yet in place after a cold
- * start, or '' while it is off. Written only when it changes, as configd keeps
- * every value written. cb({ ok, error }).
+ * start, or '' while it is off. An unchanged map still reconciles configd:
+ * the previous write may have failed after the map was saved. cb({ ok, error }).
  */
 function setStarting(text, cb) {
   if (!lunaFn) return cb({ ok: false, error: 'no luna wrapper' });
   text = String(text || '');
-  if (text === readStarting()) return cb({ ok: true, unchanged: true });
+  if (!text && !fs.existsSync(mapFile()) && !fs.existsSync(filterFile())) return cb({ ok: true, unchanged: true });
+  if (text === readStarting()) return apply(function (ok) { cb({ ok: ok }); });
   save(readMap(), cb, undefined, text);
 }
 

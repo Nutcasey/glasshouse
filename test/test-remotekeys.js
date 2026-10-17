@@ -50,6 +50,7 @@ function luna(uri, params, cb) {
     r.configs = {};
     r.configs[rk.CONFIG_KEY] = tv.chain.slice();
   } else if (uri === 'com.webos.service.config/setConfigs') {
+    if (tv.keysWriteFails && params.configs[rk.MAP_KEY]) return process.nextTick(function () { cb({ returnValue: false }); });
     if (params.configs[rk.CONFIG_KEY]) { tv.chain = params.configs[rk.CONFIG_KEY].slice(); tv.chainWrites++; }
     if (params.configs[rk.MAP_KEY]) { tv.keys = JSON.parse(JSON.stringify(params.configs[rk.MAP_KEY])); tv.keysWrites++; }
   } else if (uri === 'com.webos.applicationManager/listApps') {
@@ -367,6 +368,19 @@ step(function (next) {
       assert.strictEqual(g.handle(2001, true, false), 'next', 'switched off, Home is LG\'s');
       console.log('  \u2713 while Glasshouse Home is on and not yet in place, Home stays where it is and says it is starting; once in place it opens Home');
       next();
+    }));
+  }));
+});
+
+step(function (next) {
+  tv.keysWriteFails = true;
+  rk.setStarting('Waiting for Home', guard(function (failed) {
+    assert.strictEqual(failed.ok, false);
+    tv.keysWriteFails = false;
+    rk.setStarting('Waiting for Home', guard(function (retried) {
+      assert.strictEqual(retried.ok, true);
+      assert.strictEqual(tv.keys.starting, 'Waiting for Home');
+      rk.setStarting('', guard(function () { next(); }));
     }));
   }));
 });

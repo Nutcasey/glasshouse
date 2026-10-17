@@ -173,15 +173,13 @@ if [ "$webos_major" = "9" ] && [ -f "$homestage/appinfo.json" ] &&
    grep -q '"enabled"[[:space:]]*:[[:space:]]*true' /var/lib/tvweb/home.json 2>/dev/null; then
   mount --bind "$homestage" "$homeapp" 2>/dev/null || true
   if sam_nudge && sam_reports com.webos.app.home '"type": *"web"'; then
-    pid=$(pidof com.webos.app.home)
-    [ -n "$pid" ] && kill $pid 2>/dev/null
+    for pid in $(pidof com.webos.app.home); do kill "$pid" 2>/dev/null; done
     echo "$(date): Glasshouse Home is in LG's Home's place"
   else
     umount "$homeapp" 2>/dev/null
     sam_nudge
     /usr/bin/node /var/lib/tvweb/lib/home-takeover.js --release >/dev/null 2>&1
-    pid=$(pidof com.webos.app.home)
-    [ -n "$pid" ] && kill $pid 2>/dev/null
+    for pid in $(pidof com.webos.app.home); do kill "$pid" 2>/dev/null; done
     echo "$(date): sam did not take Glasshouse Home - LG's Home kept"
   fi
 fi

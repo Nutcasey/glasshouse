@@ -1198,6 +1198,9 @@ compositor loads from configd before any startup hook: while
 filters, press and release, and the filter asks sam for LG's Home's type; while
 it is not yet `web` it shows `starting` as a toast, and once it is, it opens
 Home and leaves later presses to LG's filters for the rest of the boot.
+Every release clears `starting`, including both SSH recovery commands, so a
+first Home press after recovery reaches LG's filters too. A failed configd
+write is retried even where the local map already has the requested value.
 
 The ways back to LG's Home (its tile, holding Home, read from `/dev/input` by
 the remote-button worker, and a view in front without a heartbeat for 10 s, or
@@ -1207,12 +1210,18 @@ black for the server; being LG's Home's app, it cannot open LG's Home itself.
 `tvwebctl stop`, and the watchdog after a third restart in ten minutes, run
 `lib/home-takeover.js --release`, which unmounts without switching Glasshouse
 Home off, so the server takes the place again when it runs.
+The first-heartbeat watch is armed after taking Home even when the foreground
+id stays `com.webos.app.home`. A failed layout restore retains its backup and
+reports failure for a later retry.
 
 Earlier builds made a separate app, `com.tvweb.home`, the TV's Home
 through `defaultApps.home`, the start-up app settings and the remote key
 filter. At start, `cleanLegacy` puts back each of those that still names it
 (the start-up app as the old snapshot had it, or Live TV), clears the key
 filter's Home, and removes the app once nothing has it open.
+The snapshot and old app are kept until settings and key restoration succeed;
+snapshot values for an earlier Home or idle app are restored too. Switching
+off repeats this cleanup, including from the SSH recovery command.
 
 The layout lives in `home.json`, shared by the Home tab and the view's arrange
 mode, and is re-read when the file changes, so `tvwebctl

@@ -158,7 +158,11 @@ function blankLayout() {
     if (!blankInPlace()) {
       mkdirp(keptDir);
       LAYOUT_FILES.forEach(function (f) {
-        var t = readText(path.join(layoutDir, f));
+        // A previous partial restore still owns this backup.
+        if (fs.existsSync(path.join(keptDir, f)) || fs.existsSync(path.join(keptDir, f + '.none'))) return;
+        var t = null;
+        try { t = fs.readFileSync(path.join(layoutDir, f), 'utf8'); }
+        catch (e) { if (e.code !== 'ENOENT') throw e; }
         if (t === null) fs.writeFileSync(path.join(keptDir, f + '.none'), '');
         else fs.writeFileSync(path.join(keptDir, f), t);
       });
@@ -177,17 +181,21 @@ function blankLayout() {
  * boot holds the empty layout, and a restore from it would show that again.
  */
 function restoreLayout() {
-  if (!blankInPlace() && !fs.existsSync(keptDir)) return;
-  if (blankInPlace()) {
+  if (!blankInPlace() && !fs.existsSync(keptDir)) return { ok: true };
+  try {
     LAYOUT_FILES.forEach(function (f) {
       var target = path.join(layoutDir, f);
-      var kept = readText(path.join(keptDir, f));
-      try {
-        if (kept !== null) fs.writeFileSync(target, kept);
-        else fs.unlinkSync(target);
-      } catch (e) {}
+      var kept = path.join(keptDir, f);
+      if (fs.existsSync(kept)) fs.writeFileSync(target, fs.readFileSync(kept));
+      else if (fs.existsSync(kept + '.none')) {
+        try { fs.unlinkSync(target); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+      } else if ((readText(target) || '').indexOf(BLANK_MARK) !== -1) {
+        throw new Error('no saved layout for ' + f);
+      }
     });
     try { fs.rmdirSync(layoutDir); } catch (e) {} // only goes if empty
+  } catch (e) {
+    return { ok: false, error: 'LG\'s Home layout could not be put back: ' + e.message };
   }
   LAYOUT_FILES.forEach(function (f) {
     try { fs.unlinkSync(path.join(keptDir, f)); } catch (e) {}
@@ -195,6 +203,7 @@ function restoreLayout() {
   });
   try { fs.rmdirSync(keptDir); } catch (e) {}
   clearCheckpoints();
+  return { ok: true };
 }
 
 function rmrf(p) {
@@ -273,30 +282,30 @@ function stopLgHome() {
  */
 function take(cb) {
   var st = stage();
-  if (!st.ok) return cb({ ok: false, error: 'could not stage the app: ' + st.error });
+  if (!st.ok) return giveBack('could not stage the app: ' + st.error);
   function settle() {
     reread(true, function (ok) {
       if (ok) {
-        blankLayout();
+        if (!blankLayout()) return giveBack('could not prepare LG\'s Home\'s starting layout');
         var stopped = stopLgHome();
         return cb({ ok: true, stoppedLg: stopped > 0 });
       }
-      restoreLayout();
-      unmount(function () {
-        reread(false, function () { cb({ ok: false, error: 'sam did not take Glasshouse Home as Home' }); });
-      });
+      giveBack('sam did not take Glasshouse Home as Home');
     });
+  }
+  function giveBack(error) {
+    release(function (r) { cb({ ok: false, error: r.ok ? error : error + '; ' + r.error }); });
   }
   if (mounted()) {
     return samType(function (type) {
       if (type !== 'web') return settle();
-      blankLayout();
+      if (!blankLayout()) return giveBack('could not prepare LG\'s Home\'s starting layout');
       stopLgHome();
       cb({ ok: true, already: true });
     });
   }
   execFn('/bin/mount', ['--bind', stageDir, appDir], { timeout: 4000 }, function (err) {
-    if (err || !mounted()) return cb({ ok: false, error: 'the mount did not take' });
+    if (err || !mounted()) return giveBack('the mount did not take');
     settle();
   });
 }
@@ -314,7 +323,8 @@ function unmount(cb) {
  * once sam has LG's manifest: where it was in front, the TV opens LG's Home.
  */
 function release(cb) {
-  restoreLayout();
+  var restored = restoreLayout();
+  if (!restored.ok) return cb(restored);
   unmount(function () {
     if (mounted()) return cb({ ok: false, error: 'LG\'s Home could not be put back: the mount is held' });
     samType(function (type) {
@@ -350,14 +360,18 @@ module.exports = {
 if (require.main === module && process.argv[2] === '--release') {
   var lunaTransport = require('./luna');
   var rescan = require('./samrescan');
+  var remoteKeys = require('./remotekeys');
+  var releaseStateDir = path.join(__dirname, '..');
   rescan.init({ luna: lunaTransport.call });
-  init({ luna: lunaTransport.call, samrescan: rescan, stageDir: path.join(__dirname, '..', 'home-takeover') });
-  if (!mounted()) {
-    restoreLayout();
-    process.exit(0);
-  }
-  release(function (r) {
-    console.log(r.ok ? 'home: LG\'s Home is in its place' : 'home: ' + r.error);
-    process.exit(r.ok ? 0 : 1);
+  remoteKeys.init({ luna: lunaTransport.call, stateDir: releaseStateDir });
+  init({ luna: lunaTransport.call, samrescan: rescan, stageDir: path.join(releaseStateDir, 'home-takeover') });
+  remoteKeys.setStarting('', function (keys) {
+    function finish(r) {
+      if (!keys || !keys.ok) r = { ok: false, error: 'the Home key\'s starting notice could not be cleared' };
+      console.log(r.ok ? 'home: LG\'s Home is in its place' : 'home: ' + r.error);
+      process.exit(r.ok ? 0 : 1);
+    }
+    if (!mounted()) return finish(restoreLayout());
+    release(finish);
   });
 }
