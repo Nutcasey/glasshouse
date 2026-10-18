@@ -1200,7 +1200,8 @@ function init(opts) {
     checkpointDirs: opts.checkpointDirs,
     exec: opts.exec,
     kill: opts.kill,
-    blankAtStart: function () { return startLayoutAvailable() && readConfig().hideLgHomeAtStart === true; }
+    blankAtStart: function () { return startLayoutAvailable() && readConfig().hideLgHomeAtStart === true; },
+    blockFirst: function () { return /^1[01]\./.test(String(webosVersion || '')); }
   });
   webosVersion = opts.webosVersion || null;
   serverPort = opts.port === undefined ? 8080 : Number(opts.port);

@@ -63,6 +63,7 @@ var checkpointDirs = ['/tmp/checkpoint', '/mnt/lg/cmn_data/checkpoint'];
 var execFn = execFile;
 var killFn = function (pid) { process.kill(pid, 'SIGTERM'); };
 var blankWanted = function () { return false; };
+var blockFirst = function () { return false; };
 
 function init(opts) {
   opts = opts || {};
@@ -78,6 +79,7 @@ function init(opts) {
   if (opts.exec) execFn = opts.exec;
   if (opts.kill) killFn = opts.kill;
   if (opts.blankAtStart) blankWanted = opts.blankAtStart;
+  if (opts.blockFirst) blockFirst = opts.blockFirst;
 }
 
 function luna(uri, payload, cb) {
@@ -294,15 +296,25 @@ function samHasManifest(cb) {
   });
 }
 
-// sam reads the directory again and reports the type wanted.
+/*
+ * sam reads the directory again and reports the type wanted. webOS 10 and 11
+ * ignore the nudge, which costs its 8 s of polls before the block and release
+ * there, so they go to the block and release first.
+ */
 function reread(wantWeb, cb, check) {
   if (!samrescan) return cb(false);
   check = check || function (done) {
     samType(function (type) { done(type !== null && (type === 'web') === wantWeb); });
   };
-  samrescan.refresh(check, function (ok) {
+  var first = blockFirst() ? 'rereadApp' : 'refresh';
+  var then = first === 'refresh' ? 'rereadApp' : 'refresh';
+  function call(name, next) {
+    if (name === 'refresh') samrescan.refresh(check, next);
+    else samrescan.rereadApp(LG_HOME, check, next);
+  }
+  call(first, function (ok) {
     if (ok) return cb(true);
-    samrescan.rereadApp(LG_HOME, check, cb);
+    call(then, cb);
   });
 }
 

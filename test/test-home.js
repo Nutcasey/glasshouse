@@ -456,8 +456,8 @@ step('webOS 10 is offered without the setting, with LG\'s Flutter Home stopped a
   fs.writeFileSync(path.join(other, 'cmdline'), '/usr/bin/flutter-client\0-i\0com.webos.app.screensaver\0');
   home.enable(function (r) {
     assert.ok(r.ok, r.error);
-    assert.deepEqual(tv.events, ['mount', 'reread', 'block and release', 'stop LG 3301'],
-                     'sam rereads it on a block and release, then LG\'s Home is stopped, and no other Flutter app');
+    assert.deepEqual(tv.events, ['mount', 'block and release', 'stop LG 3301'],
+                     'sam rereads it on a block and release, with no nudge first, then LG\'s Home is stopped, and no other Flutter app');
     assert.deepEqual(tv.samCategory, ['home'], 'sam has it as the home category\'s app, which the Home key opens');
     assert.strictEqual(fs.readFileSync(path.join(layoutDir, 'home_layoutShelfView.xml'), 'utf8'), CUSTOM_LAYOUT,
                        'no empty layout: webOS 10 does not read one');
@@ -488,7 +488,7 @@ step('mounted by a release whose manifest had no appCategory, sam is made to rea
   lgRunning(false);
   home.start();
   wait(50, function () {
-    assert.deepEqual(tv.events, ['reread', 'block and release']);
+    assert.deepEqual(tv.events, ['block and release']);
     assert.deepEqual(tv.samCategory, ['home']);
     assert.ok(taken());
     tv.events = [];
