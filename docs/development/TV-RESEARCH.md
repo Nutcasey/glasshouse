@@ -726,6 +726,28 @@ reload and a screen saver switch; none of these, repeated, lost it again, so
 the cause is not known. Start screensaver now checks `getAppInfo` first and
 rereads the apps where sam has lost it.
 
+## tvpower dropping a screen saver request (webOS 9.2.2, G3)
+
+On 2026-10-18 a G3 answered `turnOnScreenSaver` with `returnValue` true and
+started nothing. A `getPowerState` subscription showed `processing: "Request
+Screen Saver"` and then `"Screen On"` 30 ms later, back to plain Active. It did
+so with Home or the dashboard app in front, with Netflix and HDMI 4 closed in
+the background, with no media pipeline playing and with sam knowing the app.
+tvpower asks the clients in `getClientList`'s `ListScreenSaverRequests`
+before it starts one: there `com.webos.service.oledepl` and
+`com.webos.app.browser` on `/power`, `com.webos.service.screenmanager` and
+`netflix` on `/power2`. One of them refused. screenmanager's strings name a
+server-sent app blacklist, full-screen playback and a per-app manual mode as
+reasons, but which client refused, and why, was not found: their debug logs
+do not reach `/var/log/messages`, which PmLogDaemon filters by
+`/etc/PmLogDaemon/whitelist.txt`.
+
+Launching `com.webos.app.screensaver` through sam still brought LG's screen
+saver up, and `closeByAppId` closed it. tvpower stayed Active under it,
+so its state does not show a screen saver started that way. Start screensaver
+launches the app where tvpower drops the request, and tracks it through sam's
+`running` list.
+
 ## Home's snapshot (webOS 5.6.2, CX)
 
 The webOS 9 entries above describe the home app's CRIU checkpoint. On a CX:

@@ -30,7 +30,7 @@ function load() {
     oled: { detectOled: function (cb) { cb(true); }, getIsOled: function () { return true; },
             refreshOledStats: function (s, p, cb) { cb({}); } },
     privacy: { isAdBlockActive: function () { return false; }, collectPrivacy: function (cb) { cb({}); } },
-    screensavers: { screensaverMode: function () { return 'stock'; }, screensaverLevel: function () { return 'dim'; } },
+    screensavers: { screensaverMode: function () { return 'stock'; }, screensaverLevel: function () { return 'dim'; }, launchedShowing: function () { return false; } },
     tvwebVersion: '0.0.0'
   });
   return telemetry;

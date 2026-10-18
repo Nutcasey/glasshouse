@@ -1807,7 +1807,8 @@ function collectStats(cb) {
       out.powerState.onReason = on.onReason;
       out.powerState.onTime = on.onTime;
     }
-    out.screenSaver = power.isScreenSaver(out.powerState);
+    out.screenSaver = power.isScreenSaver(out.powerState) ||
+      !!(screensaversModule && screensaversModule.launchedShowing());
     out.screensaverMode = screensaversModule ? screensaversModule.screensaverMode() : 'stock';
     out.screensaverLevel = screensaversModule ? screensaversModule.screensaverLevel() : 'dim';
 

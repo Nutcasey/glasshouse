@@ -27,7 +27,8 @@ var privacyMock = {
 
 var screensaversMock = {
   screensaverMode: function () { return 'stock'; },
-  screensaverLevel: function () { return 'dim'; }
+  screensaverLevel: function () { return 'dim'; },
+  launchedShowing: function () { return false; }
 };
 
 // The frame rate game.js reads for the app on screen.
