@@ -64,12 +64,15 @@ function exists(p) { try { fs.statSync(p); return true; } catch (e) { return fal
 
 // Runs the written filter as the compositor would. Its configd subscription is
 // kept, so tell() hands it a value as configd would on a change.
-// broken: 'launch' makes the launch throw, 'symbols' leaves WebOS undefined.
+// broken: 'launch' makes the launch throw, 'symbols' leaves WebOS undefined,
+// 'timer' leaves genericTimer undefined. expire() runs the timers it set.
 function loadFilter(broken) {
   var launched = [];
   var sent = [];
   var subscribed = null;
+  var timers = [];
   var ctx = {
+    genericTimer: { set: function (ms, fn) { timers.push({ ms: ms, fn: fn }); return timers.length; } },
     WebOS: { Key_webOS_Netflix: 1001, Key_webOS_Amazon: 1002, Key_webOS_TVGuide: 1003, Key_webOS_Red: 1004 },
     Qt: { Key_Super_L: 2001 },
     KeyPolicy: { NextPolicy: 'next', Accepted: 'accepted', NotAccepted: 'notAccepted' },
@@ -92,6 +95,7 @@ function loadFilter(broken) {
     console: { info: function () {}, warn: function () {} }
   };
   if (broken === 'symbols') delete ctx.WebOS;
+  if (broken === 'timer') delete ctx.genericTimer;
   vm.runInNewContext(fs.readFileSync(FILTER, 'utf8') + '\nthis.handler = ' + rk.HANDLER + '; this.init = init;', ctx);
   ctx.init();
   function tell(value) {
@@ -100,7 +104,9 @@ function loadFilter(broken) {
     subscribed.cb(JSON.stringify({ returnValue: true, configs: configs }));
   }
   tell(tv.keys);
-  return { handle: ctx.handler, launched: launched, sent: sent, subscribed: subscribed, tell: tell };
+  function expire() { timers.forEach(function (t) { t.fn(); }); }
+  return { handle: ctx.handler, launched: launched, sent: sent, subscribed: subscribed, tell: tell,
+           timers: timers, expire: expire };
 }
 
 // Each step takes next(); a failure ends the run.
@@ -367,6 +373,26 @@ step(function (next) {
       var g = loadFilter();
       assert.strictEqual(g.handle(2001, true, false), 'next', 'switched off, Home is LG\'s');
       console.log('  \u2713 while Glasshouse Home is on and not yet in place, Home stays where it is and says it is starting; once in place it opens Home');
+      next();
+    }));
+  }));
+});
+
+step(function (next) {
+  rk.setStarting('Glasshouse Home is starting.', guard(function () {
+    tv.homeType = 'native';
+    var f = loadFilter();
+    assert.deepEqual(f.timers.map(function (t) { return t.ms; }), [90000]);
+    assert.strictEqual(f.handle(2001, true, false), 'accepted');
+    assert.strictEqual(f.handle(2001, false, false), 'accepted');
+    // Glasshouse no longer runs: nothing takes the place or clears the notice.
+    f.expire();
+    assert.strictEqual(f.handle(2001, true, false), 'next', 'after 90 s Home goes on to LG\'s filters');
+    assert.strictEqual(f.handle(2001, false, false), 'next');
+    var g = loadFilter('timer');
+    assert.strictEqual(g.handle(2001, true, false), 'next', 'without a timer to end it, Home is not held');
+    rk.setStarting('', guard(function () {
+      console.log('  \u2713 the starting notice holds Home for 90 s after the filter loads, and not at all without a timer');
       next();
     }));
   }));

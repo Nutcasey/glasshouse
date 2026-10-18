@@ -148,6 +148,39 @@ bind-mounted over `/usr/palm/applications/com.webos.app.home`, its
   it to stop never came. `com.palm.webappmanager/killApp` with its id closed
   it; sam stopped listing it, and its removal went through.
 
+Checked on 18 October 2026 on the same TV, with Glasshouse Home in the place:
+
+- **LG's other screens still work over it.** The Input picker
+  (`com.webos.app.inputcommon`) opened over it and switched to HDMI 4. A toast
+  and a `createAlert` alert showed, and the alert closed with OK. The
+  notification list (`com.webos.app.notificationcenter`), Search
+  (`com.webos.app.voice`), the LG Account panel
+  (`com.webos.app.overlaymembership`) and the full account app
+  (`com.webos.app.membership`) opened over it, loaded their content, and
+  closing them brought it back. Search logged `NL_ACTIVATE_SEARCH` with
+  `foreground_app` `com.webos.app.home`, as it does over LG's Home, and a
+  result opened HBO Max at the title. Quick settings (the Settings key) opened
+  over it.
+- **LG's apps that name the id launch it.** First-use setup and the on-timer
+  in Settings launch `com.webos.app.home`, so open Glasshouse Home. Settings
+  and the weather location app keep the weather location under `appId`
+  `com.webos.app.home`, key `location`, in the settings service, not in the
+  app.
+- **The notification list has no other way in.** LG's Home has a sidebar with
+  the account, notifications, settings and search; neither the notification
+  list nor Search has a launch point (`visible: false`). `getAppInfo` gives
+  each one's `title`, `icon` and `folderPath`. Search's `icon.png` is a pair of
+  circular arrows.
+- **Without the empty layout, a cold start still showed no LG Home.** With
+  `homeAutoLaunch` on and HDMI 4 last, the screen stayed on HDMI 4 from 26 s;
+  the mount was in place at 30 s, and `com.webos.service.preloadmanager`
+  launched `com.webos.app.home` at 53 s, after it.
+- **The empty layout outlives Glasshouse.** With it in place, the server killed
+  without releasing and `/var/lib/tvweb` moved aside, Home after a reboot drew
+  black. `rm -rf /mnt/lg/cmn_data/manifest /tmp/checkpoint/*com.webos.app.home*
+  /mnt/lg/cmn_data/checkpoint/*com.webos.app.home* && reboot` brought LG's
+  Home back on its default layout.
+
 ## Channels and the guide (G3, webOS 9.2.2)
 
 - `com.webos.service.apiadapter/tv/getChannelList` (the method behind SSAP's
@@ -528,10 +561,36 @@ app in front. Remote Keys puts its own filter first.
   assistant's app on a press, while the microphone button
   (`Key_webOS_Voice`, RF 436) goes to voice control. The same file names about
   20 regional streaming buttons (Hotstar, Stan, Wavve, U-Next, TVer and others).
+- **Filters get the compositor's timers.** `StarfishKeyFilter.qml` hands every
+  filter `genericTimer` (`set(ms, callback)`, `cancel`, `isRunning`), as LG's
+  `appLaunch.js` uses it. On a change to the key it cancels every
+  `genericTimer`, destroys the filters and loads them again, running each
+  `init()`. On a G3 (webOS 9.2.2), a 90 s timer set in Glasshouse's `init()`
+  ended its hold on Home: with `starting` set and nothing mounted, Home 5 s
+  and 30 s after a reload showed the toast and stayed where it was, and 96 s
+  after it opened LG's Home. `Date.now()` cannot time this: the system log starts at
+  2023-01-01 and jumps when the TV sets its clock.
+- **Home sent over the network does nothing.** On the G3, `sendKeyCode` with
+  773 (`IR_KEY_HOME` 781 less 8) neither opened Home nor reached the hold,
+  while Search (217) and Settings (139) did. Writing 773 to the remote's own
+  input device (`LGE RCU` in `/proc/bus/input/devices`, `event0`) acted like
+  the remote's Home.
 - **configd takes any name and cannot forget one.** `setConfigs` stores a key
   it has never heard of (`glasshouse.remoteKeys`) in
   `/mnt/lg/cmn_data/var/preferences/configd_factory_db.json`, kept across
   reboots. There is no delete method, and setting `null` is ignored.
+
+## Promoted stub apps (G3, webOS 9.2.2)
+
+On 18 October 2026, with a network-wide ad blocker in the house switched off,
+two apps appeared within 3 s of each other: `webos.day` (LG Streaming Week)
+and `com.miniclip.eightballpool` (8 Ball Pool). Both have `type: "stub"`,
+`internalInstallationOnly: true`, `requiredEULA: "generalTerms"` and vendor
+`lgmtv.app@lgepartner.com`, are removable, and are in
+`/media/cryptofs/apps/usr/palm/applications`. Their image files were dated
+14 September and 6 October, their `appinfo.json` the minute they arrived. The
+notification list showed "Some apps are available for update" the same
+minute. Neither name is on Glasshouse's ad-blocking list.
 
 ## Home screen (webOS 10 and 11)
 

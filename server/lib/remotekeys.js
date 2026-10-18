@@ -60,6 +60,14 @@ var CONFIG_KEY = 'com.webos.surfacemanager.keyFilters';
 var MAP_KEY = 'glasshouse.remoteKeys';
 var LG_FILTERS_DIR = '/usr/lib/qt5/qml/KeyFilters';
 var HANDLER = 'handleGlasshouseKeys';
+/*
+ * How long after the filter loads Home is held for Glasshouse Home. A cold
+ * start on a G3 (webOS 9.2.2) has it in place by about 28 s. After this Home
+ * goes on to LG's filters, which open whatever has LG's Home's id, so a TV
+ * where Glasshouse no longer runs still reaches a Home. Counted with the
+ * compositor's genericTimer: the clock jumps from 2023 when the TV sets it.
+ */
+var HOLD_LIMIT_MS = 90000;
 var LIVE_TV = 'com.webos.app.livetv';
 var APP_PREFIX = 'com.webos.app.';
 
@@ -210,6 +218,7 @@ function filterSource() {
     'var glasshouseStarting = "";',
     'var glasshouseHomeReady = false;',
     'var glasshouseHoldingHome = false;',
+    'var glasshouseHoldOver = false;',
     '',
     '// Key code by name; a name this firmware lacks is left out.',
     'function glasshouseKeyCodes() {',
@@ -261,6 +270,12 @@ function filterSource() {
     '',
     'function init() {',
     '    try {',
+    '        genericTimer.set(' + HOLD_LIMIT_MS + ', function () { glasshouseHoldOver = true; });',
+    '    } catch (e) {',
+    '        glasshouseHoldOver = true;',
+    '        console.warn("glasshouse keyfilter: " + e + "; Home not held");',
+    '    }',
+    '    try {',
     '        lunaCall.subscribe("com.webos.service.config", "/getConfigs",',
     '            JSON.stringify({ "configNames": [' + JSON.stringify(MAP_KEY) + '], "subscribe": true }), glasshouseKeysChanged, true);',
     '    } catch (e) {',
@@ -278,7 +293,7 @@ function filterSource() {
     '            glasshouseHoldingHome = false;',
     '            return KeyPolicy.Accepted;',
     '        }',
-    '        if (key === Qt.Key_Super_L && pressed && glasshouseStarting && !glasshouseHomeReady) {',
+    '        if (key === Qt.Key_Super_L && pressed && glasshouseStarting && !glasshouseHomeReady && !glasshouseHoldOver) {',
     '            glasshouseHoldingHome = true;',
     '            if (!autoRepeat) glasshouseHomePressed();',
     '            return KeyPolicy.Accepted;',

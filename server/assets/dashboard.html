@@ -736,6 +736,13 @@ function homeRows(d) {
            hint: d.restorePending ? t('home.restoreRetry', 'Retry restoring LG Home before switching Glasshouse Home on again.')
                  : d.enabled ? t('home.isOnDesc', 'It opens in LG\u2019s Home\u2019s place: with the Home and Back buttons, and when the TV wakes on Home.')
                  : t('home.isOffDesc', 'Nothing of LG\u2019s is changed: Glasshouse Home is laid over LG\u2019s Home while on, and switching off takes it away.') });
+  if (d.supported.ok) {
+    r.push({ label: t('home.hideLg', 'Hide LG\u2019s Home while the TV starts'),
+             value: d.hideLgHomeAtStart ? t('common.on', 'On') : t('common.off', 'Off'), cls: d.hideLgHomeAtStart ? 'on' : 'off',
+             act: can ? 'homeHideLg' : null, on: !!d.hideLgHomeAtStart,
+             press: d.hideLgHomeAtStart ? t('tv.press.switchOff', 'Press OK to switch off') : t('tv.home.hideLg.on', 'Press OK, then again, to hide it'),
+             hint: t('home.hideLgDesc', 'For about 25 seconds after a cold start, until Glasshouse Home takes its place, LG\u2019s Home opens as a black screen instead of its own. If Glasshouse stops running, for example after a firmware update removes root, LG\u2019s Home stays black until it is put back over SSH.') });
+  }
   // Opening Home opens Glasshouse Home only while it has LG's Home's place.
   if (d.enabled && d.active) {
     r.push({ label: t('tv.home.open', 'Open Glasshouse Home'), value: '\u2192', cls: 'act', act: 'homeOpen',
@@ -2283,6 +2290,12 @@ function activate() {
       render();
       return sendPost(r.on ? '/api/home/disable' : '/api/home/enable', {},
                       r.on ? t('tv.home.off', 'LG\u2019s Home is the TV\u2019s Home again') : t('tv.home.on', 'Glasshouse Home is now the TV\u2019s Home'));
+    case 'homeHideLg':
+      if (!r.on && confirmFirst(r, t('home.hideLgConfirm', 'Press again to hide it'))) return;
+      r.value = t('apps.service.updating', 'Updating\u2026');
+      render();
+      return sendPost('/api/home/start-layout', { hideLgHomeAtStart: !r.on },
+                      r.on ? t('tv.flash.switchedOff', 'Switched off') : t('tv.flash.switchedOn', 'Switched on'));
     case 'homeOpen':
       return send({ action: 'launchApp', value: 'com.webos.app.home' });
     case 'homeRowUp':

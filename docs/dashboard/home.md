@@ -6,7 +6,7 @@
 
 The screen has a clock and date, what was last on (an app, an input and the devices on it, or a channel and its programme), and three rows:
 
-* **Apps**: every app on LG's Home, with each app's own icon. LG's own promotions (LG Channels, Sports, Always Ready, Alexa, Camera) start hidden. An app hidden under [Hide home screen system apps](apps.md) is hidden here too; hiding an app on this tab hides it on Glasshouse Home only. With [History](advanced.md) on, new apps are placed by how much each is used; otherwise they follow LG's order. The last tile, **LG Home**, opens LG's Home screen and cannot be hidden.
+* **Apps**: every app on LG's Home, with each app's own icon. LG's own promotions (LG Channels, Sports, Always Ready, Alexa, Camera) start hidden. An app hidden under [Hide home screen system apps](apps.md) is hidden here too; hiding an app on this tab hides it on Glasshouse Home only. With [History](advanced.md) on, new apps are placed by how much each is used; otherwise they follow LG's order. **Notifications** and **Search** open LG's notification list and search, which LG's Home reaches from its sidebar. The last tile, **LG Home**, opens LG's Home screen and cannot be hidden.
 * **Inputs**: every HDMI input. An input with devices on it has a tile for each device the TV knows over HDMI-CEC, saying which device it is behind ("HDMI 2, through STEREO 70s"); an input with nothing connected is greyed out. Choosing a tile switches the TV to that input. Nothing is sent to the devices themselves.
 * **Channels**: the channels added here, in the order they are listed, with the programme on now where the TV's guide has it. Choosing one tunes it.
 
@@ -36,7 +36,17 @@ Three ways lead back to LG's Home without switching anything off:
 
 LG's Home opens about two seconds after any of them, and Glasshouse Home takes its place again as soon as something else is opened.
 
-After the TV starts from cold, Glasshouse Home takes LG's Home's place about 27 seconds in (a G3). LG's Home is never shown before then. Home pressed in that time leaves the TV on what it is showing, with a message that Glasshouse Home is starting; once Glasshouse Home is in place, Home opens it as usual. Anything else that opens LG's Home in that time, such as Back out of an app, shows a black screen, which Glasshouse Home replaces: while Glasshouse Home is on, LG's Home starts on an empty layout. The Glasshouse server answers about ten seconds later; Glasshouse Home opened in between says it is starting, and opens once the server answers. It does the same whenever the server is not running, as during an update. Should the server stop, or fail three times in ten minutes, LG's Home is given its place back until the server is running again.
+After the TV starts from cold, Glasshouse Home takes LG's Home's place about 27 seconds in (a G3). Home pressed in that time leaves the TV on what it is showing, with a message that Glasshouse Home is starting; once Glasshouse Home is in place, Home opens it as usual. Home is held like this for at most 90 seconds after the TV starts, so a TV where Glasshouse no longer runs still reaches LG's Home. Anything else that opens LG's Home in that time, such as Back out of an app, shows LG's Home until Glasshouse Home replaces it.
+
+**Hide LG's Home while the TV starts**, off unless chosen, gives LG's Home an empty layout while Glasshouse Home has its place, so that anything opening it in those first seconds shows a black screen instead. It asks for a second press to switch on, and takes effect at once. The layout is kept on the TV, not in Glasshouse: if Glasshouse stops running without switching Glasshouse Home off, for example after a firmware update removes root or `/var/lib/tvweb` is deleted, LG's Home stays black at every start. Over SSH, `tvwebctl restore-glasshouse-home` puts LG's Home back while Glasshouse is installed. Where it is not:
+
+```sh
+rm -rf /mnt/lg/cmn_data/manifest /tmp/checkpoint/*com.webos.app.home* /mnt/lg/cmn_data/checkpoint/*com.webos.app.home* && reboot
+```
+
+LG's Home then starts on its default layout, without one set with [Home screen layout](apps.md#home-screen-layout). A TV that already had the empty layout from an earlier build keeps the option on.
+
+The Glasshouse server answers about ten seconds later; Glasshouse Home opened in between says it is starting, and opens once the server answers. It does the same whenever the server is not running, as during an update. Should the server stop, or fail three times in ten minutes, LG's Home is given its place back until the server is running again.
 
 Over SSH, `tvwebctl restore-glasshouse-home` does what **Use LG Home** does. Uninstalling Glasshouse from the Homebrew Channel switches Glasshouse Home off before deleting the server; a failed switch-off keeps the server for another attempt.
 

@@ -1114,6 +1114,7 @@ function handleHomeRoute(req, res, u, pathname) {
     }
     return readJsonBody(req, res, function (body) {
       if (pathname === '/api/home/layout') return homeModule.setLayout(body, reply);
+      if (pathname === '/api/home/start-layout') return homeModule.setHideLgHomeAtStart(body, reply);
       if (pathname === '/api/home/wallpapers') return homeModule.setWallpapers(body, reply);
       if (pathname === '/api/home/enable') return homeModule.enable(reply);
       if (pathname === '/api/home/disable') return homeModule.disable(reply);

@@ -4,7 +4,7 @@ let homeStatus = null;
 let homeCat = null;      // what the TV's Home lists: apps, devices, picked channels, order
 let homeLayout = null;
 let homeChannels = null; // the TV's whole channel list, for picking
-let homeArmed = null;    // the switch waiting for its second press: 'on' or 'off'
+let homeArmed = null;    // the control waiting for its second press: 'on', 'off' or 'hide'
 let homeArmTimer = null;
 let homeSaving = false;
 let homeLoadRevision = 0;
@@ -89,6 +89,17 @@ function renderHome() {
   }
   const more = q('home-more');
   if (more) more.hidden = !st.supported.ok;
+  const hideRow = q('home-hide-lg-row');
+  if (hideRow) hideRow.hidden = !st.supported.ok;
+  const hide = q('home-hide-lg');
+  if (hide) {
+    const armed = homeArmed === 'hide';
+    updateToggle(hide, {
+      cls: armed ? 'warn' : st.hideLgHomeAtStart ? 'good' : 'idle',
+      label: armed ? t('home.hideLgConfirm', 'Press again to hide it') : st.hideLgHomeAtStart ? t('common.on', 'On') : t('common.off', 'Off')
+    });
+    hide.disabled = !homeWritable();
+  }
   if (btn) {
     const wantOn = !(st.enabled || st.restorePending);
     const armed = homeArmed === (wantOn ? 'on' : 'off');
@@ -217,6 +228,27 @@ async function homeSwitch() {
   try {
     await homePost(want === 'on' ? '/api/home/enable' : '/api/home/disable');
   } catch (e) { showErr(e.message); }
+  loadHome();
+}
+
+// Hiding LG's Home is what can leave a TV without one, so switching it on takes a second press.
+async function homeHideLg() {
+  if (!homeWritable()) return;
+  const want = !homeStatus.hideLgHomeAtStart;
+  if (want && homeArmed !== 'hide') {
+    homeArmed = 'hide';
+    clearTimeout(homeArmTimer);
+    homeArmTimer = setTimeout(() => { homeArmed = null; renderHome(); }, 5000);
+    return renderHome();
+  }
+  homeArmed = null;
+  clearTimeout(homeArmTimer);
+  homeSaving = true;
+  renderHome();
+  try {
+    await homePost('/api/home/start-layout', { hideLgHomeAtStart: want });
+  } catch (e) { showErr(e.message); }
+  homeSaving = false;
   loadHome();
 }
 

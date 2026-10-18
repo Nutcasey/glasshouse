@@ -2,8 +2,9 @@
  * test/test-home.js - Glasshouse Home: the saved layout merges with what the
  * TV has; switching on puts the app's files in LG's Home's place and sam is
  * made to read them before LG's Home is stopped, and switching off the
- * reverse; LG's Home starts on an empty layout while it is taken, and on its
- * own whenever it has its place back; the ways back to LG's Home give its
+ * reverse; LG's Home starts on an empty layout while it is taken where that
+ * is chosen, and on its own otherwise and whenever it has its place back;
+ * LG's notifications and search are on the Apps row; the ways back to LG's Home give its
  * place back until something else is in front; what earlier builds changed is undone once; and a view
  * that sends no heartbeat is replaced by LG's Home
  *
@@ -131,6 +132,11 @@ function luna(uri, p, cb) {
     for (var k in p.settings) tv.settings[k] = copy(p.settings[k]);
   } else if (uri === 'com.webos.applicationManager/getAppInfo') {
     if (p.id === LG_HOME) r.appInfo = { id: LG_HOME, type: tv.samType };
+    else if (p.id === 'com.webos.app.notificationcenter' && tv.sidebarApps) {
+      r.appInfo = { id: p.id, title: 'Notifications', icon: 'icon_notification.png', folderPath: '/usr/palm/applications/' + p.id };
+    } else if (p.id === 'com.webos.app.voice' && tv.sidebarApps) {
+      r.appInfo = { id: p.id, title: 'Search', icon: 'icon.png', folderPath: '/usr/palm/applications/' + p.id };
+    }
     else if (!tv.oldAppInstalled) r = { returnValue: false, errorText: 'Invalid appId specified' };
   } else if (uri === 'com.palm.webappmanager/killApp') {
     if (p.appId === OLD_APP) {
@@ -264,10 +270,9 @@ step('switching on reads the new files into sam before stopping LG\'s Home, and 
     assert.ok(fs.existsSync(path.join(stageDir, 'index.html')));
     assert.deepEqual(tv.settings, ORIGINAL, 'no TV setting is changed');
     assert.ok(/starting/.test(tv.starting), 'the Home key says it is starting until the place is taken');
-    // LG's Home starts on an empty layout from the next boot until the place is taken.
-    ['home_layoutShelfView.xml', 'home_layout.xml'].forEach(function (f) {
-      assert.ok(/<firstPage>\s*<\/firstPage>/.test(fs.readFileSync(path.join(layoutDir, f), 'utf8')), f + ' is empty');
-    });
+    assert.strictEqual(fs.readFileSync(path.join(layoutDir, 'home_layoutShelfView.xml'), 'utf8'), CUSTOM_LAYOUT, 'LG\'s layout is left alone unless chosen');
+    assert.ok(!fs.existsSync(path.join(layoutDir, 'home_layout.xml')));
+    assert.ok(!fs.existsSync(path.join(dir, 'home-takeover-lg-layout')));
     tv.events = [];
     home.disable(function (r2) {
       assert.ok(r2.ok, r2.error);
@@ -275,10 +280,93 @@ step('switching on reads the new files into sam before stopping LG\'s Home, and 
       assert.strictEqual(tv.samType, 'native');
       assert.strictEqual(home.enabled(), false);
       assert.strictEqual(tv.starting, '', 'and Home is LG\'s again');
+      assert.strictEqual(fs.readFileSync(path.join(layoutDir, 'home_layoutShelfView.xml'), 'utf8'), CUSTOM_LAYOUT);
+      assert.ok(fs.existsSync(path.join(checkpointDir, LG_HOME)), 'a layout never changed leaves LG\'s checkpoint alone');
+      done();
+    });
+  });
+});
+
+step('chosen, LG\'s Home starts on an empty layout while Glasshouse Home has its place', function (done) {
+  start({ hideLgHomeAtStart: true });
+  home.enable(function (r) {
+    assert.ok(r.ok, r.error);
+    ['home_layoutShelfView.xml', 'home_layout.xml'].forEach(function (f) {
+      assert.ok(/<firstPage>\s*<\/firstPage>/.test(fs.readFileSync(path.join(layoutDir, f), 'utf8')), f + ' is empty');
+    });
+    home.disable(function (r2) {
+      assert.ok(r2.ok, r2.error);
       assert.strictEqual(fs.readFileSync(path.join(layoutDir, 'home_layoutShelfView.xml'), 'utf8'), CUSTOM_LAYOUT, 'the layout before is back');
       assert.ok(!fs.existsSync(path.join(layoutDir, 'home_layout.xml')), 'a file there was not before is gone');
       assert.ok(!fs.existsSync(path.join(checkpointDir, LG_HOME)), 'so LG\'s Home starts fresh on it');
       done();
+    });
+  });
+});
+
+step('the choice applies at once while Glasshouse Home has the place, and at the next take otherwise', function (done) {
+  start(null);
+  home.setHideLgHomeAtStart({ hideLgHomeAtStart: true }, function (r) {
+    assert.ok(r.ok, r.error);
+    assert.strictEqual(fs.readFileSync(path.join(layoutDir, 'home_layoutShelfView.xml'), 'utf8'), CUSTOM_LAYOUT, 'switched off, nothing is written yet');
+    home.enable(function (r2) {
+      assert.ok(r2.ok, r2.error);
+      assert.ok(/<firstPage>\s*<\/firstPage>/.test(fs.readFileSync(path.join(layoutDir, 'home_layout.xml'), 'utf8')));
+      home.setHideLgHomeAtStart({ hideLgHomeAtStart: false }, function (r3) {
+        assert.ok(r3.ok, r3.error);
+        assert.strictEqual(fs.readFileSync(path.join(layoutDir, 'home_layoutShelfView.xml'), 'utf8'), CUSTOM_LAYOUT);
+        assert.ok(!fs.existsSync(path.join(layoutDir, 'home_layout.xml')));
+        assert.ok(taken(), 'Glasshouse Home keeps its place');
+        home.status(function (st) {
+          assert.strictEqual(st.hideLgHomeAtStart, false);
+          home.setHideLgHomeAtStart({}, function (bad) {
+            assert.strictEqual(bad.ok, false);
+            done();
+          });
+        });
+      });
+    });
+  });
+});
+
+step('a TV an earlier build left on the empty layout keeps it, chosen; any other starts without', function (done) {
+  start({ enabled: true });
+  fs.writeFileSync(path.join(layoutDir, 'home_layout.xml'), '<home><!-- glasshouse-home-starting --></home>');
+  home.start();
+  wait(50, function () {
+    home.status(function (st) {
+      assert.strictEqual(st.hideLgHomeAtStart, true);
+      assert.strictEqual(JSON.parse(fs.readFileSync(path.join(dir, 'home.json'), 'utf8')).hideLgHomeAtStart, true);
+      start({ enabled: true });
+      home.start();
+      wait(50, function () {
+        home.status(function (st2) {
+          assert.strictEqual(st2.hideLgHomeAtStart, false);
+          assert.strictEqual(fs.readFileSync(path.join(layoutDir, 'home_layoutShelfView.xml'), 'utf8'), CUSTOM_LAYOUT);
+          done();
+        });
+      });
+    });
+  });
+});
+
+step('LG\'s notifications and search are on the Apps row where the TV has them', function (done) {
+  start(null);
+  tv.sidebarApps = true;
+  home.catalogue(function (c) {
+    assert.deepEqual(c.order.app.slice(-3), ['com.webos.app.notificationcenter', 'com.webos.app.voice', 'lg-home']);
+    var notif = c.apps.filter(function (a) { return a.id === 'com.webos.app.notificationcenter'; })[0];
+    var search = c.apps.filter(function (a) { return a.id === 'com.webos.app.voice'; })[0];
+    assert.strictEqual(notif.title, 'Notifications');
+    assert.ok(notif.icon, 'its own icon');
+    assert.strictEqual(search.icon, null, 'Search\'s icon is not a search, so it shows a letter');
+    home.iconPath('com.webos.app.notificationcenter', function (p) {
+      assert.strictEqual(p, '/usr/palm/applications/com.webos.app.notificationcenter/icon_notification.png');
+      home.open({ kind: 'app', id: 'com.webos.app.voice' }, function (r) {
+        assert.ok(r.ok, r.error);
+        assert.deepEqual(tv.launched, ['com.webos.app.voice']);
+        done();
+      });
     });
   });
 });
@@ -311,7 +399,7 @@ step('switching on is refused on a non-default port or an untried webOS, changin
 });
 
 step('the LG Home tile gives LG\'s Home its place until something else is in front', function (done) {
-  start({ enabled: true });
+  start({ enabled: true, hideLgHomeAtStart: true });
   home.start();
   wait(50, function () {
     assert.ok(taken(), 'taken at start');
@@ -479,7 +567,7 @@ step('a failed legacy restore keeps its snapshot and app until a later start res
 });
 
 step('a failed layout restore keeps the backup and can be retried', function (done) {
-  start(null);
+  start({ hideLgHomeAtStart: true });
   home.enable(function (r) {
     assert.ok(r.ok, r.error);
     var blocked = path.join(layoutDir, 'home_layoutShelfView.xml');

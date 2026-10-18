@@ -1184,20 +1184,29 @@ second later, as the new app.
 The boot hook (`50-tvweb.sh`) mounts it again about 25 s into a cold start and
 stops LG's Home, which has started in the background by then; the server does
 the same at its start, for a hook that did not run. Until then anything that
-opens Home opens LG's, so while Glasshouse Home has the place, LG's layout
-files in `/mnt/lg/cmn_data/manifest` hold an empty layout, which LG's Home
-reads when it starts 5 s into boot and draws as a black screen. The files
+opens Home opens LG's. Where the owner chooses **Hide LG's Home while the TV
+starts** (`hideLgHomeAtStart` in `home.json`, off by default, since it outlives
+Glasshouse), LG's layout files in `/mnt/lg/cmn_data/manifest` hold an empty
+layout while Glasshouse Home has the place, which LG's Home reads when it
+starts 5 s into boot and draws as a black screen. A home.json without the key
+takes it as chosen where an earlier build left that layout. The files
 there before, LG's or the Home screen layout feature's, are kept in
 `/var/lib/tvweb/home-takeover-lg-layout` and put back, with LG's Home's
 checkpoints deleted so it starts fresh on them, before LG's Home gets its
-place back by any route; `lib/homescreen-webos9.js` refuses to change the
-layout while the empty one is in place. The Home key itself is answered
+place back by any route or the option is switched off; `lib/homescreen-webos9.js`
+refuses to change the layout while the empty one is in place. With the option
+off, a layout that cannot be put back stays kept aside and the place is still
+taken. The Home key itself is answered
 earlier still, by the remote key filter (`lib/remotekeys.js`), which the
 compositor loads from configd before any startup hook: while
 `glasshouse.remoteKeys` carries `starting`, a Home press is kept from LG's
 filters, press and release, and the filter asks sam for LG's Home's type; while
 it is not yet `web` it shows `starting` as a toast, and once it is, it opens
-Home and leaves later presses to LG's filters for the rest of the boot.
+Home and leaves later presses to LG's filters for the rest of the boot. A
+`genericTimer` set in the filter's `init()` ends the hold 90 s after the filter
+loads, so a TV where Glasshouse no longer runs, with `starting` left in
+configd, still reaches LG's Home; the compositor's clock cannot be used, as it
+jumps from 2023 when the TV sets it.
 Every release clears `starting`, including both SSH recovery commands, so a
 first Home press after recovery reaches LG's filters too. A failed configd
 write is retried even where the local map already has the requested value.

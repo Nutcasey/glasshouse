@@ -48,6 +48,16 @@ var PROMO_APPS = ['com.webos.app.lgchannels', 'com.webos.app.sportsteamsettings'
   'com.webos.app.lifeonscreen', 'amazon.alexa.view', 'com.webos.app.camera'];
 // The view's own way back to LG's Home: last in the Apps row, and never hidden.
 var LG_HOME_TILE = 'lg-home';
+/*
+ * LG's notifications and search, reached from its Home's sidebar and from no
+ * other screen. Neither has a launch point, so the Apps row lists them from
+ * sam. Search's own icon on a G3 (webOS 9.2) is a pair of arrows, so its tile
+ * shows a letter instead.
+ */
+var LG_SIDEBAR_APPS = [
+  { id: 'com.webos.app.notificationcenter', icon: true },
+  { id: 'com.webos.app.voice', icon: false }
+];
 var MAX_CHANNELS = 40;
 
 // The settings earlier builds changed, as their snapshot kept them.
@@ -147,6 +157,8 @@ function defaults() {
     hidden: { app: PROMO_APPS.slice(), dev: [], ch: [] },
     channels: [],
     hintSeen: false,
+    // null until chosen: the first start keeps an empty layout an earlier build left.
+    hideLgHomeAtStart: null,
     snapshot: null
   };
 }
@@ -181,6 +193,7 @@ function normalise(raw) {
   d.enabled = raw.enabled === true;
   d.restorePending = raw.restorePending === true;
   d.hintSeen = raw.hintSeen === true;
+  if (typeof raw.hideLgHomeAtStart === 'boolean') d.hideLgHomeAtStart = raw.hideLgHomeAtStart;
   d.snapshot = validSnapshot(raw.snapshot) ? raw.snapshot : null;
   return d;
 }
@@ -251,6 +264,7 @@ function setLayout(body, cb) {
     enabled: c.enabled,
     restorePending: c.restorePending,
     snapshot: c.snapshot,
+    hideLgHomeAtStart: c.hideLgHomeAtStart,
     rows: body.rows !== undefined ? body.rows : c.rows,
     order: perRow(body.order, c.order),
     hidden: perRow(body.hidden, c.hidden),
@@ -306,9 +320,23 @@ function launchPoints(cb) {
         if (p.id === HOME_APP || p.id === LG_HOME || isInputApp(p.id)) return;
         out.push({ id: p.id, title: String(p.title || p.id), icon: p.largeIcon || p.icon || '' });
       });
-      done(out);
+      sidebarApps(LG_SIDEBAR_APPS.slice(), out, done);
     });
   }, cb);
+}
+
+// Each of LG_SIDEBAR_APPS that this TV has, on the end of the list.
+function sidebarApps(todo, out, done) {
+  var app = todo.shift();
+  if (!app) return done(out);
+  luna('com.webos.applicationManager/getAppInfo', { id: app.id }, function (r) {
+    var info = r && r.returnValue && r.appInfo;
+    if (info && info.id === app.id) {
+      var icon = app.icon && info.icon && info.folderPath ? info.folderPath + '/' + info.icon : '';
+      out.push({ id: app.id, title: String(info.title || app.id), icon: icon });
+    }
+    sidebarApps(todo, out, done);
+  });
 }
 
 // Apps used most, first, from the screen time history where it is kept.
@@ -737,6 +765,33 @@ function disable(cb) {
   });
 }
 
+/*
+ * Whether LG's Home starts on an empty layout, until Glasshouse Home takes its
+ * place about 25 s into a cold start. Applied at once where Glasshouse Home
+ * has the place, and otherwise the next time it takes it.
+ */
+function setHideLgHomeAtStart(body, cb) {
+  if (!body || typeof body.hideLgHomeAtStart !== 'boolean') return cb({ ok: false, error: 'hideLgHomeAtStart expected' });
+  var c = readConfig();
+  var before = c.hideLgHomeAtStart;
+  c.hideLgHomeAtStart = body.hideLgHomeAtStart;
+  if (!saveConfig()) {
+    c.hideLgHomeAtStart = before;
+    return cb({ ok: false, error: msg('srv.home.saveFailed', 'could not save the layout') });
+  }
+  if (!takeover.mounted()) return cb({ ok: true });
+  var r = takeover.startLayout();
+  if (r.ok) {
+    console.log('home: LG\'s Home ' + (r.blank ? 'starts on an empty layout' : 'has its own layout back'));
+    return cb({ ok: true });
+  }
+  console.error('home: ' + r.error);
+  c = readConfig();
+  c.hideLgHomeAtStart = before;
+  saveConfig();
+  cb({ ok: false, error: msg('srv.home.startLayoutFailed', 'the TV would not change LG\'s Home\'s layout') + ' (' + r.error + ')' });
+}
+
 function startingNotice(on, cb) {
   var text = on ? msg('srv.home.startingToast', 'Glasshouse Home is starting. It opens in a few seconds.') : '';
   setStartingFn(text, function (r) {
@@ -986,6 +1041,7 @@ function status(cb) {
       // In LG's Home's place now; false while one of the ways back has LG's Home open.
       active: takeover.mounted() && type === 'web',
       lgHomeOpen: escaped,
+      hideLgHomeAtStart: c.hideLgHomeAtStart === true,
       history: !!(historyModule && historyModule.enabled && historyModule.enabled()),
       wallpapers: wallpapers.status(),
       layout: layoutOf(c)
@@ -1011,7 +1067,8 @@ function init(opts) {
     keptDir: path.join(stateDir, 'home-takeover-lg-layout'),
     checkpointDirs: opts.checkpointDirs,
     exec: opts.exec,
-    kill: opts.kill
+    kill: opts.kill,
+    blankAtStart: function () { return readConfig().hideLgHomeAtStart === true; }
   });
   webosVersion = opts.webosVersion || null;
   serverPort = opts.port === undefined ? 8080 : Number(opts.port);
@@ -1074,6 +1131,11 @@ function start() {
   cleanLegacy(function (cleaned) {
     if (!cleaned) return;
     var c = readConfig();
+    // Saved only where it differs from the default, so a start writes nothing otherwise.
+    if (c.hideLgHomeAtStart === null && takeover.blankKept()) {
+      c.hideLgHomeAtStart = true;
+      saveConfig();
+    }
     if (c.enabled) homeKeysFn(true);
     if (c.restorePending || (!c.enabled && takeover.mounted())) {
       return disable(function (r) { if (!r.ok) console.error('home: ' + r.error); });
@@ -1106,6 +1168,7 @@ module.exports = {
   now: now,
   open: open,
   setLayout: function (body, cb) { change(function (done) { setLayout(body, done); }, cb); },
+  setHideLgHomeAtStart: function (body, cb) { change(function (done) { setHideLgHomeAtStart(body, done); }, cb); },
   enable: function (cb) { change(function (done) { enable(function (r) { if (r.ok) homeKeysFn(true); done(r); }); }, cb); },
   disable: function (cb) { change(function (done) { disable(function (r) { homeKeysFn(false); done(r); }); }, cb); },
   uninstall: function (cb) { change(uninstall, cb); },

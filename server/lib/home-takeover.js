@@ -23,14 +23,16 @@
  *
  * Mounted from the boot hook too (50-tvweb.sh), about 25 s into a cold start;
  * LG's Home has started by then, in the background, and is stopped the same
- * way. Until then the TV would show LG's Home for anything that opens it, so
- * while switched on LG's Home is given an empty layout to start with: it reads
+ * way. Until then the TV shows LG's Home for anything that opens it. Where the
+ * owner chooses, LG's Home is given an empty layout to start with: it reads
  * /mnt/lg/cmn_data/manifest at its start, 5 s into boot, before anything of
- * Glasshouse's runs, and draws a black screen (a G3, webOS 9.2.2). The files
- * there before, LG's or the Home screen layout feature's (lib/homescreen-
- * webos9.js), are kept aside and put back, with LG's Home's checkpoints
- * cleared so it starts fresh and reads them, whenever LG's Home gets its place
- * back.
+ * Glasshouse's runs, and draws a black screen (a G3, webOS 9.2.2). That file
+ * outlives Glasshouse: a TV where it no longer runs keeps a black LG Home until
+ * the file is removed over SSH, so it is off unless chosen. The files there
+ * before, LG's or the Home screen layout feature's (lib/homescreen-webos9.js),
+ * are kept aside and put back, with LG's Home's checkpoints cleared so it
+ * starts fresh and reads them, whenever LG's Home gets its place back or the
+ * choice is undone.
  *
  * Strict ES5: runs on node 0.12.
  */
@@ -60,6 +62,7 @@ var keptDir = '/var/lib/tvweb/home-takeover-lg-layout';
 var checkpointDirs = ['/tmp/checkpoint', '/mnt/lg/cmn_data/checkpoint'];
 var execFn = execFile;
 var killFn = function (pid) { process.kill(pid, 'SIGTERM'); };
+var blankWanted = function () { return false; };
 
 function init(opts) {
   opts = opts || {};
@@ -74,6 +77,7 @@ function init(opts) {
   if (opts.checkpointDirs) checkpointDirs = opts.checkpointDirs;
   if (opts.exec) execFn = opts.exec;
   if (opts.kill) killFn = opts.kill;
+  if (opts.blankAtStart) blankWanted = opts.blankAtStart;
 }
 
 function luna(uri, payload, cb) {
@@ -206,6 +210,40 @@ function restoreLayout() {
   return { ok: true };
 }
 
+/*
+ * The layout LG's Home starts on while Glasshouse Home has its place: the
+ * empty one where it is chosen, LG's own otherwise. LG's Home is not running
+ * then, so either can be written under it. { ok, error, blank }.
+ */
+function startLayout() {
+  if (!blankWanted()) {
+    var r = restoreLayout();
+    r.blank = false;
+    return r;
+  }
+  if (blankLayout()) return { ok: true, blank: true };
+  return { ok: false, blank: true, error: 'could not prepare LG\'s Home\'s starting layout' };
+}
+
+/*
+ * Taking the place fails only where the empty layout was wanted and could not
+ * be written. LG's that could not be put back stays kept aside, and is tried
+ * again whenever LG's Home gets its place back.
+ */
+function layoutForTake() {
+  var r = startLayout();
+  if (!r.ok && !r.blank) {
+    console.error('home: ' + r.error);
+    return { ok: true };
+  }
+  return r;
+}
+
+// The empty layout, or LG's kept aside from it, is still on the TV.
+function blankKept() {
+  return blankInPlace() || fs.existsSync(keptDir);
+}
+
 function rmrf(p) {
   var st;
   try { st = fs.lstatSync(p); } catch (e) { return; }
@@ -286,7 +324,8 @@ function take(cb) {
   function settle() {
     reread(true, function (ok) {
       if (ok) {
-        if (!blankLayout()) return giveBack('could not prepare LG\'s Home\'s starting layout');
+        var layout = layoutForTake();
+        if (!layout.ok) return giveBack(layout.error);
         var stopped = stopLgHome();
         return cb({ ok: true, stoppedLg: stopped > 0 });
       }
@@ -299,7 +338,8 @@ function take(cb) {
   if (mounted()) {
     return samType(function (type) {
       if (type !== 'web') return settle();
-      if (!blankLayout()) return giveBack('could not prepare LG\'s Home\'s starting layout');
+      var layout = layoutForTake();
+      if (!layout.ok) return giveBack(layout.error);
       stopLgHome();
       cb({ ok: true, already: true });
     });
@@ -349,6 +389,8 @@ module.exports = {
   take: take,
   release: release,
   stopLgHome: stopLgHome,
+  startLayout: startLayout,
+  blankKept: blankKept,
   BLANK_MARK: BLANK_MARK
 };
 
