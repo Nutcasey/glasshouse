@@ -49,24 +49,20 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #srcVia{font-size:26px;color:#a39d93}
 
-/* The plate: the picture of what was last on. Right-aligned against the
-   source, on the same baseline. The mode is the line read from the sofa; the
-   strip under it is the mode each dynamic range gets, amber over the one the
-   signal is in. */
-#plate{-webkit-flex:0 0 auto;flex:0 0 auto;max-width:640px;margin-left:56px;text-align:right;padding-bottom:2px}
+/* The plate: the picture of what was last on, right-aligned in three rows
+   that mirror the source's: the signal level with its kind, the mode, read
+   from the sofa, on its title's line, and the OLED light level with its input.
+   The rows keep their height when empty, so a plate with only one of them
+   still lines up with the source beside it. The mode's margins put its
+   smaller type on the title's baseline. */
+#plate{-webkit-flex:0 0 auto;flex:0 0 auto;max-width:640px;margin-left:56px;text-align:right;padding-bottom:2px;white-space:nowrap}
 #plate.none{display:none}
-#plSig{font-size:23px;color:#a39d93;white-space:nowrap}
+#plSig{font-size:23px;height:32px;line-height:32px;color:#a39d93}
 #plSig span+span{margin-left:22px}
-#plMode{font-family:'Outfit',sans-serif;font-size:52px;line-height:1;font-weight:400;letter-spacing:-.5px;margin:10px 0 16px;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#plMode:empty{display:none}
-#plStrip{display:-webkit-flex;display:flex;-webkit-justify-content:flex-end;justify-content:flex-end}
-#plStrip div{margin-left:28px;padding-top:8px;border-top:2px solid #2a2825;text-align:left;min-width:90px}
-#plStrip b{display:block;font-size:17px;font-weight:400;color:#6b665e}
-#plStrip span{display:block;font-size:20px;color:#a39d93;margin-top:3px;white-space:nowrap}
-#plStrip .on{border-top-color:#e9ad55}
-#plStrip .on b{color:#e9ad55}
-#plStrip .on span{color:#ece7df}
+#plMode{font-family:'Outfit',sans-serif;font-size:52px;height:70px;line-height:70px;font-weight:400;letter-spacing:-.5px;margin:15px 0 5px;
+  overflow:hidden;text-overflow:ellipsis}
+#plStrip{font-size:23px;height:36px;line-height:38px;color:#a39d93}
+#plStrip b{font-weight:400;color:#6b665e;margin-right:12px}
 
 #rows{padding-top:34px}
 .row{margin-bottom:22px}
@@ -424,23 +420,18 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
   /*
    * The plate. An input's signal is read off its receiver, so it is there
    * while Home is; an app's is the last video it played, noted by the server
-   * while it played. A channel has none, and the strip alone says what each
-   * dynamic range would get.
+   * while it played. A channel has none, and shows the mode it gets in SDR;
+   * an app that has played nothing shows no plate.
    */
   var picture = null;
   var pictureRevision = 0;
   var pictureSource = null;
-  var RANGES = [
-    { key: 'sdr', name: t('home.plate.sdr', 'SDR') },
-    { key: 'hdr', name: t('home.plate.hdr', 'HDR') },
-    { key: 'dolbyHdr', name: t('home.plate.dolby', 'Dolby Vision') }
-  ];
-  var HDR_NAMES = { hdr10: 'HDR10', hlg: 'HLG' };
+  var HDR_NAMES = { hdr10: 'HDR10', hlg: 'HLG', dolby_vision: t('home.plate.dolby', 'Dolby Vision') };
 
   function refreshPicture() {
     var revision = ++pictureRevision;
     var kind = lastOn.kind;
-    if (!layout || layout.picture === false) kind = null;
+    if (!layout || layout.picture !== true) kind = null;
     if (kind !== 'input' && kind !== 'channel' && kind !== 'app') {
       pictureSource = null;
       picture = null;
@@ -464,36 +455,27 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
 
   function renderPicture() {
     var p = picture;
-    if (!p || !p.modes || !(p.modes.sdr || p.modes.hdr || p.modes.dolbyHdr)) { $('plate').className = 'none'; return; }
-    var sig = [], s = p.signal;
+    var s = p && p.signal;
+    if (!p || !(s || p.mode || lastOn.kind === 'input')) { $('plate').className = 'none'; return; }
+    var sig = [];
     if (s) {
       // An app's video, noted while it played: it has stopped since.
       if (s.played) sig.push(t('home.plate.played', 'Last video'));
       sig.push(s.hz ? t('home.plate.size', '{width} \u00d7 {height} at {hz} Hz', { width: s.width, height: s.height, hz: hz(s.hz) })
         : t('home.plate.sizeOnly', '{width} \u00d7 {height}', { width: s.width, height: s.height }));
       if (s.chroma) sig.push(s.bits ? t('home.plate.depth', '{chroma}, {bits}-bit', { chroma: s.chroma.replace(/^YCbCr /, ''), bits: s.bits }) : s.chroma);
+      if (HDR_NAMES[s.hdr]) sig.push(HDR_NAMES[s.hdr]);
       if (s.vrr) sig.push(t('home.plate.vrr', 'VRR'));
       if (s.allm) sig.push(t('home.plate.allm', 'Low latency'));
     } else if (lastOn.kind === 'input') {
       sig.push(t('home.plate.noSignal', 'No picture coming in'));
     }
     $('plSig').innerHTML = sig.map(function (x) { return '<span>' + esc(x) + '</span>'; }).join('');
-    var on = p.range && p.modes[p.range];
-    $('plMode').textContent = on ? on.display : '';
-    var cells = '';
-    RANGES.forEach(function (r) {
-      var m = p.modes[r.key];
-      if (!m) return;
-      var name = r.key === 'hdr' && p.range === 'hdr' && s && HDR_NAMES[s.hdr] ? HDR_NAMES[s.hdr] : r.name;
-      // Under its range's name, the mode needs no prefix: HDR Filmmaker reads Filmmaker.
-      var mode = r.key === 'sdr' ? m.display : m.display.replace(/^(HDR|Dolby Vision) /, '');
-      cells += '<div' + (r.key === p.range ? ' class="on"' : '') + '><b>' + esc(name) + '</b><span>' + esc(mode) + '</span></div>';
-    });
-    if (typeof p.light === 'number') {
-      cells += '<div><b>' + esc(p.oled ? t('home.plate.oledLight', 'OLED light') : t('home.plate.backlight', 'Backlight')) +
-        '</b><span>' + esc(p.light) + '</span></div>';
-    }
-    $('plStrip').innerHTML = cells;
+    $('plMode').textContent = p.mode ? p.mode.display : '';
+    $('plStrip').innerHTML = p.mode && typeof p.light === 'number'
+      ? '<div><b>' + esc(p.oled ? t('home.plate.oledLight', 'OLED light') : t('home.plate.backlight', 'Backlight')) +
+        '</b>' + esc(p.light) + '</div>'
+      : '';
     $('plate').className = '';
   }
 

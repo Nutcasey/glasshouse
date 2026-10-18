@@ -1692,6 +1692,7 @@ if (!CLI_MODE) {
   liveState.startGroup('power');
   liveState.state.onChange(function (ev) {
     if (ev.group === 'power' && ev.key === 'systemOn' && ev.value === true) setTimeout(refreshHomeTitles, 20000);
+    if (ev.group === 'power' && ev.key === 'systemOn') homePicture.want('tv', ev.value !== false);
     if (ev.group === 'surface' && ev.key === 'control_app_id' && ev.value === 'com.webos.app.home') refreshHomeTitles();
   });
 
@@ -1704,6 +1705,7 @@ if (!CLI_MODE) {
   screentime.start();
 
   homePicture.init({ telemetry: telemetry, oled: oled, luna: luna, Subscription: lunaTransport.Subscription });
+  homePicture.want('tv', (liveState.state.snapshot().power || {}).systemOn !== false);
   glasshouseHome.init({
     luna: luna,
     liveState: liveState,
@@ -1720,9 +1722,9 @@ if (!CLI_MODE) {
     build: TVWEB_DISPLAY_VERSION + '@' + Date.now(),
     homeKeys: function (on) {
       if (remotebuttons.isSupported()) remotebuttons.want('home', on);
-      if (on) homePicture.start();
-      else homePicture.stop();
-    }
+      homePicture.want('home', on);
+    },
+    pictureDetails: function (on) { homePicture.want('details', on); }
   });
   glasshouseHome.start();
   /*

@@ -30,7 +30,9 @@ var FILES = {
 var MODES = {
   hdmi4: { sdr: 'cinema', hdr: 'hdrFilmMaker', dolbyHdr: 'dolbyHdrCinema' },
   hdmi2: { sdr: 'filmMaker', hdr: 'hdrCinema', dolbyHdr: 'dolbyHdrCinema' },
-  default: { sdr: 'filmMaker', hdr: 'hdrFilmMaker', dolbyHdr: 'dolbyHdrCinemaBright' }
+  default: { sdr: 'filmMaker', hdr: 'hdrFilmMaker', dolbyHdr: 'dolbyHdrCinemaBright' },
+  // Not read from the G3: the tuner input as a test case.
+  dtv: { sdr: 'cinema' }
 };
 
 function setUp(files, Subscription) {
@@ -47,7 +49,6 @@ function setUp(files, Subscription) {
     luna: function (uri, payload, cb) {
       asked.push(payload);
       var dim = payload.dimension || {};
-      if (payload.category === 'sound') return cb({ returnValue: true, settings: { soundMode: 'standard', soundOutput: 'tv_speaker' } });
       if (payload.keys[0] === 'backlight') {
         if (!dim.input || !dim.pictureMode) return cb({ returnValue: false, errorText: 'no result from DB' });
         return cb({ returnValue: true, settings: { backlight: dim.pictureMode === 'hdrFilmMaker' ? 100 : 95 } });
@@ -60,13 +61,14 @@ function setUp(files, Subscription) {
   return asked;
 }
 
-setUp(FILES);
+var asked = setUp(FILES);
 homePicture.picture('input', 4, function (r) {
   assert.deepEqual(r.signal, { width: 3840, height: 2160, hz: 24, chroma: 'YCbCr 4:4:4', bits: 10, hdr: 'hdr10', vrr: false, allm: false });
   assert.equal(r.range, 'hdr');
-  assert.equal(r.modes.hdr.display, 'HDR Filmmaker');
-  assert.equal(r.modes.sdr.display, 'Cinema');
+  assert.deepEqual(r.mode, { raw: 'hdrFilmMaker', display: 'HDR Filmmaker' });
   assert.equal(r.light, 100, 'the OLED light of the mode the signal is in');
+  assert.deepEqual(asked.map(function (a) { return a.keys[0] + ':' + (a.dimension.dynamicRange || a.dimension.pictureMode); }),
+    ['pictureMode:hdr', 'backlight:hdrFilmMaker'], 'only the range coming in is asked for');
   console.log('  ✓ HDMI 4 behind Home: 4K 24 Hz HDR10, in its HDR mode');
 });
 
@@ -80,24 +82,37 @@ homePicture.picture('input', 4, function (r) {
   assert.equal(r.signal.bits, 8);
   assert.equal(r.signal.hdr, 'sdr');
   assert.equal(r.range, 'sdr');
-  assert.equal(r.modes.sdr.display, 'Cinema');
+  assert.equal(r.mode.display, 'Cinema');
+  assert.equal(r.light, 95);
   console.log('  ✓ the same source back in SDR, 8-bit, in its SDR mode');
 });
 
-setUp(FILES);
+asked = setUp(FILES);
 homePicture.picture('input', 2, function (r) {
   assert.equal(r.signal, null);
   assert.equal(r.range, null);
-  assert.equal(r.modes.dolbyHdr.display, 'Dolby Vision Cinema');
-  console.log('  ✓ an input with nothing connected still has its modes');
+  assert.equal(r.mode, null);
+  assert.equal(r.light, null);
+  assert.equal(asked.length, 0, 'no mode is asked for without a signal');
+  console.log('  ✓ an input with nothing connected has no mode to show');
 });
 
 setUp({});
 homePicture.picture('app', null, function (r) {
   assert.equal(r.input, 'default');
   assert.equal(r.signal, null);
-  assert.equal(r.modes.dolbyHdr.display, 'Dolby Vision Cinema Bright');
-  console.log('  ✓ an app is read under the default input');
+  assert.equal(r.mode, null);
+  console.log('  ✓ an app that has played nothing has no mode to show');
+});
+
+setUp({});
+homePicture.picture('channel', null, function (r) {
+  assert.equal(r.input, 'dtv');
+  assert.equal(r.signal, null);
+  assert.equal(r.range, 'sdr');
+  assert.equal(r.mode.display, 'Cinema');
+  assert.equal(r.light, 95);
+  console.log('  ✓ a channel, with no signal read, shows its SDR mode');
 });
 
 ['bogus', 'constructor'].forEach(function (kind) {
@@ -121,8 +136,10 @@ setUp({}, function (uri, payload, appId, handlers) {
 });
 homePicture.picture('channel', null, function () {});
 assert.equal(subscribed.length, 0, 'a plate read does not enable tracking');
-homePicture.start();
-homePicture.start();
+homePicture.want('home', true);
+assert.equal(subscribed.length, 0, 'Glasshouse Home alone does not track, with picture details off');
+homePicture.want('details', true);
+homePicture.want('details', true);
 assert.deepEqual(subscribed, ['com.webos.service.videooutput/getStatus']);
 sendVideo(playing);
 sendVideo(stopped);
@@ -132,15 +149,22 @@ homePicture.picture('app', null, function (r) {
   assert.equal(r.signal.hdr, 'dolby_vision');
   assert.equal(r.signal.played, true);
   assert.equal(r.range, 'dolbyHdr');
-  assert.equal(r.modes.dolbyHdr.display, 'Dolby Vision Cinema Bright');
+  assert.equal(r.mode.display, 'Dolby Vision Cinema Bright');
 }, 'netflix');
 homePicture.picture('app', null, function (r) { assert.equal(r.signal, null); }, 'youtube.leanback.v4');
-homePicture.stop();
-homePicture.stop();
-assert.equal(stops, 1);
+homePicture.want('tv', false);
+homePicture.want('tv', false);
+assert.equal(stops, 1, 'standby stops tracking');
+homePicture.want('tv', true);
+assert.equal(subscribed.length, 2, 'waking starts it again');
+homePicture.want('details', false);
+assert.equal(stops, 2, 'switching picture details off stops tracking');
+homePicture.want('details', true);
+homePicture.want('home', false);
+assert.equal(stops, 3, 'switching Glasshouse Home off stops tracking');
 homePicture.picture('app', null, function (r) { assert.equal(r.signal.hdr, 'dolby_vision'); }, 'netflix');
-assert.equal(subscribed.length, 1, 'reading the plate after disabling does not restart tracking');
-console.log('  ✓ enabled tracking captures the first video before any app plate, and stops when disabled');
+assert.equal(subscribed.length, 3, 'reading the plate after disabling does not restart tracking');
+console.log('  ✓ tracking runs while Home, picture details and the TV are on, and keeps what it saw');
 
 var status = FILES['/proc/lg/hdmi20/port0/status'];
 var pkt = FILES['/proc/lg/hdmi20/port0/pkt'];

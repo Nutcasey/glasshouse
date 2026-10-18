@@ -744,7 +744,7 @@ function homeRows(d) {
              hint: t('home.hideLgDesc', 'For about 25 seconds after a cold start, until Glasshouse Home takes its place, LG\u2019s Home opens as a black screen instead of its own. If Glasshouse stops running, for example after a firmware update removes root, LG\u2019s Home stays black until it is put back over SSH.') });
   }
   if (d.supported.ok && d.layout) {
-    var picOn = d.layout.picture !== false;
+    var picOn = d.layout.picture === true;
     r.push({ label: t('home.picture', 'Picture details'),
              value: picOn ? t('common.on', 'On') : t('common.off', 'Off'), cls: picOn ? 'on' : 'off',
              act: can ? 'homePicture' : null, on: picOn,

@@ -19,8 +19,9 @@
  * videooutput's getStatus, subscribed, names the app on the main sink with
  * its size, frame rate and HDR type (Netflix on a G3: 3840x2160, 23.976 Hz,
  * DolbyVision). The last video each app played is kept, in memory, and a
- * stop leaves it in place. The subscription runs while Glasshouse Home is
- * enabled, including before the first visit, so the first video is captured.
+ * stop leaves it in place. The subscription runs while Glasshouse Home and its
+ * picture details are on and the TV is, including before the first visit, so
+ * the first video is captured.
  *
  * Strict ES5: runs on node 0.12.
  */
@@ -28,7 +29,6 @@ var names = require('./names');
 var readTrimmed = require('./util').readTrimmed;
 
 var SETTINGS = 'com.webos.service.settings/getSystemSettings';
-var RANGES = ['sdr', 'hdr', 'dolbyHdr'];
 var CACHE_MS = 10000;
 
 /** @type {typeof import('./telemetry')} */
@@ -42,6 +42,9 @@ var cache = {};
 var SubscriptionType = null;
 var videoSub = null;
 var played = {};
+// What the subscription waits on: Glasshouse Home, its picture details, and
+// the TV out of standby, which is taken as on until the power state says not.
+var wants = { home: false, details: false, tv: true };
 
 function init(opts) {
   opts = opts || {};
@@ -54,6 +57,7 @@ function init(opts) {
   SubscriptionType = opts.Subscription || null;
   cache = {};
   played = {};
+  wants = { home: false, details: false, tv: true };
 }
 
 // videooutput's hdrType, as the plate names a source's HDR.
@@ -106,6 +110,14 @@ function start() {
 function stop() {
   if (videoSub) videoSub.stop();
   videoSub = null;
+}
+
+// One of the conditions in wants has changed; the subscription runs while all hold.
+function want(what, on) {
+  if (!wants.hasOwnProperty(what)) return;
+  wants[what] = on === true;
+  if (wants.home && wants.details && wants.tv) start();
+  else stop();
 }
 
 function luna(uri, payload, cb) {
@@ -181,14 +193,11 @@ function rangeOf(hdr) {
   return hdr === 'dolby_vision' ? 'dolbyHdr' : hdr === 'hdr10' || hdr === 'hlg' ? 'hdr' : 'sdr';
 }
 
-function modes(input, cb) {
-  var out = {}, left = RANGES.length;
-  RANGES.forEach(function (range) {
-    luna(SETTINGS, { category: 'picture', keys: ['pictureMode'], dimension: { input: input, dynamicRange: range } }, function (r) {
-      var raw = r && r.settings ? r.settings.pictureMode : null;
-      out[range] = raw ? { raw: raw, display: names.pictureMode(raw).display } : null;
-      if (--left === 0) cb(out);
-    });
+function pictureMode(input, range, cb) {
+  if (!range) return cb(null);
+  luna(SETTINGS, { category: 'picture', keys: ['pictureMode'], dimension: { input: input, dynamicRange: range } }, function (r) {
+    var raw = r && r.settings ? r.settings.pictureMode : null;
+    cb(raw ? { raw: raw, display: names.pictureMode(raw).display } : null);
   });
 }
 
@@ -200,20 +209,12 @@ function oledLight(input, mode, cb) {
   });
 }
 
-function sound(cb) {
-  luna(SETTINGS, { category: 'sound', keys: ['soundMode', 'soundOutput'] }, function (r) {
-    var s = r && r.settings ? r.settings : {};
-    cb({
-      mode: s.soundMode ? names.soundMode(s.soundMode) : null,
-      output: s.soundOutput ? names.soundOutput(s.soundOutput).display : null
-    });
-  });
-}
-
 /*
  * The plate for what was last on: kind 'input' with its port, 'channel', or
- * 'app' with its id. cb({ ok, input, signal, range, modes, light, oled, sound }), where range is
- * the dynamic range the signal is shown in, or null with no signal to go by.
+ * 'app' with its id. cb({ ok, input, signal, range, mode, light, oled }), where
+ * range is the dynamic range the signal is shown in and mode the picture mode
+ * it gets. A channel is taken as SDR; an input or app with no signal to go by
+ * has neither.
  */
 function picture(kind, port, cb, appId) {
   var inputs = { input: 'hdmi' + port, channel: 'dtv', app: 'default' };
@@ -225,18 +226,16 @@ function picture(kind, port, cb, appId) {
   if (hit && nowMs() - hit.at < CACHE_MS) return cb(hit.value);
   var lastPlayed = kind === 'app' && appId && played.hasOwnProperty(appId) ? played[appId] : null;
   (kind === 'input' ? hdmiSignal : function (p, next) { next(lastPlayed); })(port, function (signal) {
-    modes(input, function (byRange) {
-      var range = signal ? rangeOf(signal.hdr) : null;
-      var shown = byRange[range || 'sdr'];
-      oledLight(input, shown ? shown.raw : null, function (light) {
-        sound(function (snd) {
-          // An LCD's backlight is the same setting, under its own name.
-          (oled ? oled.detectOled : function (next) { next(false); })(function (isOled) {
-            var value = { ok: true, input: input, signal: signal, range: range, modes: byRange,
-              light: light, oled: !!isOled, sound: snd };
-            cache[key] = { at: nowMs(), value: value };
-            cb(value);
-          });
+    // A channel's signal is not read, and broadcast is almost all SDR.
+    var range = signal ? rangeOf(signal.hdr) : kind === 'channel' ? 'sdr' : null;
+    pictureMode(input, range, function (mode) {
+      oledLight(input, mode ? mode.raw : null, function (light) {
+        // An LCD's backlight is the same setting, under its own name.
+        (oled ? oled.detectOled : function (next) { next(false); })(function (isOled) {
+          var value = { ok: true, input: input, signal: signal, range: range, mode: mode,
+            light: light, oled: !!isOled };
+          cache[key] = { at: nowMs(), value: value };
+          cb(value);
         });
       });
     });
@@ -245,8 +244,7 @@ function picture(kind, port, cb, appId) {
 
 module.exports = {
   init: init,
-  start: start,
-  stop: stop,
+  want: want,
   picture: picture,
   sourceHdr: sourceHdr,
   refreshHz: refreshHz

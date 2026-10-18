@@ -85,6 +85,9 @@ var installFn = null;
 // Starts and stops reading the remote's Home button (lib/remotebuttons).
 /** @type {function(boolean): void} */
 var homeKeysFn = function () {};
+// Told whether the plate's picture details are on, at start and on each change.
+/** @type {function(boolean): void} */
+var pictureDetailsFn = function () {};
 /*
  * Points the remote's Home key at an app through the compositor's key filter
  * (lib/remotekeys), or gives it back to LG's filters with ''. Earlier builds
@@ -157,8 +160,9 @@ function defaults() {
     hidden: { app: PROMO_APPS.slice(), dev: [], ch: [] },
     channels: [],
     hintSeen: false,
-    // The plate describing the picture of what was last on.
-    picture: true,
+    // The plate describing the picture of what was last on: detail many
+    // won't want on a home screen, so it waits to be switched on.
+    picture: false,
     // null until chosen: the first start keeps an empty layout an earlier build left.
     hideLgHomeAtStart: null,
     snapshot: null
@@ -195,7 +199,7 @@ function normalise(raw) {
   d.enabled = raw.enabled === true;
   d.restorePending = raw.restorePending === true;
   d.hintSeen = raw.hintSeen === true;
-  d.picture = raw.picture !== false;
+  d.picture = raw.picture === true;
   if (typeof raw.hideLgHomeAtStart === 'boolean') d.hideLgHomeAtStart = raw.hideLgHomeAtStart;
   d.snapshot = validSnapshot(raw.snapshot) ? raw.snapshot : null;
   return d;
@@ -216,8 +220,10 @@ function readConfig() {
   if (config && mtime === configMtime) return config;
   var raw = null;
   try { raw = JSON.parse(fs.readFileSync(configFile(), 'utf8')); } catch (e) {}
+  var before = config;
   config = normalise(raw);
   configMtime = mtime;
+  if (!before || before.picture !== config.picture) pictureDetailsFn(config.picture);
   // tvwebctl restore-glasshouse-home, run beside the server, switches it off here.
   if (wasEnabled && !config.enabled) {
     console.log('home: switched off in home.json');
@@ -288,6 +294,7 @@ function setLayout(body, cb) {
     config = c;
     return cb({ ok: false, error: msg('srv.home.saveFailed', 'could not save the layout') });
   }
+  if (c.picture !== config.picture) pictureDetailsFn(config.picture);
   cb({ ok: true, layout: layoutOf(config) });
 }
 
@@ -1078,6 +1085,7 @@ function init(opts) {
   serverPort = opts.port === undefined ? 8080 : Number(opts.port);
   installFn = opts.installApp || null;
   homeKeysFn = opts.homeKeys || function () {};
+  pictureDetailsFn = opts.pictureDetails || function () {};
   setHomeKeyFn = opts.setHomeKey || function (id, cb) { cb({ ok: true, none: true }); };
   homeKeyAppFn = opts.homeKeyApp || function () { return ''; };
   setStartingFn = opts.setStarting || function (text, cb) { cb({ ok: true, none: true }); };

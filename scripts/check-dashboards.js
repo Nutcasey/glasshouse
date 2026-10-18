@@ -127,9 +127,12 @@ async function visitHomePicture(browser, base, problems) {
   const page = await browser.newPage();
   page.on('pageerror', e => problems.push('Home picture: ' + e.message));
   const layout = { rows: ['app', 'dev', 'ch'], order: { app: [], dev: [], ch: [] },
-    hidden: { app: [], dev: [], ch: [] }, channels: [], hintSeen: true, picture: false };
-  const modes = { sdr: { display: 'Cinema' }, hdr: { display: 'HDR Filmmaker' },
-    dolbyHdr: { display: 'Dolby Vision Cinema Bright' } };
+    hidden: { app: [], dev: [], ch: [] }, channels: [], hintSeen: true };
+  const hdmi4 = { ok: true, range: 'hdr', mode: { display: 'HDR Filmmaker' }, light: 100, oled: true,
+    signal: { width: 3840, height: 2160, hz: 24, chroma: 'YCbCr 4:4:4', bits: 10, hdr: 'hdr10' } };
+  const netflix = { ok: true, range: 'dolbyHdr', mode: { display: 'Dolby Vision Cinema Bright' }, light: 100, oled: true,
+    signal: { width: 3840, height: 2160, hz: 23.98, hdr: 'dolby_vision', played: true } };
+  const asleep = { ok: true, range: null, mode: null, light: null, oled: true, signal: null };
   let source = { kind: 'input', port: 4, title: 'HDMI 4' };
   let releaseCatalogue = null, latePicture = null, holdPicture = false, pictureReads = 0;
   const reply = (route, body) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
@@ -148,7 +151,7 @@ async function visitHomePicture(browser, base, problems) {
     if (url.pathname.endsWith('/now')) return reply(route, source);
     if (url.pathname.endsWith('/picture')) {
       pictureReads++;
-      const body = { ok: true, modes, range: url.searchParams.get('kind') === 'app' ? 'dolbyHdr' : 'hdr' };
+      const body = url.searchParams.get('kind') === 'app' ? netflix : url.searchParams.get('port') === '2' ? asleep : hdmi4;
       if (holdPicture) {
         holdPicture = false;
         latePicture = () => reply(route, body);
@@ -181,8 +184,22 @@ async function visitHomePicture(browser, base, problems) {
     await releaseCatalogue();
     await page.waitForSelector('.tile');
     await page.waitForTimeout(100);
-    if (await page.locator('#plate').isVisible()) problems.push('Home picture: disabled initial layout showed a plate');
+    if (await page.locator('#plate').isVisible()) problems.push('Home picture: a layout without picture details showed a plate');
     layout.picture = true;
+    await returned();
+    await page.waitForFunction(() => document.getElementById('plMode').textContent === 'HDR Filmmaker');
+    if (await page.locator('#plStrip > div').count() !== 1) problems.push('Home picture: the strip held more than the OLED light');
+    source = { kind: 'input', port: 2, title: 'HDMI 2' };
+    await returned();
+    await page.waitForFunction(() => document.getElementById('plSig').textContent === 'No picture coming in');
+    const level = await page.evaluate(() => {
+      const top = id => document.getElementById(id).getBoundingClientRect().top;
+      return { shown: document.getElementById('plMode').textContent + document.getElementById('plStrip').textContent,
+        off: Math.abs(top('plSig') - top('srcKind')) };
+    });
+    if (level.shown) problems.push('Home picture: no signal still showed a mode or OLED light');
+    if (level.off > 1) problems.push('Home picture: no signal left its line off the source\'s first line');
+    source = { kind: 'input', port: 4, title: 'HDMI 4' };
     await returned();
     await page.waitForFunction(() => document.getElementById('plMode').textContent === 'HDR Filmmaker');
     await delayPicture();

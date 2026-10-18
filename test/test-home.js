@@ -587,15 +587,21 @@ step('a failed layout restore keeps the backup and can be retried', function (do
   });
 });
 
-step('the picture details stay on until switched off, and a later change keeps them off', function (done) {
-  start(null);
-  assert.strictEqual(home.layout().picture, true);
-  home.setLayout({ picture: false }, function (r) {
-    assert.strictEqual(r.layout.picture, false);
+step('the picture details stay off until switched on, and the server is told of each change', function (done) {
+  var told = [];
+  start(null, { pictureDetails: function (on) { told.push(on); } });
+  assert.strictEqual(home.layout().picture, false);
+  assert.deepEqual(told, [false]);
+  home.setLayout({ picture: true }, function (r) {
+    assert.strictEqual(r.layout.picture, true);
     home.setLayout({ hintSeen: true }, function (r2) {
-      assert.strictEqual(r2.layout.picture, false);
-      assert.strictEqual(home.normalise(JSON.parse(fs.readFileSync(path.join(dir, 'home.json'), 'utf8'))).picture, false);
-      done();
+      assert.strictEqual(r2.layout.picture, true);
+      assert.strictEqual(home.normalise(JSON.parse(fs.readFileSync(path.join(dir, 'home.json'), 'utf8'))).picture, true);
+      assert.deepEqual(told, [false, true], 'a change elsewhere in the layout is not a change of details');
+      home.setLayout({ picture: false }, function () {
+        assert.deepEqual(told, [false, true, false]);
+        done();
+      });
     });
   });
 });
