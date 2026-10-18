@@ -86,6 +86,7 @@ function freshTv() {
 function samScan() {
   if (tv.samRefuses) return;
   var info = JSON.parse(fs.readFileSync(path.join(appDir, 'appinfo.json'), 'utf8'));
+  if (tv.samRefusesWeb && info.type === 'web') return;
   tv.samType = info.type;
   tv.samCategory = info.appCategory || null;
 }
@@ -476,28 +477,53 @@ step('webOS 10 is offered without the setting, with LG\'s Flutter Home stopped a
   });
 });
 
-step('mounted by a release whose manifest had no appCategory, sam is made to read the new one at start', function (done) {
+step('an upgrade rereads sam\'s old manifest, including after a restart between staging and rereading', function (done) {
+  var stagedBeforeStart = [false, true];
+  function run() {
+    if (!stagedBeforeStart.length) return done();
+    var alreadyStaged = stagedBeforeStart.shift();
+    start({ enabled: true }, { webosVersion: '10.3.1' });
+    tv.nudgeIgnored = true;
+    // As the earlier release left it: its manifest staged, mounted and read.
+    fs.mkdirSync(stageDir);
+    fs.writeFileSync(path.join(stageDir, 'appinfo.json'), JSON.stringify({ id: LG_HOME, type: 'web' }));
+    fs.unlinkSync(appDir);
+    fs.symlinkSync(stageDir, appDir);
+    samScan();
+    if (alreadyStaged) require('../server/lib/home-takeover').stage();
+    lgRunning(false);
+    home.start();
+    wait(50, function () {
+      assert.deepEqual(tv.events, ['block and release']);
+      assert.deepEqual(tv.samCategory, ['home']);
+      assert.ok(taken());
+      tv.events = [];
+      home.stop();
+      home.start();
+      wait(50, function () {
+        assert.deepEqual(tv.events, [], 'a manifest sam already has is not read again');
+        run();
+      });
+    });
+  }
+  run();
+});
+
+step('an upgrade sam refuses restores LG\'s Home and reports failure', function (done) {
   start({ enabled: true }, { webosVersion: '10.3.1' });
   tv.nudgeIgnored = true;
-  // As the earlier release left it: its manifest staged, mounted and read.
   fs.mkdirSync(stageDir);
   fs.writeFileSync(path.join(stageDir, 'appinfo.json'), JSON.stringify({ id: LG_HOME, type: 'web' }));
   fs.unlinkSync(appDir);
   fs.symlinkSync(stageDir, appDir);
   samScan();
   lgRunning(false);
-  home.start();
-  wait(50, function () {
-    assert.deepEqual(tv.events, ['block and release']);
-    assert.deepEqual(tv.samCategory, ['home']);
-    assert.ok(taken());
-    tv.events = [];
-    home.stop();
-    home.start();
-    wait(50, function () {
-      assert.deepEqual(tv.events, [], 'a manifest sam already has is not read again');
-      done();
-    });
+  tv.samRefusesWeb = true;
+  home.enable(function (r) {
+    assert.strictEqual(r.ok, false, 'the Home key cannot work without the home category');
+    assert.strictEqual(tv.samType, 'native', 'sam has LG\'s original manifest again');
+    assert.strictEqual(fs.realpathSync(appDir), fs.realpathSync(lgFiles), 'LG\'s files are back');
+    done();
   });
 });
 

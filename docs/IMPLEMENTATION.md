@@ -1259,7 +1259,9 @@ button opens the default app of the `home` category, which sam takes from that
 `appCategory`; without it the button does nothing
 ([research](development/TV-RESEARCH.md#glasshouse-home-on-webos-10-g5-webos-1031)).
 A server finding it mounted with a manifest sam has not read, as after an
-upgrade, has sam read it again. Everything on the TV that means Home opens that id: the
+upgrade or an interrupted reread, checks sam's copy and has it read again. If sam
+does not report the home category, LG's Home is put back and the switch fails.
+Everything on the TV that means Home opens that id: the
 Home button (surface-manager, `hotKey`), Back out of the last app (sam's
 `last_input_handler`), waking on Home (`bootManager`), so all of them open
 Glasshouse Home, with nothing to correct afterwards and no setting changed

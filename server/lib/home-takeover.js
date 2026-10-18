@@ -137,12 +137,11 @@ function stage() {
     var file = path.join(stageDir, 'appinfo.json');
     var had = '';
     try { had = fs.readFileSync(file, 'utf8'); } catch (e) {}
-    var manifestChanged = had !== json;
-    if (manifestChanged) {
+    if (had !== json) {
       fs.writeFileSync(file, json);
       changed = true;
     }
-    return { ok: true, changed: changed, manifestChanged: manifestChanged };
+    return { ok: true, changed: changed };
   } catch (e) {
     return { ok: false, error: e.message };
   }
@@ -368,30 +367,20 @@ function take(cb) {
         return cb({ ok: true, stoppedLg: stopped > 0 });
       }
       giveBack('sam did not take Glasshouse Home as Home');
-    });
+    }, samHasManifest);
   }
   function giveBack(error) {
     release(function (r) { cb({ ok: false, error: r.ok ? error : error + '; ' + r.error }); });
   }
   if (mounted()) {
-    return samType(function (type) {
-      if (type !== 'web') return settle();
-      function keep() {
-        var layout = layoutForTake();
-        if (!layout.ok) return giveBack(layout.error);
-        stopLgHome();
-        cb({ ok: true, already: true });
-      }
-      if (!st.manifestChanged) return keep();
-      /*
-       * Mounted by an earlier release: sam still has its manifest, which on
-       * webOS 10 lacked the appCategory the Home key needs. A reread sam does
-       * not report leaves the page in place as it was.
-       */
-      reread(true, function (ok) {
-        if (!ok) console.log('home: sam did not report Glasshouse Home\'s new manifest');
-        keep();
-      }, samHasManifest);
+    // The files can be current while sam still has an earlier manifest,
+    // after a restart between staging and rereading, or a failed reread.
+    return samHasManifest(function (ok) {
+      if (!ok) return settle();
+      var layout = layoutForTake();
+      if (!layout.ok) return giveBack(layout.error);
+      stopLgHome();
+      cb({ ok: true, already: true });
     });
   }
   execFn('/bin/mount', ['--bind', stageDir, appDir], { timeout: 4000 }, function (err) {
