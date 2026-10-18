@@ -730,23 +730,43 @@ rereads the apps where sam has lost it.
 
 On 2026-10-18 a G3 answered `turnOnScreenSaver` with `returnValue` true and
 started nothing. A `getPowerState` subscription showed `processing: "Request
-Screen Saver"` and then `"Screen On"` 30 ms later, back to plain Active. It did
-so with Home or the dashboard app in front, with Netflix and HDMI 4 closed in
-the background, with no media pipeline playing and with sam knowing the app.
-tvpower asks the clients in `getClientList`'s `ListScreenSaverRequests`
-before it starts one: there `com.webos.service.oledepl` and
-`com.webos.app.browser` on `/power`, `com.webos.service.screenmanager` and
-`netflix` on `/power2`. One of them refused. screenmanager's strings name a
-server-sent app blacklist, full-screen playback and a per-app manual mode as
-reasons, but which client refused, and why, was not found: their debug logs
-do not reach `/var/log/messages`, which PmLogDaemon filters by
-`/etc/PmLogDaemon/whitelist.txt`.
+Screen Saver"` and then `"Screen On"` 10 to 30 ms later, back to plain Active.
+LG's own idle screen saver was refused the same way, at 180 s and again at
+360 s with no key pressed. tvpower asks the clients in `getClientList`'s
+`ListScreenSaverRequests` before it starts one; on that G3 they were
+`com.webos.service.oledepl` and `com.webos.app.browser` on `/power`, and
+`com.webos.service.screenmanager` and `netflix` on `/power2`. A C2 on the same
+webOS, where the request works, has the same list without Netflix, which it
+does not have installed.
+
+It was still refused with the browser and Netflix closed and gone from that
+list, leaving only oledepl and screenmanager, and with:
+
+- every other app closed and nothing in `com.webos.media/getActivePipelines`
+  or `getForegroundVideoWindow`,
+- screenmanager restarted (`systemctl restart screenmanager`),
+- LG's own Home back in its place and Glasshouse stopped,
+- Glasshouse's ad blocking off and screenmanager restarted after it,
+- settings `general.screenSaverEnabled` written off and on again,
+- oledepl's `setPcScreenSaverResponse` set to `ack: true` (its
+  `getPcScreenSaverResponse` had read false).
+
+screenmanager's strings name a server-sent app blacklist, full-screen playback,
+a per-app manual mode (`setScreenSaverMode`), store mode, an unfinished first
+use and a Hall sensor as reasons. Store mode was `home`,
+`/var/luna/preferences/ran-firstuse` was in place, and nothing was playing.
+Which client refused, and why, was not found: their debug logs do not reach
+`/var/log/messages`, which PmLogDaemon filters by
+`/etc/PmLogDaemon/whitelist.txt`, nor `/var/log/legacy-log`.
 
 Launching `com.webos.app.screensaver` through sam still brought LG's screen
-saver up, and `closeByAppId` closed it. tvpower stayed Active under it,
-so its state does not show a screen saver started that way. Start screensaver
-launches the app where tvpower drops the request, and tracks it through sam's
-`running` list.
+saver up, and `closeByAppId` closed it. tvpower stayed Active under it. The
+app answers a key by calling tvpower's `turnOnScreen` and leaves closing it to
+tvpower, which from Active refuses ("The current sub state must be 'screen
+off'"), so the remote did not close it. Start screensaver launches the app
+where tvpower drops the request, except over full-screen playback, tracks it
+through sam's `running` list, and closes it on any key the remote-button
+worker reads from `/dev/input`.
 
 ## Home's snapshot (webOS 5.6.2, CX)
 

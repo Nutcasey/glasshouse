@@ -148,6 +148,9 @@ def main():
                     color = BUTTON_CODES.get(code)
                     if color:
                         emit_button(color, code)
+                    else:
+                        sys.stdout.write('key %d\n' % code)
+                        sys.stdout.flush()
 
         if log_fd:
             try:

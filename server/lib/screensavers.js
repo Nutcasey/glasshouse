@@ -87,6 +87,10 @@ var switchingSince = 0;
 // True while a screen saver started by launching its app may be showing:
 // tvpower stays Active under one started that way, so it cannot tell.
 var launchedDirectly = false;
+/** @type {function(boolean): void} */
+var watchKeysFn = function () {};
+/** @type {function(function(?{state: string, fullScreen: boolean}): void, boolean=): void} */
+var mediaStateFn = function (cb) { cb(null); };
 
 function clearStagedScreensaver() {
   unlinkQuiet(path.join(SCREENSAVER_DIR, SCREENSAVER_MARKER));
@@ -128,6 +132,9 @@ function init(opts) {
   injectKeyFn = opts.injectKey;
   keyBackVal = opts.KEY_BACK;
   if (opts.inputKey) inputKeyFn = opts.inputKey;
+  if (opts.watchKeys) watchKeysFn = opts.watchKeys;
+  if (opts.mediaState) mediaStateFn = opts.mediaState;
+  launchedDirectly = false;
 
   // Auto-heal: If the screensaver is currently stock (no active bind-mount on SCREENSAVER_APP_DIR),
   // but an orphaned marker remains in SCREENSAVER_DIR, remove it so the boot hook does not
@@ -507,16 +514,52 @@ function screensaverRunning(cb) {
 function launchedShowing() {
   if (launchedDirectly && lunaFn) {
     screensaverRunning(function (running) {
-      if (running === false) launchedDirectly = false;
+      if (running === false) setLaunched(false);
     });
   }
   return launchedDirectly;
 }
 
+/*
+ * LG's screen saver answers a key by asking tvpower to turnOnScreen, and
+ * leaves closing it to tvpower. Under one tvpower did not start, tvpower is
+ * Active and refuses ("The current sub state must be 'screen off'"), so the
+ * remote cannot close it (G3, webOS 9.2.2). The remote's keys are watched
+ * while it shows, and any of them closes it.
+ */
+function setLaunched(on) {
+  if (launchedDirectly === on) return;
+  launchedDirectly = on;
+  watchKeysFn(on);
+}
+
+function closeLaunched(cb) {
+  setLaunched(false);
+  lunaFn('com.webos.applicationManager/closeByAppId', { id: SCREENSAVER_APP_ID }, cb);
+}
+
+function keyPressed() {
+  if (!launchedDirectly || !lunaFn) return;
+  console.log('screensaver: a remote key closes the screen saver');
+  closeLaunched(function () {});
+}
+
+// At start: one an earlier run launched may still be showing, which only
+// this server can close.
+function adoptLaunched() {
+  if (!lunaFn) return;
+  lunaFn('com.webos.service.tvpower/power/getPowerState', {}, function (pw) {
+    if (!pw || power.isScreenSaver(power.mapState(pw.state))) return;
+    screensaverRunning(function (running) {
+      if (running) setLaunched(true);
+    });
+  });
+}
+
 function launchScreensaverApp(cb) {
   lunaFn('com.webos.applicationManager/launch', { id: SCREENSAVER_APP_ID }, function (r) {
     var ok = !!(r && r.returnValue);
-    if (ok) launchedDirectly = true;
+    if (ok) setLaunched(true);
     cb(ok);
   });
 }
@@ -564,9 +607,12 @@ function trigger(cb) {
     }
     if (launchedDirectly) {
       return screensaverRunning(function (running) {
-        launchedDirectly = false;
-        if (!running) return trigger(cb);
-        lunaFn('com.webos.applicationManager/closeByAppId', { id: SCREENSAVER_APP_ID }, function (r) {
+        // Closed already: start one. No answer is not closed.
+        if (running === false) {
+          setLaunched(false);
+          return trigger(cb);
+        }
+        closeLaunched(function (r) {
           cb(r && r.returnValue ? { ok: true } : {
             ok: false,
             error: msg('srv.saver.noClose', 'the TV would not close the screen saver: {error}', { error: (r && r.errorText) || 'no answer' })
@@ -586,14 +632,24 @@ function trigger(cb) {
           if (r && r.returnValue) {
             return refusedAfterRequest(function (refused) {
               if (!refused) return cb({ ok: true });
-              console.log('screensaver: tvpower dropped the request - launching the screen saver app');
-              launchScreensaverApp(function (ok) {
-                cb(ok ? { ok: true } : {
-                  ok: false,
-                  error: fgId ? msg('srv.saver.refusedFrom', 'the TV would not start a screen saver from {source}', { source: fgId })
-                    : msg('srv.saver.refusedHere', 'the TV would not start a screen saver from this source')
+              /*
+               * screenmanager also refuses one over full-screen playback, and
+               * a Home Assistant automation pressing the button cannot see
+               * the film it would cover, so that refusal stands.
+               */
+              mediaStateFn(function (media) {
+                if (media && media.state === 'playing' && media.fullScreen) {
+                  return cb({ ok: false, error: msg('srv.saver.playing', 'the TV does not start a screen saver while something is playing') });
+                }
+                console.log('screensaver: tvpower dropped the request - launching the screen saver app');
+                launchScreensaverApp(function (ok) {
+                  cb(ok ? { ok: true } : {
+                    ok: false,
+                    error: fgId ? msg('srv.saver.refusedFrom', 'the TV would not start a screen saver from {source}', { source: fgId })
+                      : msg('srv.saver.refusedHere', 'the TV would not start a screen saver from this source')
+                  });
                 });
-              });
+              }, true);
             });
           }
           if (r && r.errorText === 'Invalid State change Request') {
@@ -639,5 +695,7 @@ module.exports = {
   setScreensaver: setScreensaver,
   restageScreensaver: restageScreensaver,
   launchedShowing: launchedShowing,
+  keyPressed: keyPressed,
+  adoptLaunched: adoptLaunched,
   trigger: trigger
 };

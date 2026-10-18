@@ -36,8 +36,11 @@ var HOME_CODE = 773;
 
 var onButtonFn = null;
 var onHomeKeyFn = null;
+// Any other key going down, for closing a screen saver tvpower does not know of.
+var onAnyKeyFn = null;
 // Who wants the worker running: MQTT for the coloured buttons, Glasshouse Home
-// for the Home button. It runs while any do.
+// for the Home button, the screen saver while one it launched shows. It runs
+// while any do.
 var owners = {};
 var workerProc = null;
 var activeDevices = [];
@@ -87,7 +90,14 @@ function handleParsedEvent(type, code, val) {
   }
   if (type !== EV_KEY || val !== KEY_PRESS) return;
   var color = BUTTON_CODES[code];
-  if (!color) return;
+  if (!color) {
+    if (process.argv.indexOf('--worker') !== -1) {
+      try { process.stdout.write('key ' + code + '\n'); } catch (e) {}
+    } else if (onAnyKeyFn) {
+      onAnyKeyFn(code);
+    }
+    return;
+  }
 
   var now = Date.now();
   if (lastPressTime[color] && (now - lastPressTime[color] < DEBOUNCE_MS)) {
@@ -247,6 +257,10 @@ function start() {
           if (onHomeKeyFn) onHomeKeyFn(parts[1] === '1');
           continue;
         }
+        if (parts[0] === 'key') {
+          if (onAnyKeyFn) onAnyKeyFn(parseInt(parts[1], 10));
+          continue;
+        }
         var color = parts[0];
         var code = parseInt(parts[1], 10);
         if (BUTTON_CODES[code] && onButtonFn) {
@@ -282,6 +296,7 @@ function init(opts) {
   opts = opts || {};
   onButtonFn = opts.onButton;
   onHomeKeyFn = opts.onHomeKey || null;
+  onAnyKeyFn = opts.onAnyKey || null;
 }
 
 // Starts the worker for the first owner to want it, stops it after the last.
