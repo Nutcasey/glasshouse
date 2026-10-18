@@ -67,6 +67,8 @@ Switching Glasshouse Home off reports a Home-key restore failure, including a sa
 
 Home wallpapers uploaded through the browser go into `/var/lib/tvweb/home-wallpaper-uploads`, one for each time of day. The directory is excluded from packages and rollback copies and removed with the server. Failed LG Home restoration remains visible and retryable on both dashboards.
 
+While Glasshouse Home is enabled, a read-only `videooutput/getStatus` subscription records the last video each app plays for its picture details. It starts before the first Home visit and stops when Glasshouse Home is switched off. Recorded videos stay in memory until the server restarts. HDMI signal and picture-mode reads change no TV settings.
+
 ## Network
 
 The dashboard listens dual-stack on port 8080 (IPv4-only on a kernel without

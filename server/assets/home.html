@@ -428,6 +428,8 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
    * dynamic range would get.
    */
   var picture = null;
+  var pictureRevision = 0;
+  var pictureSource = null;
   var RANGES = [
     { key: 'sdr', name: t('home.plate.sdr', 'SDR') },
     { key: 'hdr', name: t('home.plate.hdr', 'HDR') },
@@ -436,11 +438,23 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
   var HDR_NAMES = { hdr10: 'HDR10', hlg: 'HLG' };
 
   function refreshPicture() {
+    var revision = ++pictureRevision;
     var kind = lastOn.kind;
-    if (layout && layout.picture === false) kind = null;
-    if (kind !== 'input' && kind !== 'channel' && kind !== 'app') { picture = null; return renderPicture(); }
+    if (!layout || layout.picture === false) kind = null;
+    if (kind !== 'input' && kind !== 'channel' && kind !== 'app') {
+      pictureSource = null;
+      picture = null;
+      return renderPicture();
+    }
     var which = kind === 'input' ? '&port=' + lastOn.port : kind === 'app' ? '&app=' + encodeURIComponent(lastOn.appId || '') : '';
+    var source = kind + which;
+    if (source !== pictureSource) {
+      pictureSource = source;
+      picture = null;
+      renderPicture();
+    }
     getJson('/api/home/picture?kind=' + kind + which, function (r) {
+      if (revision !== pictureRevision) return;
       picture = r && r.ok ? r : null;
       renderPicture();
     });
@@ -786,6 +800,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
       var firstLoad = !data;
       data = r;
       layout = r.layout;
+      refreshPicture();
       clearTimeout(loadRetry);
       wallAvailable = !!(r.wallpapers && r.wallpapers.available);
       wallSlots = r.wallpapers && r.wallpapers.slots;

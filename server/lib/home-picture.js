@@ -19,8 +19,8 @@
  * videooutput's getStatus, subscribed, names the app on the main sink with
  * its size, frame rate and HDR type (Netflix on a G3: 3840x2160, 23.976 Hz,
  * DolbyVision). The last video each app played is kept, in memory, and a
- * stop leaves it in place. The subscription starts with the first plate the
- * view asks for, so a TV without Glasshouse Home runs none.
+ * stop leaves it in place. The subscription runs while Glasshouse Home is
+ * enabled, including before the first visit, so the first video is captured.
  *
  * Strict ES5: runs on node 0.12.
  */
@@ -216,7 +216,6 @@ function sound(cb) {
  * the dynamic range the signal is shown in, or null with no signal to go by.
  */
 function picture(kind, port, cb, appId) {
-  start();
   var inputs = { input: 'hdmi' + port, channel: 'dtv', app: 'default' };
   var input = inputs.hasOwnProperty(kind) ? inputs[kind] : null;
   if (!input) return cb({ ok: false, error: 'kind input, channel or app expected' });
@@ -246,7 +245,8 @@ function picture(kind, port, cb, appId) {
 
 module.exports = {
   init: init,
-  notePlaying: notePlaying,
+  start: start,
+  stop: stop,
   picture: picture,
   sourceHdr: sourceHdr,
   refreshHz: refreshHz

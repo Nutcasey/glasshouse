@@ -33,9 +33,10 @@ var MODES = {
   default: { sdr: 'filmMaker', hdr: 'hdrFilmMaker', dolbyHdr: 'dolbyHdrCinemaBright' }
 };
 
-function setUp(files) {
+function setUp(files, Subscription) {
   var asked = [];
   homePicture.init({
+    Subscription: Subscription,
     telemetry: {
       hdmiReceiverMap: function (cb) { cb({ 1: 3, 2: 2, 3: 1, 4: 0 }); },
       getHdmiSignal: telemetry.getHdmiSignal,
@@ -107,23 +108,24 @@ setUp({});
 homePicture.picture('input', 5, function (r) { assert.equal(r.ok, false); });
 console.log('  ✓ an unknown kind or port is refused');
 
-// The subscription waits for the first plate, and is made once.
-var subscribed = [];
-homePicture.init({ Subscription: function (uri) { subscribed.push(uri); this.start = function () {}; this.stop = function () {}; } });
-assert.equal(subscribed.length, 0);
-homePicture.picture('channel', null, function () {});
-homePicture.picture('app', null, function () {}, 'netflix');
-assert.deepEqual(subscribed, ['com.webos.service.videooutput/getStatus']);
-console.log('  ✓ videooutput is watched from the first plate, once');
-
 // Netflix playing Dolby Vision on the G3, then stopped, as getStatus reported it.
 var playing = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'videooutput-g3-netflix-dv.json'), 'utf8'));
 var stopped = JSON.parse(JSON.stringify(playing));
 stopped.video[0] = { sink: 'MAIN', connected: false, appId: 'unknown', videoInfo: null, width: 0, height: 0 };
 MODES.default.dolbyHdr = 'dolbyHdrCinemaBright';
-setUp({});
-homePicture.notePlaying(playing);
-homePicture.notePlaying(stopped);
+var subscribed = [], sendVideo, stops = 0;
+setUp({}, function (uri, payload, appId, handlers) {
+  subscribed.push(uri);
+  this.start = function () { sendVideo = handlers.message; };
+  this.stop = function () { stops++; };
+});
+homePicture.picture('channel', null, function () {});
+assert.equal(subscribed.length, 0, 'a plate read does not enable tracking');
+homePicture.start();
+homePicture.start();
+assert.deepEqual(subscribed, ['com.webos.service.videooutput/getStatus']);
+sendVideo(playing);
+sendVideo(stopped);
 homePicture.picture('app', null, function (r) {
   assert.equal(r.signal.width, 3840);
   assert.equal(r.signal.hz, 23.98);
@@ -133,7 +135,12 @@ homePicture.picture('app', null, function (r) {
   assert.equal(r.modes.dolbyHdr.display, 'Dolby Vision Cinema Bright');
 }, 'netflix');
 homePicture.picture('app', null, function (r) { assert.equal(r.signal, null); }, 'youtube.leanback.v4');
-console.log('  ✓ an app shows the last video it played, Dolby Vision on Netflix, after it stops');
+homePicture.stop();
+homePicture.stop();
+assert.equal(stops, 1);
+homePicture.picture('app', null, function (r) { assert.equal(r.signal.hdr, 'dolby_vision'); }, 'netflix');
+assert.equal(subscribed.length, 1, 'reading the plate after disabling does not restart tracking');
+console.log('  ✓ enabled tracking captures the first video before any app plate, and stops when disabled');
 
 var status = FILES['/proc/lg/hdmi20/port0/status'];
 var pkt = FILES['/proc/lg/hdmi20/port0/pkt'];

@@ -1703,6 +1703,7 @@ if (!CLI_MODE) {
   screentime.init({ config: CONFIG, liveState: liveState, control: controls.doControl, injectKey: controls.injectKey, keyBack: controls.KEY_BACK });
   screentime.start();
 
+  homePicture.init({ telemetry: telemetry, oled: oled, luna: luna, Subscription: lunaTransport.Subscription });
   glasshouseHome.init({
     luna: luna,
     liveState: liveState,
@@ -1717,10 +1718,13 @@ if (!CLI_MODE) {
     homeKeyApp: remoteKeys.homeApp,
     setStarting: remoteKeys.setStarting,
     build: TVWEB_DISPLAY_VERSION + '@' + Date.now(),
-    homeKeys: function (on) { if (remotebuttons.isSupported()) remotebuttons.want('home', on); }
+    homeKeys: function (on) {
+      if (remotebuttons.isSupported()) remotebuttons.want('home', on);
+      if (on) homePicture.start();
+      else homePicture.stop();
+    }
   });
   glasshouseHome.start();
-  homePicture.init({ telemetry: telemetry, oled: oled, luna: luna, Subscription: lunaTransport.Subscription });
   /*
    * Registered before the MQTT bridge's handlers, which exit, so it runs
    * first. With no bridge it is the only handler, and exits itself.
