@@ -694,8 +694,13 @@ function open(body, cb) {
       var hit = null;
       (devs || []).forEach(function (d) { if (d.id === id) hit = d; });
       if (!hit) return cb({ ok: false, error: msg('srv.home.unknownTile', 'that is not on Glasshouse Home') });
-      tileInput = { app: names.inputAppId(hit.input), at: nowMs() };
-      launch(tileInput.app, null, opened('dev', hit.id, cb));
+      var input = { app: names.inputAppId(hit.input), at: nowMs() };
+      tileInput = input;
+      launch(input.app, null, function (r) {
+        // A refused tile must not consume the next input switch from the remote.
+        if (!r.ok && tileInput === input) tileInput = null;
+        opened('dev', hit.id, cb)(r);
+      });
     });
   }
   if (kind === 'ch') {

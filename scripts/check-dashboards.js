@@ -326,6 +326,9 @@ async function visitHomeOrder(browser, base, problems) {
   const layout = { rows: ['app', 'dev', 'ch'], order: { app: [], dev: [], ch: [] },
     sort: { app: 'custom', dev: 'custom', ch: 'custom' }, hidden: { app: [], dev: [], ch: [] }, channels: [], hintSeen: true };
   const saves = [];
+  let pauseSave = false, pauseCatalogue = false, saveHeld, catalogueHeld;
+  const saveReady = new Promise(resolve => { saveHeld = resolve; });
+  const catalogueReady = new Promise(resolve => { catalogueHeld = resolve; });
   await page.route('**/api/home**', async route => {
     const pathname = new URL(route.request().url()).pathname;
     // The server sends a Last opened row in that order: here, YouTube was opened last.
@@ -342,7 +345,16 @@ async function visitHomeOrder(browser, base, problems) {
       if (patch.sort) Object.assign(layout.sort, patch.sort);
       body = { ok: true, layout: JSON.parse(JSON.stringify(layout)) };
     }
-    await route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
+    const reply = { contentType: 'application/json', body: JSON.stringify(body) };
+    if (pathname === '/api/home/layout' && pauseSave) {
+      pauseSave = false;
+      await new Promise(resolve => saveHeld(resolve));
+    }
+    if (pathname === '/api/home/catalogue' && pauseCatalogue) {
+      pauseCatalogue = false;
+      await new Promise(resolve => catalogueHeld(resolve));
+    }
+    await route.fulfill(reply);
   });
   const appTiles = () => page.evaluate(() => [...document.querySelectorAll('.row[data-key="app"] .tile .nm')].map(n => n.textContent).join(','));
   try {
@@ -352,8 +364,23 @@ async function visitHomeOrder(browser, base, problems) {
     await page.waitForTimeout(900);
     await page.keyboard.up('Enter');
     await page.keyboard.press('ArrowLeft');
+    pauseSave = pauseCatalogue = true;
     let saved = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/layout');
     await page.keyboard.press('Enter');
+    const releaseSave = await saveReady;
+    const tryMoving = async () => {
+      await page.keyboard.press('ArrowRight');
+      await page.keyboard.press('Enter');
+      await page.keyboard.press('ArrowRight');
+      await page.keyboard.press('Enter');
+    };
+    await tryMoving();
+    if (await appTiles() !== 'One,Two,LG Home') problems.push('Home order: an edit can be lost while Order is saving');
+    releaseSave();
+    const releaseCatalogue = await catalogueReady;
+    await tryMoving();
+    if (await appTiles() !== 'One,Two,LG Home') problems.push('Home order: an edit can be lost while the saved order is loading');
+    releaseCatalogue();
     await saved;
     await page.waitForTimeout(200);
     if (!saves.length || !saves[0].sort || saves[0].sort.app !== 'recent') problems.push('Home order: the Apps row\'s Order did not save Last opened');
@@ -369,6 +396,27 @@ async function visitHomeOrder(browser, base, problems) {
     const last = saves[saves.length - 1];
     if (last.sort.app !== 'custom' || JSON.stringify(last.order.app) !== JSON.stringify(['one', 'two', 'lg-home'])) {
       problems.push('Home order: moving a tile in a Last opened row did not keep the order shown as the row\'s own');
+    }
+
+    await page.waitForTimeout(200);
+    await page.keyboard.down('Enter');
+    await page.waitForTimeout(900);
+    await page.keyboard.up('Enter');
+    await page.keyboard.press('ArrowLeft');
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('Enter');
+    saved = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/layout');
+    await page.locator('.row[data-key="app"] .sort').click();
+    await saved;
+    if (JSON.stringify(saves[saves.length - 1].order.app) !== JSON.stringify(['two', 'one', 'lg-home'])) {
+      problems.push('Home order: switching Order discarded the row\'s unsaved moves');
+    }
+    await page.waitForTimeout(200);
+    await page.keyboard.press('ArrowRight');
+    if (await page.locator('.tile.focus .nm').allTextContents() + '' !== 'Two') {
+      problems.push('Home order: clicking Order while holding a tile did not release it');
     }
 
     layout.sort.app = 'recent';

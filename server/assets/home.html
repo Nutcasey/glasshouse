@@ -551,17 +551,21 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
     if (channelsChanged) body.channels = layout.channels;
     for (var k in extra) body[k] = extra[k];
     postJson('/api/home/layout', body, function (r) {
-      layoutBusy = false;
       layoutRevision++;
-      if (!r || !r.ok || !r.layout) return toast(t('home.arrange.saveFailed', 'Layout could not be saved'));
+      if (!r || !r.ok || !r.layout) {
+        layoutBusy = false;
+        return toast(t('home.arrange.saveFailed', 'Layout could not be saved'));
+      }
       movedRows = {};
       channelsChanged = false;
       layout = r.layout;
       if (!stay) {
+        layoutBusy = false;
         toast(t('home.arrange.saved', 'Layout saved'), t('home.arrange.savedDesc', 'The dashboard\'s Home tab shows it too'));
         return load();
       }
-      load(function () { render(); if (saved) saved(); }, true);
+      // Keep edits blocked until the new order has arrived as well as the save.
+      load(function (loaded) { layoutBusy = false; render(); if (loaded && saved) saved(); }, true);
     });
   }
 
@@ -604,11 +608,10 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
   // A row's Order: between its own order and last opened.
   function toggleSort(kind) {
     if (layoutBusy) return;
+    state.held = false;
     if (!layout.sort) layout.sort = {};
     var recent = !byRecent(kind);
     layout.sort[kind] = recent ? 'recent' : 'custom';
-    // Back to its own order, the row shows the order it was given before.
-    delete movedRows[kind];
     saveLayout({}, true, function () {
       toast(recent ? t('home.arrange.sortedRecent', '{row}: last opened first', { row: ROW_TITLES[kind] })
                    : t('home.arrange.sortedCustom', '{row}: in your order', { row: ROW_TITLES[kind] }),
@@ -699,6 +702,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
 
   function onKeyDown(e) {
     if (!data || !layout) return;
+    if (layoutBusy) { e.preventDefault(); return; }
     var k = e.keyCode;
     if (k === KEY.ok) {
       // Acted on at release, unless held: a long press arranges.
@@ -734,7 +738,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
     e.preventDefault();
     clearTimeout(okTimer);
     okDownAt = 0;
-    if (okLong) return;
+    if (okLong || layoutBusy) return;
     if (state.arranging) arrangeKey(KEY.ok);
     else activate();
   }
@@ -748,6 +752,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
     return null;
   }
   function onPointer(e) {
+    if (layoutBusy) return;
     var tile = tileAt(e.target);
     if (!tile || state.held) return;
     var rowEl = tile.parentNode;
@@ -759,7 +764,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
     }
   }
   function onClick(e) {
-    if (!data || !layout) return;
+    if (!data || !layout || layoutBusy) return;
     var btn = e.target && e.target.id;
     if (BAR.indexOf(btn) !== -1) return pressBar(BAR.indexOf(btn));
     if (state.arranging && /\bsort\b/.test(e.target.className || '')) {
@@ -830,7 +835,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
   // ---------------------------------------------------------------- data
 
   function load(cb, whileArranging) {
-    if (layoutBusy || (state.arranging && !whileArranging)) return;
+    if ((layoutBusy || state.arranging) && !whileArranging) return;
     var revision = layoutRevision;
     getJson('/api/home/catalogue', function (r) {
       if (!r || !r.ok) {
@@ -847,7 +852,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
         return cb && cb(false);
       }
       // A reply sent before arranging or saving must not replace local edits.
-      if (revision !== layoutRevision || layoutBusy || (state.arranging && !whileArranging)) return;
+      if (revision !== layoutRevision || ((layoutBusy || state.arranging) && !whileArranging)) return;
       var firstLoad = !data;
       data = r;
       layout = r.layout;

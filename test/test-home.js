@@ -147,6 +147,7 @@ function luna(uri, p, cb) {
     r.running = tv.oldAppRunning ? [{ id: OLD_APP }] : [];
   } else if (uri === 'com.webos.applicationManager/launch') {
     tv.launched.push(p.id);
+    if (tv.launchFails) r.returnValue = false;
   } else if (uri === 'com.webos.applicationManager/listLaunchPoints') {
     r.launchPoints = [
       { id: 'netflix', title: 'Netflix', icon: '/x/netflix.png' },
@@ -340,6 +341,23 @@ step('a device\'s own tile counts for that device, and a row back in its own ord
             done();
           });
         });
+      });
+    });
+  });
+});
+
+step('a refused device tile leaves the next remote input switch recorded', function (done) {
+  startRecent(function () {
+    at('com.webos.app.hdmi1');
+    at(LG_HOME);
+    tv.launchFails = true;
+    home.open({ kind: 'dev', id: 'hdmi2:playstation-5' }, function (r) {
+      assert.strictEqual(r.ok, false);
+      tv.launchFails = false;
+      at('com.webos.app.hdmi2');
+      home.catalogue(function (c) {
+        assert.deepEqual(c.order.dev, ['hdmi2:stereo-70s', 'hdmi2:playstation-5', 'hdmi1'], 'the remote opens the whole input after a refused tile');
+        done();
       });
     });
   });
