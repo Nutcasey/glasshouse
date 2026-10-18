@@ -183,8 +183,8 @@ var CONFIG = {
   // allowOnWebos10 until 0.105, and migrateConfigFile() renames that.
   allowExperimentalScreensavers: false,
 
-  // Glasshouse Home is offered on webOS 9, where it has been tried. This lets
-  // it be switched on on webOS 10 and 11 too, untried there. File-only.
+  // Glasshouse Home is offered on webOS 9 and 10, where it has been tried.
+  // This lets it be switched on on webOS 11 too, untried there. File-only.
   allowExperimentalHome: false,
 
   // Hiding built-in system tiles is experimental: restarting the app manager
@@ -1723,6 +1723,7 @@ if (!CLI_MODE) {
 
   homePicture.init({ telemetry: telemetry, oled: oled, luna: luna, Subscription: lunaTransport.Subscription });
   homePicture.want('tv', (liveState.state.snapshot().power || {}).systemOn !== false);
+  var homeWatchesForeground = false;
   glasshouseHome.init({
     luna: luna,
     allowExperimental: function () { return CONFIG.allowExperimentalHome === true; },
@@ -1741,6 +1742,9 @@ if (!CLI_MODE) {
     homeKeys: function (on) {
       if (remotebuttons.isSupported()) remotebuttons.want('home', on);
       homePicture.want('home', on);
+      // What is in front, which the MQTT bridge starts only with a broker.
+      if (on !== homeWatchesForeground) liveState[on ? 'startGroup' : 'stopGroup']('application');
+      homeWatchesForeground = on;
     },
     pictureDetails: function (on) { homePicture.want('details', on); }
   });

@@ -1244,15 +1244,22 @@ feature off, or `tvwebctl restore-home` before uninstalling, deletes the webOS
 ## Glasshouse Home
 
 `lib/home.js` runs a home screen of Glasshouse's own in place of LG's, opt-in
-from the dashboard's Home tab (webOS 9 only). The view is `assets/home.html`,
+from the dashboard's Home tab (webOS 9 and 10; webOS 11 with `allowExperimentalHome`). The view is `assets/home.html`,
 opened by a small web app whose files are `assets/home-app/index.html` and its
 icons.
 
 Switched on, that app runs under LG's Home's own id. `lib/home-takeover.js`
 stages it in `/var/lib/tvweb/home-takeover` with an `appinfo.json` naming
-`com.webos.app.home` (type `web`, `visible` false), bind-mounts the directory
-over `/usr/palm/applications/com.webos.app.home`, and has sam read it again
-(`lib/samrescan.js`). Everything on the TV that means Home opens that id: the
+`com.webos.app.home` (type `web`, `visible` false, `appCategory` `["home"]`
+as LG's has it), bind-mounts the directory over
+`/usr/palm/applications/com.webos.app.home`, and has sam read it again
+(`lib/samrescan.js`): with the nudge on webOS 9, and with a block and release
+of the one app on webOS 10, which ignores the nudge. On webOS 10 the Home
+button opens the default app of the `home` category, which sam takes from that
+`appCategory`; without it the button does nothing
+([research](development/TV-RESEARCH.md#glasshouse-home-on-webos-10-g5-webos-1031)).
+A server finding it mounted with a manifest sam has not read, as after an
+upgrade, has sam read it again. Everything on the TV that means Home opens that id: the
 Home button (surface-manager, `hotKey`), Back out of the last app (sam's
 `last_input_handler`), waking on Home (`bootManager`), so all of them open
 Glasshouse Home, with nothing to correct afterwards and no setting changed
@@ -1303,7 +1310,9 @@ write is retried even where the local map already has the requested value.
 The ways back to LG's Home (its tile, holding Home, read from `/dev/input` by
 the remote-button worker, and a view in front without a heartbeat for 10 s, or
 20 s before its first) unmount and open LG's Home. The next app in front, or a
-short press of Home on LG's Home, mounts it again. The app's own page waits on
+short press of Home on LG's Home, mounts it again. The app in front comes from
+the live state's `application` group, which Glasshouse Home starts itself
+while it is on, as the MQTT bridge starts the groups only with a broker. The app's own page waits on
 black for the server; being LG's Home's app, it cannot open LG's Home itself.
 `tvwebctl stop`, and the watchdog after a third restart in ten minutes, run
 `lib/home-takeover.js --release`, which unmounts without switching Glasshouse

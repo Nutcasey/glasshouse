@@ -124,6 +124,10 @@ if [ -n "$stock_type" ] && [ "$stock_type" != "qml" ]; then
 fi
 held=0
 webos_major=$(sed -n 's/.*webOS[^0-9]*\([0-9][0-9]*\)\..*/\1/p' /etc/issue 2>/dev/null | head -n 1)
+# A G5 (webOS 10.3.1) has no /etc/issue; "Rockhopper release 10.3.1-3006" is
+# in starfish-release, as lib/telemetry.js reads it.
+[ -n "$webos_major" ] ||
+  webos_major=$(sed -n 's/.*release[^0-9]*\([0-9][0-9]*\)\..*/\1/p' /etc/starfish-release 2>/dev/null | head -n 1)
 if [ -n "$stock_type" ] && [ "$stock_type" != "qml" ] && [ "$webos_major" != "10" ] && [ "$webos_major" != "11" ]; then
   if grep -Eq '"(allowExperimentalScreensavers|allowOnWebos10)"[[:space:]]*:[[:space:]]*true' /var/lib/tvweb/config.json 2>/dev/null; then
     echo "$(date): allowExperimentalScreensavers set - custom screen saver not held back"
@@ -167,19 +171,27 @@ fi
 # page as Home from then on. Where sam does not take it, LG's files go back
 # under it, its own layout too, and it restarts on that. The server does the
 # same at its start, for a hook that did not run.
-# webOS 10 and 11 only with allowExperimentalHome in config.json, where LG's
-# Home is a Flutter app run as "flutter-client -i com.webos.app.home".
+# On webOS 10 and 11 LG's Home is a Flutter app run as
+# "flutter-client -i com.webos.app.home"; webOS 11 only with
+# allowExperimentalHome in config.json. sam ignores the nudge there (above), so
+# the app is reread with a block and release first, as for the screen saver.
 homeapp=/usr/palm/applications/com.webos.app.home
 homestage=/var/lib/tvweb/home-takeover
 home_os=0
 [ "$webos_major" = "9" ] && home_os=1
-if [ "$webos_major" = "10" ] || [ "$webos_major" = "11" ]; then
+[ "$webos_major" = "10" ] && home_os=1
+if [ "$webos_major" = "11" ]; then
   grep -q '"allowExperimentalHome"[[:space:]]*:[[:space:]]*true' /var/lib/tvweb/config.json 2>/dev/null && home_os=1
+fi
+# A block and release cut short leaves Home blocked across boots, as for the
+# screen saver above, so it is released at every boot where it is ever blocked.
+if [ "$webos_major" = "10" ] || [ "$webos_major" = "11" ]; then
+  luna-send -n 1 luna://com.webos.applicationManager/releaseBlockSystemApp '{"id":"com.webos.app.home"}' >/dev/null 2>&1 || true
 fi
 lg_home_pids() {
   pidof com.webos.app.home
   for cmd in /proc/[0-9]*/cmdline; do
-    tr '\0' ' ' < "$cmd" 2>/dev/null | grep -q '^/usr/bin/flutter-client .*-i com\.webos\.app\.home ' || continue
+    { tr '\0' ' ' < "$cmd"; } 2>/dev/null | grep -q '^/usr/bin/flutter-client .*-i com\.webos\.app\.home ' || continue
     pid=${cmd#/proc/}
     echo "${pid%/cmdline}"
   done
@@ -187,12 +199,17 @@ lg_home_pids() {
 if [ "$home_os" -eq 1 ] && [ -f "$homestage/appinfo.json" ] &&
    grep -q '"enabled"[[:space:]]*:[[:space:]]*true' /var/lib/tvweb/home.json 2>/dev/null; then
   mount --bind "$homestage" "$homeapp" 2>/dev/null || true
-  if sam_nudge && sam_reports com.webos.app.home '"type": *"web"'; then
+  if [ "$webos_major" = "9" ]; then
+    home_reread() { sam_nudge; }
+  else
+    home_reread() { sam_reread_app com.webos.app.home; }
+  fi
+  if home_reread && sam_reports com.webos.app.home '"type": *"web"'; then
     for pid in $(lg_home_pids); do kill "$pid" 2>/dev/null; done
     echo "$(date): Glasshouse Home is in LG's Home's place"
   else
     umount "$homeapp" 2>/dev/null
-    sam_nudge
+    home_reread
     /usr/bin/node /var/lib/tvweb/lib/home-takeover.js --release >/dev/null 2>&1
     for pid in $(lg_home_pids); do kill "$pid" 2>/dev/null; done
     echo "$(date): sam did not take Glasshouse Home - LG's Home kept"

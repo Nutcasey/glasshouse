@@ -77,7 +77,7 @@ function freshTv() {
   fs.writeFileSync(path.join(layoutDir, 'home_layoutShelfView.xml'), CUSTOM_LAYOUT);
   fs.mkdirSync(checkpointDir);
   fs.mkdirSync(path.join(checkpointDir, LG_HOME));
-  tv = { settings: copy(ORIGINAL), events: [], launched: [], samType: 'native', samRefuses: false,
+  tv = { settings: copy(ORIGINAL), events: [], launched: [], samType: 'native', samCategory: null, samRefuses: false,
          oldAppInstalled: false, mountFails: false };
   lgRunning(true);
 }
@@ -85,16 +85,24 @@ function freshTv() {
 // sam reads LG's Home's directory when told to, as it does on a scan.
 function samScan() {
   if (tv.samRefuses) return;
-  tv.samType = JSON.parse(fs.readFileSync(path.join(appDir, 'appinfo.json'), 'utf8')).type;
+  var info = JSON.parse(fs.readFileSync(path.join(appDir, 'appinfo.json'), 'utf8'));
+  tv.samType = info.type;
+  tv.samCategory = info.appCategory || null;
 }
 
+// webOS 10 ignores the nudge and rereads one app on a block and release.
 var samrescan = {
   refresh: function (check, cb) {
     tv.events.push('reread');
-    samScan();
+    if (!tv.nudgeIgnored) samScan();
     check(function (ok) { cb(ok); });
   },
-  rereadApp: function (id, check, cb) { cb(false); }
+  rereadApp: function (id, check, cb) {
+    if (!tv.nudgeIgnored) return cb(false);
+    tv.events.push('block and release');
+    samScan();
+    check(function (ok) { cb(ok); });
+  }
 };
 
 function exec(file, args, opts, cb) {
@@ -131,7 +139,10 @@ function luna(uri, p, cb) {
     tv.events.push('settings ' + Object.keys(p.settings).join(','));
     for (var k in p.settings) tv.settings[k] = copy(p.settings[k]);
   } else if (uri === 'com.webos.applicationManager/getAppInfo') {
-    if (p.id === LG_HOME) r.appInfo = { id: LG_HOME, type: tv.samType };
+    if (p.id === LG_HOME) {
+      r.appInfo = { id: LG_HOME, type: tv.samType };
+      if (tv.samCategory) r.appInfo.appCategory = copy(tv.samCategory);
+    }
     else if (p.id === 'com.webos.app.notificationcenter' && tv.sidebarApps) {
       r.appInfo = { id: p.id, title: 'Notifications', icon: 'icon_notification.png', folderPath: '/usr/palm/applications/' + p.id };
     } else if (p.id === 'com.webos.app.voice' && tv.sidebarApps) {
@@ -404,8 +415,8 @@ step('switching on reads the new files into sam before stopping LG\'s Home, and 
   });
 });
 
-step('switched on where it is not offered, as after a firmware update to webOS 10, it is switched off at start', function (done) {
-  start({ enabled: true }, { webosVersion: '10.3.1' });
+step('switched on where it is not offered, as after a firmware update to webOS 11, it is switched off at start', function (done) {
+  start({ enabled: true }, { webosVersion: '11.2.0' });
   home.start();
   wait(50, function () {
     assert.strictEqual(home.enabled(), false);
@@ -415,11 +426,26 @@ step('switched on where it is not offered, as after a firmware update to webOS 1
   });
 });
 
-step('webOS 10 and 11 only with allowExperimentalHome, with LG\'s Flutter Home stopped and no start-up layout', function (done) {
+step('webOS 11 only with allowExperimentalHome', function (done) {
+  start(null, { webosVersion: '11.2.0' });
+  home.status(function (st0) {
+    assert.strictEqual(st0.supported.ok, false, 'untried there, so not offered by default');
+    start(null, { webosVersion: '11.2.0', allowExperimental: function () { return true; } });
+    home.status(function (st) {
+      assert.strictEqual(st.supported.ok, true);
+      assert.strictEqual(st.supported.experimental, true);
+      done();
+    });
+  });
+});
+
+step('webOS 10 is offered without the setting, with LG\'s Flutter Home stopped and no start-up layout', function (done) {
   start(null, { webosVersion: '10.3.1' });
   home.status(function (st0) {
-  assert.strictEqual(st0.supported.ok, false, 'untried there, so not offered by default');
-  start({ hideLgHomeAtStart: true }, { webosVersion: '10.3.1', allowExperimental: function () { return true; } });
+  assert.strictEqual(st0.supported.ok, true, 'tried there, on a G5');
+  assert.strictEqual(st0.supported.experimental, true);
+  start({ hideLgHomeAtStart: true }, { webosVersion: '10.3.1' });
+  tv.nudgeIgnored = true;
   // LG's Home as a C2 (webOS 10.3.1) runs it: the Flutter runner given its id.
   lgRunning(false);
   var flutter = path.join(procDir, '3301');
@@ -430,7 +456,9 @@ step('webOS 10 and 11 only with allowExperimentalHome, with LG\'s Flutter Home s
   fs.writeFileSync(path.join(other, 'cmdline'), '/usr/bin/flutter-client\0-i\0com.webos.app.screensaver\0');
   home.enable(function (r) {
     assert.ok(r.ok, r.error);
-    assert.deepEqual(tv.events, ['mount', 'reread', 'stop LG 3301'], 'LG\'s Home stopped, and no other Flutter app');
+    assert.deepEqual(tv.events, ['mount', 'reread', 'block and release', 'stop LG 3301'],
+                     'sam rereads it on a block and release, then LG\'s Home is stopped, and no other Flutter app');
+    assert.deepEqual(tv.samCategory, ['home'], 'sam has it as the home category\'s app, which the Home key opens');
     assert.strictEqual(fs.readFileSync(path.join(layoutDir, 'home_layoutShelfView.xml'), 'utf8'), CUSTOM_LAYOUT,
                        'no empty layout: webOS 10 does not read one');
     home.status(function (st) {
@@ -445,6 +473,31 @@ step('webOS 10 and 11 only with allowExperimentalHome, with LG\'s Flutter Home s
       });
     });
   });
+  });
+});
+
+step('mounted by a release whose manifest had no appCategory, sam is made to read the new one at start', function (done) {
+  start({ enabled: true }, { webosVersion: '10.3.1' });
+  tv.nudgeIgnored = true;
+  // As the earlier release left it: its manifest staged, mounted and read.
+  fs.mkdirSync(stageDir);
+  fs.writeFileSync(path.join(stageDir, 'appinfo.json'), JSON.stringify({ id: LG_HOME, type: 'web' }));
+  fs.unlinkSync(appDir);
+  fs.symlinkSync(stageDir, appDir);
+  samScan();
+  lgRunning(false);
+  home.start();
+  wait(50, function () {
+    assert.deepEqual(tv.events, ['reread', 'block and release']);
+    assert.deepEqual(tv.samCategory, ['home']);
+    assert.ok(taken());
+    tv.events = [];
+    home.stop();
+    home.start();
+    wait(50, function () {
+      assert.deepEqual(tv.events, [], 'a manifest sam already has is not read again');
+      done();
+    });
   });
 });
 

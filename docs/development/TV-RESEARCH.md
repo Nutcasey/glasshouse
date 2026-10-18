@@ -956,6 +956,25 @@ The webOS 9 entries above describe the home app's CRIU checkpoint. On a CX:
   permissions, and its luna calls never reach the bus, so a separate app
   cannot stand in for Home.
 
+## Glasshouse Home on webOS 10 (G5, webOS 10.3.1)
+
+- LG's Home's `appinfo.json` declares `"appCategory": ["home"]`. sam answers
+  `launchDefaultApp { category: "home" }` with the app that declares it, with
+  `defaultApps.home` unset too. A web app mounted under the same id without
+  it gets "no default app is set for the category", whatever
+  `defaultApps.home` names, and the Home button does nothing: surface-manager
+  logs the press (`NL_RCU_CONTROL_USE`, key 773) and launches nothing. With
+  the field, Home from live TV had the app on screen 0.09 s after the press.
+- `systemUi.js`'s `handleHomeKeys` keeps the press, sets a 2.5 s long-press
+  timer, and on a release before it sends Home to the focused window again
+  and launches the default home app on that pass. Held for the 2.5 s, it opens
+  the screen magnifier (`KEY_SCREEN_MAGNIFICATION`, zoom 150) instead.
+- sam took the changed manifest on a block and release of
+  `com.webos.app.home` within the second; the blocked-app list nudge never
+  took ("sam had not caught up").
+- The TV has no `/etc/issue`. `/etc/starfish-release` has
+  `Rockhopper release 10.3.1-3006`, and `/etc/os-release` `VERSION_ID=10.3.1`.
+
 ## Muting and pausing (webOS 5.6.2, CX)
 
 - `com.webos.audio/setMuted` only changes audiod's own status: the TV keeps

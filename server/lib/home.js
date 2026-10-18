@@ -823,10 +823,11 @@ function supported() {
     reason: msg('srv.home.port', 'Glasshouse Home requires the dashboard to use port 8080.') };
   if (/^9\./.test(v)) return { ok: true, webos: v };
   // LG's Home is a Flutter app there, under the same id and folder (#612).
-  if (/^1[01]\./.test(v) && allowExperimentalFn()) return { ok: true, webos: v, experimental: true };
+  // Tried on a G5 (webOS 10.3.1); webOS 11 is untried and needs the setting.
+  if (/^10\./.test(v) || (/^11\./.test(v) && allowExperimentalFn())) return { ok: true, webos: v, experimental: true };
   return {
     ok: false, webos: v || null,
-    reason: msg('srv.home.untested', 'Glasshouse Home has been tried only on webOS 9. This TV runs webOS {version}.', { version: v || '?' })
+    reason: msg('srv.home.untested', 'Glasshouse Home has been tried only on webOS 9 and 10. This TV runs webOS {version}.', { version: v || '?' })
   };
 }
 
@@ -1272,7 +1273,7 @@ function start() {
       saveConfig();
     }
     /*
-     * Switched on where it is not offered: a webOS 9 TV updated to webOS 10,
+     * Switched on where it is not offered: a webOS 10 TV updated to webOS 11,
      * say, or allowExperimentalHome taken out. LG's Home is put back rather
      * than taken on a version it was never tried on.
      */

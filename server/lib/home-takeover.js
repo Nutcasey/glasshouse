@@ -88,6 +88,9 @@ function luna(uri, payload, cb) {
 /*
  * The manifest sam reads for LG's Home while it is mounted. LG's own keeps
  * visible false, so neither LG's app list nor Glasshouse Home's lists it.
+ * appCategory home as LG's has it: on webOS 10 the Home key opens the default
+ * app of that category, and without it sam has none and the key does nothing
+ * (a G5, webOS 10.3.1).
  */
 function manifest() {
   return {
@@ -103,7 +106,8 @@ function manifest() {
     bgColor: '#000000',
     resolution: '1920x1080',
     visible: false,
-    disableBackHistoryAPI: true
+    disableBackHistoryAPI: true,
+    appCategory: ['home']
   };
 }
 
@@ -131,11 +135,12 @@ function stage() {
     var file = path.join(stageDir, 'appinfo.json');
     var had = '';
     try { had = fs.readFileSync(file, 'utf8'); } catch (e) {}
-    if (had !== json) {
+    var manifestChanged = had !== json;
+    if (manifestChanged) {
       fs.writeFileSync(file, json);
       changed = true;
     }
-    return { ok: true, changed: changed };
+    return { ok: true, changed: changed, manifestChanged: manifestChanged };
   } catch (e) {
     return { ok: false, error: e.message };
   }
@@ -280,12 +285,21 @@ function samType(cb) {
   });
 }
 
+// Whether sam has this release's manifest, appCategory included.
+function samHasManifest(cb) {
+  luna('com.webos.applicationManager/getAppInfo', { id: LG_HOME }, function (r) {
+    var info = r && r.appInfo;
+    cb(!!info && info.type === 'web' &&
+       JSON.stringify(info.appCategory || null) === JSON.stringify(manifest().appCategory));
+  });
+}
+
 // sam reads the directory again and reports the type wanted.
-function reread(wantWeb, cb) {
+function reread(wantWeb, cb, check) {
   if (!samrescan) return cb(false);
-  function check(done) {
+  check = check || function (done) {
     samType(function (type) { done(type !== null && (type === 'web') === wantWeb); });
-  }
+  };
   samrescan.refresh(check, function (ok) {
     if (ok) return cb(true);
     samrescan.rereadApp(LG_HOME, check, cb);
@@ -350,10 +364,22 @@ function take(cb) {
   if (mounted()) {
     return samType(function (type) {
       if (type !== 'web') return settle();
-      var layout = layoutForTake();
-      if (!layout.ok) return giveBack(layout.error);
-      stopLgHome();
-      cb({ ok: true, already: true });
+      function keep() {
+        var layout = layoutForTake();
+        if (!layout.ok) return giveBack(layout.error);
+        stopLgHome();
+        cb({ ok: true, already: true });
+      }
+      if (!st.manifestChanged) return keep();
+      /*
+       * Mounted by an earlier release: sam still has its manifest, which on
+       * webOS 10 lacked the appCategory the Home key needs. A reread sam does
+       * not report leaves the page in place as it was.
+       */
+      reread(true, function (ok) {
+        if (!ok) console.log('home: sam did not report Glasshouse Home\'s new manifest');
+        keep();
+      }, samHasManifest);
     });
   }
   execFn('/bin/mount', ['--bind', stageDir, appDir], { timeout: 4000 }, function (err) {
