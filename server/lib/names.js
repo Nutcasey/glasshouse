@@ -326,6 +326,17 @@ function pictureMode(raw) {
   return { display: name.display || spelledOut(mode), label: name.label || snakeCase(mode) };
 }
 
+// Sound modes by their settings value; others are spelled out.
+var SOUND_MODES = {
+  aiSoundPro: 'AI Sound Pro',
+  clearVoice: 'Clear Voice'
+};
+
+function soundMode(raw) {
+  var mode = String(raw);
+  return SOUND_MODES.hasOwnProperty(mode) ? SOUND_MODES[mode] : spelledOut(mode);
+}
+
 // The sound output's keys. Several are the same output and share its name;
 // each is snake case already, and is its own label.
 var SOUND_OUTPUTS = {
@@ -492,6 +503,7 @@ module.exports = {
   powerState: powerState,
   PICTURE_MODES: PICTURE_MODES,
   pictureMode: pictureMode,
+  soundMode: soundMode,
   SOUND_OUTPUTS: SOUND_OUTPUTS,
   soundOutput: soundOutput,
   audioCodec: audioCodec,

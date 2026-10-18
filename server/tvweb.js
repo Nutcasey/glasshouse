@@ -58,6 +58,7 @@ var quickAccess = require('./lib/quickaccess');
 var remoteKeys = require('./lib/remotekeys');
 var homeScreen = require('./lib/homescreen');
 var glasshouseHome = require('./lib/home');
+var homePicture = require('./lib/home-picture');
 var telemetry = require('./lib/telemetry');
 var controls = require('./lib/controls');
 var routes = require('./lib/routes');
@@ -875,6 +876,7 @@ routes.init({
   remoteKeys: remoteKeys,
   homeScreen: homeScreen,
   home: glasshouseHome,
+  homePicture: homePicture,
   screensavers: screensavers,
   updater: updater,
   tvApp: tvApp,
@@ -1718,6 +1720,7 @@ if (!CLI_MODE) {
     homeKeys: function (on) { if (remotebuttons.isSupported()) remotebuttons.want('home', on); }
   });
   glasshouseHome.start();
+  homePicture.init({ telemetry: telemetry, oled: oled, luna: luna, Subscription: lunaTransport.Subscription });
   /*
    * Registered before the MQTT bridge's handlers, which exit, so it runs
    * first. With no bridge it is the only handler, and exits itself.

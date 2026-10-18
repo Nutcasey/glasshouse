@@ -587,6 +587,19 @@ step('a failed layout restore keeps the backup and can be retried', function (do
   });
 });
 
+step('the picture details stay on until switched off, and a later change keeps them off', function (done) {
+  start(null);
+  assert.strictEqual(home.layout().picture, true);
+  home.setLayout({ picture: false }, function (r) {
+    assert.strictEqual(r.layout.picture, false);
+    home.setLayout({ hintSeen: true }, function (r2) {
+      assert.strictEqual(r2.layout.picture, false);
+      assert.strictEqual(home.normalise(JSON.parse(fs.readFileSync(path.join(dir, 'home.json'), 'utf8'))).picture, false);
+      done();
+    });
+  });
+});
+
 step('a failed save switches nothing', function (done) {
   start(null);
   var blocked = path.join(dir, 'home.json.tmp');

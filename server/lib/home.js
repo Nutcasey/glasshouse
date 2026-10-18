@@ -157,6 +157,8 @@ function defaults() {
     hidden: { app: PROMO_APPS.slice(), dev: [], ch: [] },
     channels: [],
     hintSeen: false,
+    // The plate describing the picture of what was last on.
+    picture: true,
     // null until chosen: the first start keeps an empty layout an earlier build left.
     hideLgHomeAtStart: null,
     snapshot: null
@@ -193,6 +195,7 @@ function normalise(raw) {
   d.enabled = raw.enabled === true;
   d.restorePending = raw.restorePending === true;
   d.hintSeen = raw.hintSeen === true;
+  d.picture = raw.picture !== false;
   if (typeof raw.hideLgHomeAtStart === 'boolean') d.hideLgHomeAtStart = raw.hideLgHomeAtStart;
   d.snapshot = validSnapshot(raw.snapshot) ? raw.snapshot : null;
   return d;
@@ -271,7 +274,8 @@ function setLayout(body, cb) {
     // A moved Channels row reorders the channels themselves.
     channels: ordered(body.order && isArray(body.order.ch) ? body.order.ch : [],
                       body.channels !== undefined ? stringList(body.channels, MAX_CHANNELS) : c.channels),
-    hintSeen: body.hintSeen !== undefined ? body.hintSeen : c.hintSeen
+    hintSeen: body.hintSeen !== undefined ? body.hintSeen : c.hintSeen,
+    picture: typeof body.picture === 'boolean' ? body.picture : c.picture
   });
   if (body.reset === true) {
     var d = defaults();
@@ -288,7 +292,7 @@ function setLayout(body, cb) {
 }
 
 function layoutOf(c) {
-  return { rows: c.rows, order: c.order, hidden: c.hidden, channels: c.channels, hintSeen: c.hintSeen };
+  return { rows: c.rows, order: c.order, hidden: c.hidden, channels: c.channels, hintSeen: c.hintSeen, picture: c.picture };
 }
 
 // ---------------------------------------------------------------- what it shows
