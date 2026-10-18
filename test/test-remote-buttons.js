@@ -71,6 +71,49 @@ test('handleParsedEvent calls onButton for each color and debounces rapid duplic
   assert.strictEqual(events[3].btn, 'blue');
 });
 
+test('every key press reaches onAnyKey, through both local events and the worker stream', function () {
+  var keys = [], home = [], colours = [];
+  remotebuttons.init({
+    onAnyKey: function (code) { keys.push(code); },
+    onHomeKey: function (down) { home.push(down); },
+    onButton: function (colour) { colours.push(colour); }
+  });
+  [773, 398, 399, 400, 401, 103].forEach(function (code) {
+    remotebuttons.handleParsedEvent(1, code, 1);
+    remotebuttons.handleParsedEvent(1, code, 0);
+    remotebuttons.handleParsedEvent(1, code, 2);
+  });
+  remotebuttons.handleParsedEvent(2, 103, 1);
+  assert.deepEqual(keys, [773, 398, 399, 400, 401, 103]);
+  assert.deepEqual(home, [true, false]);
+
+  var fs = require('fs'), child = require('child_process'), EventEmitter = require('events').EventEmitter;
+  var originalExists = fs.existsSync, originalSpawn = child.spawn;
+  var worker = new EventEmitter();
+  worker.stdout = new EventEmitter();
+  worker.kill = function () {};
+  keys = []; home = []; colours = [];
+  try {
+    fs.existsSync = function (p) {
+      if (p === '/proc/bus/input/devices') return false;
+      if (p === '/dev/input/event1') return true;
+      return originalExists(p);
+    };
+    child.spawn = function () { return worker; };
+    remotebuttons.start();
+    worker.stdout.emit('data', 'home 1\nhome 0\nred 398\ngre');
+    worker.stdout.emit('data', 'en 399\nyellow 400\nblue 401\nkey 10');
+    worker.stdout.emit('data', '3\n');
+    assert.deepEqual(keys, [773, 398, 399, 400, 401, 103]);
+    assert.deepEqual(home, [true, false], 'Home hold/release handling is preserved');
+    assert.deepEqual(colours, ['red', 'green', 'yellow', 'blue'], 'MQTT colour handling is preserved');
+  } finally {
+    remotebuttons.stop();
+    fs.existsSync = originalExists;
+    child.spawn = originalSpawn;
+  }
+});
+
 test('remotebuttons lifecycle and status', function () {
   remotebuttons.stop();
   assert.strictEqual(remotebuttons.isRunning(), false);

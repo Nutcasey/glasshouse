@@ -19,7 +19,7 @@ console.log = function () {};
 function tv(canFind) {
   var state = { found: false, started: 0, nudges: 0 };
   state.luna = function (uri, params, cb) {
-    if (uri === 'com.webos.service.tvpower/power/getPowerState') return cb({ returnValue: true, state: 'Active' });
+    if (uri === 'com.webos.service.tvpower/power/getPowerState') return cb({ returnValue: true, state: state.started ? 'Screen Saver' : 'Active' });
     if (uri === 'com.webos.applicationManager/getForegroundAppInfo') return cb({ returnValue: true, appId: 'netflix' });
     if (uri === 'com.webos.applicationManager/getAppInfo') {
       return cb(state.found ? { returnValue: true, appInfo: { id: params.id, type: 'qml' } }

@@ -728,7 +728,7 @@ rereads the apps where sam has lost it.
 
 ## tvpower dropping a screen saver request (webOS 9.2.2, G3)
 
-On 2026-10-18 a G3 answered `turnOnScreenSaver` with `returnValue` true and
+On 18 October 2026 a G3 answered `turnOnScreenSaver` with `returnValue` true and
 started nothing. A `getPowerState` subscription showed `processing: "Request
 Screen Saver"` and then `"Screen On"` 10 to 30 ms later, back to plain Active.
 LG's own idle screen saver was refused the same way, at 180 s and again at

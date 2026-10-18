@@ -524,7 +524,7 @@ screensavers.init({
   injectKey: controls.injectKey,
   KEY_BACK: controls.KEY_BACK,
   inputKey: telemetry.inputKey,
-  watchKeys: function (on) { if (remotebuttons.isSupported()) remotebuttons.want('screensaver', on); },
+  watchKeys: function (on) { if (!on || remotebuttons.isSupported()) remotebuttons.want('screensaver', on); },
   mediaState: telemetry.readMediaState
 });
 telemetry.init({

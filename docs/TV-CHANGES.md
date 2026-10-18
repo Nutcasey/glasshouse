@@ -11,6 +11,7 @@ riskier controls ask for confirmation in the dashboard first.
 | The server, its config and state | `/var/lib/tvweb` | Uninstalling |
 | Boot hook that starts the server | `/var/lib/webosbrew/init.d/50-tvweb`, a link into the app when installed from the Homebrew Channel | Uninstalling |
 | Boot log | `/var/lib/webosbrew/tvweb-boot.log`, kept under 32 KB | Uninstalling |
+| Screen saver launched after a refused request | `/var/run/tvweb-screensaver-launched` records that Glasshouse opened it directly, so a server restart can resume remote dismissal without adopting a cached native screen saver. Remote keys are watched while it shows | Closing the screen saver, or restarting the TV |
 | Boot hook that holds switched-off services down | `/var/lib/webosbrew/init.d/20-tvweb-services`, only once a service is switched off | Switching the services back on, or uninstalling |
 | Home-screen tile | The Homebrew Channel app, or with `deploy.sh` a developer app | Removing the app |
 | Packages being installed | `/media/developer/temp/glasshouse-install`, deleted when the install ends or at the next start | Itself |

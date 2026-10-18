@@ -24,6 +24,9 @@ var SCREENSAVER_APP_DIR = '/usr/palm/applications/' + SCREENSAVER_APP_ID;
 var SCREENSAVER_DIR = '/var/lib/tvweb/screensaver';
 var SCREENSAVER_MARKER = '.tvweb-screensaver';
 var SCREENSAVER_LEVEL_MARKER = '.tvweb-brightness';
+// Survives a server restart, but not a TV reboot. sam also retains native
+// screen savers after dismissal, so its running list alone cannot prove ours.
+var LAUNCHED_MARKER = '/var/run/tvweb-screensaver-launched';
 // Outside the staged directory, which is bind-mounted over the app and so hides
 // the stock manifest whenever one of ours is in use.
 var STOCK_TYPE_FILE = '/var/lib/tvweb/screensaver-stock-type';
@@ -87,6 +90,8 @@ var switchingSince = 0;
 // True while a screen saver started by launching its app may be showing:
 // tvpower stays Active under one started that way, so it cannot tell.
 var launchedDirectly = false;
+var launchGeneration = 0;
+var closeCallbacks = [];
 /** @type {function(boolean): void} */
 var watchKeysFn = function () {};
 /** @type {function(function(?{state: string, fullScreen: boolean}): void, boolean=): void} */
@@ -132,9 +137,11 @@ function init(opts) {
   injectKeyFn = opts.injectKey;
   keyBackVal = opts.KEY_BACK;
   if (opts.inputKey) inputKeyFn = opts.inputKey;
-  if (opts.watchKeys) watchKeysFn = opts.watchKeys;
-  if (opts.mediaState) mediaStateFn = opts.mediaState;
+  watchKeysFn = opts.watchKeys || function () {};
+  mediaStateFn = opts.mediaState || function (cb) { cb(null); };
   launchedDirectly = false;
+  launchGeneration++;
+  closeCallbacks = [];
 
   // Auto-heal: If the screensaver is currently stock (no active bind-mount on SCREENSAVER_APP_DIR),
   // but an orphaned marker remains in SCREENSAVER_DIR, remove it so the boot hook does not
@@ -513,8 +520,9 @@ function screensaverRunning(cb) {
  */
 function launchedShowing() {
   if (launchedDirectly && lunaFn) {
+    var generation = launchGeneration;
     screensaverRunning(function (running) {
-      if (running === false) setLaunched(false);
+      if (running === false && generation === launchGeneration) setLaunched(false);
     });
   }
   return launchedDirectly;
@@ -528,14 +536,28 @@ function launchedShowing() {
  * while it shows, and any of them closes it.
  */
 function setLaunched(on) {
+  if (on) {
+    try { fs.writeFileSync(LAUNCHED_MARKER, '1\n', 'utf8'); }
+    catch (e) { console.error('screensaver: could not record the launched screen saver: ' + e.message); }
+  } else {
+    unlinkQuiet(LAUNCHED_MARKER);
+  }
   if (launchedDirectly === on) return;
   launchedDirectly = on;
+  launchGeneration++;
   watchKeysFn(on);
 }
 
 function closeLaunched(cb) {
-  setLaunched(false);
-  lunaFn('com.webos.applicationManager/closeByAppId', { id: SCREENSAVER_APP_ID }, cb);
+  closeCallbacks.push(cb);
+  if (closeCallbacks.length > 1) return;
+  var generation = launchGeneration;
+  lunaFn('com.webos.applicationManager/closeByAppId', { id: SCREENSAVER_APP_ID }, function (r) {
+    if (r && r.returnValue && generation === launchGeneration) setLaunched(false);
+    var callbacks = closeCallbacks;
+    closeCallbacks = [];
+    for (var i = 0; i < callbacks.length; i++) callbacks[i](r);
+  });
 }
 
 function keyPressed() {
@@ -547,21 +569,44 @@ function keyPressed() {
 // At start: one an earlier run launched may still be showing, which only
 // this server can close.
 function adoptLaunched() {
-  if (!lunaFn) return;
+  if (!lunaFn || !fs.existsSync(LAUNCHED_MARKER)) return;
+  var generation = launchGeneration;
   lunaFn('com.webos.service.tvpower/power/getPowerState', {}, function (pw) {
-    if (!pw || power.isScreenSaver(power.mapState(pw.state))) return;
+    if (!pw || pw.returnValue === false || generation !== launchGeneration) return;
+    if (power.isScreenSaver(power.mapState(pw.state))) return setLaunched(false);
     screensaverRunning(function (running) {
-      if (running) setLaunched(true);
+      if (running !== null && generation === launchGeneration) setLaunched(running);
     });
   });
 }
 
 function launchScreensaverApp(cb) {
-  lunaFn('com.webos.applicationManager/launch', { id: SCREENSAVER_APP_ID }, function (r) {
-    var ok = !!(r && r.returnValue);
-    if (ok) setLaunched(true);
-    cb(ok);
-  });
+  // tvpower's refusal also protects playback. An unavailable media service
+  // is not evidence that nothing is playing, including on older firmware.
+  mediaStateFn(function (media) {
+    if (!media) return cb(false, msg('srv.saver.unknownPlayback', 'the TV could not check whether anything is playing'));
+    if (media.state === 'playing' && media.fullScreen) {
+      return cb(false, msg('srv.saver.playing', 'the TV does not start a screen saver while something is playing'));
+    }
+    // The request and media checks can take seconds. Do not cover an input
+    // or undo Screen Off if the source or power changed in the meantime.
+    lunaFn('com.webos.service.tvpower/power/getPowerState', {}, function (pw) {
+      var currentPower = power.mapState(pw && pw.state);
+      if (power.isScreenSaver(currentPower)) return cb(true);
+      if (!pw || pw.returnValue === false || !currentPower.screenOn ||
+          (pw.processing && pw.processing !== 'Screen On')) return cb(false);
+      lunaFn('com.webos.applicationManager/getForegroundAppInfo', {}, function (fg) {
+        var fgId = fg && fg.returnValue !== false && fg.appId ? inputKeyFn(fg.appId) : '';
+        if (!fgId || names.isHdmiKey(fgId) || fgId === 'livetv') return cb(false);
+        console.log('screensaver: launching the screen saver app after a refused request');
+        lunaFn('com.webos.applicationManager/launch', { id: SCREENSAVER_APP_ID }, function (r) {
+          var ok = !!(r && r.returnValue);
+          if (ok) setLaunched(true);
+          cb(ok);
+        });
+      });
+    });
+  }, true);
 }
 
 /*
@@ -632,32 +677,21 @@ function trigger(cb) {
           if (r && r.returnValue) {
             return refusedAfterRequest(function (refused) {
               if (!refused) return cb({ ok: true });
-              /*
-               * screenmanager also refuses one over full-screen playback, and
-               * a Home Assistant automation pressing the button cannot see
-               * the film it would cover, so that refusal stands.
-               */
-              mediaStateFn(function (media) {
-                if (media && media.state === 'playing' && media.fullScreen) {
-                  return cb({ ok: false, error: msg('srv.saver.playing', 'the TV does not start a screen saver while something is playing') });
-                }
-                console.log('screensaver: tvpower dropped the request - launching the screen saver app');
-                launchScreensaverApp(function (ok) {
-                  cb(ok ? { ok: true } : {
-                    ok: false,
-                    error: fgId ? msg('srv.saver.refusedFrom', 'the TV would not start a screen saver from {source}', { source: fgId })
-                      : msg('srv.saver.refusedHere', 'the TV would not start a screen saver from this source')
-                  });
+              launchScreensaverApp(function (ok, error) {
+                cb(ok ? { ok: true } : {
+                  ok: false,
+                  error: error || (fgId ? msg('srv.saver.refusedFrom', 'the TV would not start a screen saver from {source}', { source: fgId })
+                    : msg('srv.saver.refusedHere', 'the TV would not start a screen saver from this source'))
                 });
-              }, true);
+              });
             });
           }
           if (r && r.errorText === 'Invalid State change Request') {
-            return launchScreensaverApp(function (launched) {
+            return launchScreensaverApp(function (launched, error) {
               if (launched) return cb({ ok: true });
               cb({
                 ok: false,
-                error: msg('srv.saver.refused', 'the TV would not start a screen saver here: {error}', { error: r.errorText })
+                error: error || msg('srv.saver.refused', 'the TV would not start a screen saver here: {error}', { error: r.errorText })
               });
             });
           }

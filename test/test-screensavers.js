@@ -230,7 +230,8 @@ console.log('Running test-screensavers.js ...');
         assetPath: null,
         config: {},
         injectKey: function () {},
-        KEY_BACK: 412
+        KEY_BACK: 412,
+        mediaState: function (cb) { cb({ state: 'idle', fullScreen: false }); }
       });
       screensavers.trigger(function (result) {
         assert.strictEqual(result.ok, true);

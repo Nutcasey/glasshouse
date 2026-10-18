@@ -36,7 +36,7 @@ var HOME_CODE = 773;
 
 var onButtonFn = null;
 var onHomeKeyFn = null;
-// Any other key going down, for closing a screen saver tvpower does not know of.
+// Every key going down, for closing a screen saver tvpower does not know of.
 var onAnyKeyFn = null;
 // Who wants the worker running: MQTT for the coloured buttons, Glasshouse Home
 // for the Home button, the screen saver while one it launched shows. It runs
@@ -80,6 +80,9 @@ function findRcuDevices() {
 }
 
 function handleParsedEvent(type, code, val) {
+  if (type === EV_KEY && val === KEY_PRESS && process.argv.indexOf('--worker') === -1 && onAnyKeyFn) {
+    onAnyKeyFn(code);
+  }
   if (type === EV_KEY && code === HOME_CODE && (val === 0 || val === 1)) {
     if (process.argv.indexOf('--worker') !== -1) {
       try { process.stdout.write('home ' + val + '\n'); } catch (e) {}
@@ -93,8 +96,6 @@ function handleParsedEvent(type, code, val) {
   if (!color) {
     if (process.argv.indexOf('--worker') !== -1) {
       try { process.stdout.write('key ' + code + '\n'); } catch (e) {}
-    } else if (onAnyKeyFn) {
-      onAnyKeyFn(code);
     }
     return;
   }
@@ -254,6 +255,7 @@ function start() {
         if (!line) continue;
         var parts = line.split(' ');
         if (parts[0] === 'home') {
+          if (parts[1] === '1' && onAnyKeyFn) onAnyKeyFn(HOME_CODE);
           if (onHomeKeyFn) onHomeKeyFn(parts[1] === '1');
           continue;
         }
@@ -263,8 +265,9 @@ function start() {
         }
         var color = parts[0];
         var code = parseInt(parts[1], 10);
-        if (BUTTON_CODES[code] && onButtonFn) {
-          onButtonFn(color, code);
+        if (BUTTON_CODES[code]) {
+          if (onAnyKeyFn) onAnyKeyFn(code);
+          if (onButtonFn) onButtonFn(color, code);
         }
       }
     });
