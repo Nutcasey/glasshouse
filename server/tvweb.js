@@ -183,6 +183,10 @@ var CONFIG = {
   // allowOnWebos10 until 0.105, and migrateConfigFile() renames that.
   allowExperimentalScreensavers: false,
 
+  // Glasshouse Home is offered on webOS 9, where it has been tried. This lets
+  // it be switched on on webOS 10 and 11 too, untried there. File-only.
+  allowExperimentalHome: false,
+
   // Hiding built-in system tiles is experimental: restarting the app manager
   // mid-boot can lock up the display engine on some TVs, leaving the picture
   // black (#366). Off by default; set here or from the Server tab.
@@ -1708,6 +1712,7 @@ if (!CLI_MODE) {
   homePicture.want('tv', (liveState.state.snapshot().power || {}).systemOn !== false);
   glasshouseHome.init({
     luna: luna,
+    allowExperimental: function () { return CONFIG.allowExperimentalHome === true; },
     liveState: liveState,
     history: history,
     stateDir: __dirname,

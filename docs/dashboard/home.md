@@ -1,6 +1,6 @@
 # Home
 
-**Experimental.** Glasshouse Home is a home screen of Glasshouse's own, shown in place of LG's when the remote's Home or Back button is pressed and when the TV switches on. The Home tab switches it on and off and arranges it. It has been tried on webOS 9 only, and requires the dashboard on port 8080. Elsewhere neither dashboard shows it, unless it is still switched on or LG's Home has not yet been fully restored.
+**Experimental.** Glasshouse Home is a home screen of Glasshouse's own, shown in place of LG's when the remote's Home or Back button is pressed and when the TV switches on. The Home tab switches it on and off and arranges it. It has been tried on webOS 9 only, and requires the dashboard on port 8080. On webOS 10 and 11 it is offered once `"allowExperimentalHome": true` is set in `config.json`, untried there. Elsewhere neither dashboard shows it, unless it is still switched on or LG's Home has not yet been fully restored.
 
 ![Glasshouse Home on an OLED55G36LA (webOS 9.2): clock and the Apps, Inputs and Channels rows over an uploaded afternoon wallpaper](../screenshots/home.jpg)
 
@@ -42,7 +42,7 @@ LG's Home opens about two seconds after any of them, and Glasshouse Home takes i
 
 After the TV starts from cold, Glasshouse Home takes LG's Home's place about 27 seconds in (a G3). Home pressed in that time leaves the TV on what it is showing, with a message that Glasshouse Home is starting; once Glasshouse Home is in place, Home opens it as usual. Home is held like this for at most 90 seconds after the TV starts, so a TV where Glasshouse no longer runs still reaches LG's Home. Anything else that opens LG's Home in that time, such as Back out of an app, shows LG's Home until Glasshouse Home replaces it.
 
-**Hide LG's Home while the TV starts**, off unless chosen, gives LG's Home an empty layout while Glasshouse Home has its place, so that anything opening it in those first seconds shows a black screen instead. It asks for a second press to switch on, and takes effect at once. The layout is kept on the TV, not in Glasshouse: if Glasshouse stops running without switching Glasshouse Home off, for example after a firmware update removes root or `/var/lib/tvweb` is deleted, LG's Home stays black at every start. Over SSH, `tvwebctl restore-glasshouse-home` puts LG's Home back while Glasshouse is installed. Where it is not:
+**Hide LG's Home while the TV starts**, on webOS 9 only and off unless chosen, gives LG's Home an empty layout while Glasshouse Home has its place, so that anything opening it in those first seconds shows a black screen instead. It asks for a second press to switch on, and takes effect at once. The layout is kept on the TV, not in Glasshouse: if Glasshouse stops running without switching Glasshouse Home off, for example after a firmware update removes root or `/var/lib/tvweb` is deleted, LG's Home stays black at every start. Over SSH, `tvwebctl restore-glasshouse-home` puts LG's Home back while Glasshouse is installed. Where it is not:
 
 ```sh
 rm -rf /mnt/lg/cmn_data/manifest /tmp/checkpoint/*com.webos.app.home* /mnt/lg/cmn_data/checkpoint/*com.webos.app.home* && reboot
