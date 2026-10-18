@@ -1239,6 +1239,17 @@ The layout lives in `home.json`, shared by the Home tab and the view's arrange
 mode, and is re-read when the file changes, so `tvwebctl
 restore-glasshouse-home` over SSH is seen by a running server.
 
+A row set to Last opened (`sort` in `home.json`) is ordered by
+`home-recent.json`, the time each tile id was last opened. sam's foreground
+app gives apps and HDMI inputs, an input as `hdmiN`, which counts for every
+device on it; a device's own tile records that device and keeps the input
+switch it causes from counting for the others. Live TV's channel is read from
+`utp.boot/getLastChannelId` when Live TV leaves the foreground, since changing
+channel within it changes nothing in front, and when the catalogue is asked
+for while Live TV is still in front: on a G3 the view asks about 0.2 s before
+sam names it. The catalogue waits for that read. Only rows set to Last opened are
+recorded, and a row going back to its own order is forgotten.
+
 ## Apps kept ready in the background
 
 webOS's preload manager keeps apps loaded so they open quickly, including ones

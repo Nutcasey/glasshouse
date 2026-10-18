@@ -1746,10 +1746,12 @@ if (!CLI_MODE) {
    */
   process.on('SIGTERM', function () {
     history.flush();
+    glasshouseHome.flush();
     if (process.listeners('SIGTERM').length === 1) process.exit(0);
   });
   process.on('SIGINT', function () {
     history.flush();
+    glasshouseHome.flush();
     if (process.listeners('SIGINT').length === 1) process.exit(0);
   });
 
