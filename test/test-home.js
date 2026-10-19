@@ -848,8 +848,19 @@ step('the picture details stay off until switched on, and the server is told of 
 
 step('only #rrggbb colours are kept, since the view writes them into its stylesheet', function (done) {
   start(null);
-  home.setLayout({ colours: { text: '#ECE7DF', accent: 'red;}body{display:none' } }, function (r) {
-    assert.strictEqual(r.layout.colours, null);
+  var invalid = [
+    { text: '#ECE7DF', accent: 'red;}body{display:none' },
+    { text: ['#ece7df'], accent: '#30de61' },
+    { text: { toString: null }, accent: '#30de61' },
+    { text: '#ece7df', accent: { toString: {} } }
+  ];
+  function rejectNext() {
+    if (invalid.length) {
+      return home.setLayout({ colours: invalid.shift() }, function (r) {
+        assert.strictEqual(r.layout.colours, null);
+        rejectNext();
+      });
+    }
     home.setLayout({ colours: { text: '#ECE7DF', accent: '#30de61' } }, function (r2) {
       assert.deepEqual(r2.layout.colours, { text: '#ece7df', accent: '#30de61' });
       home.setLayout({ hintSeen: true }, function (r3) {
@@ -860,7 +871,8 @@ step('only #rrggbb colours are kept, since the view writes them into its stylesh
         });
       });
     });
-  });
+  }
+  rejectNext();
 });
 
 step('a failed save switches nothing', function (done) {

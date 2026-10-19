@@ -860,8 +860,9 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
     if (!c) { $('look').textContent = LOOK; return; }
     var swap = { '#ece7df': c.text, '#a39d93': shade(c.text, 0.69), '#6b665e': shade(c.text, 0.45),
                  '#e9ad55': c.accent, '#231d12': shade(c.accent, 0.15) };
-    $('look').textContent = LOOK.replace(/outline-color:#ece7df\b/g, 'outline-color:' + c.accent)
-      .replace(/#(?:ece7df|a39d93|6b665e|e9ad55|231d12)\b/g, function (m) { return swap[m]; });
+    // Replace once: a chosen accent may itself be one of the original colours.
+    $('look').textContent = LOOK.replace(/outline-color:#ece7df\b|#(?:ece7df|a39d93|6b665e|e9ad55|231d12)\b/g,
+      function (m) { return m === 'outline-color:#ece7df' ? 'outline-color:' + c.accent : swap[m]; });
   }
 
   // ---------------------------------------------------------------- data

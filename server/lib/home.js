@@ -236,8 +236,8 @@ function normalise(raw) {
 }
 
 function validColours(v) {
-  if (!v || typeof v !== 'object') return null;
-  var text = String(v.text || '').toLowerCase(), accent = String(v.accent || '').toLowerCase();
+  if (!v || typeof v.text !== 'string' || typeof v.accent !== 'string') return null;
+  var text = v.text.toLowerCase(), accent = v.accent.toLowerCase();
   return COLOUR_RE.test(text) && COLOUR_RE.test(accent) ? { text: text, accent: accent } : null;
 }
 

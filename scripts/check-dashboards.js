@@ -219,6 +219,50 @@ async function visitHomePicture(browser, base, problems) {
   } finally { await page.close(); }
 }
 
+async function visitHomeColours(browser, base, problems) {
+  const page = await browser.newPage();
+  page.on('pageerror', e => problems.push('Home colours: ' + e.message));
+  const layout = { rows: ['app', 'dev', 'ch'], order: { app: [], dev: [], ch: [] },
+    hidden: { app: [], dev: [], ch: [] }, channels: [], hintSeen: true, colours: null };
+  let version = 1;
+  await page.route('**/api/home/**', route => {
+    const pathname = new URL(route.request().url()).pathname;
+    const body = pathname === '/api/home/catalogue'
+      ? { ok: true, layout, layoutVersion: String(version), apps: [], devices: [], channels: [],
+          sources: { channels: 0 }, order: { app: ['lg-home'], dev: [], ch: [] } }
+      : { ok: true, build: 'one', layoutVersion: String(version) };
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
+  });
+  const rgb = hex => 'rgb(' + hex.slice(1).match(/../g).map(v => parseInt(v, 16)).join(', ') + ')';
+  async function check(text, accent) {
+    const actual = await page.evaluate(() => ({
+      text: getComputedStyle(document.getElementById('clock')).color,
+      focus: getComputedStyle(document.querySelector('.tile.focus')).outlineColor
+    }));
+    if (actual.text !== rgb(text)) problems.push('Home colours: text ' + text + ' rendered as ' + actual.text);
+    if (actual.focus !== rgb(accent)) problems.push('Home colours: accent ' + accent + ' rendered as ' + actual.focus);
+  }
+  try {
+    await page.clock.install();
+    // Chosen colours can coincide with any original colour in the stylesheet.
+    for (const accent of ['#ece7df', '#a39d93', '#6b665e', '#e9ad55', '#231d12', '#30de61']) {
+      layout.colours = { text: '#d4e6f4', accent };
+      await page.goto(base + '/assets/home.html');
+      await page.waitForSelector('.tile.focus');
+      await check('#d4e6f4', accent);
+    }
+    // Changes made elsewhere, including reset, arrive through the heartbeat.
+    for (const colours of [{ text: '#f4dcdc', accent: '#30de61' }, null]) {
+      layout.colours = colours;
+      version++;
+      await page.clock.fastForward(5000);
+      const text = colours ? colours.text : '#ece7df';
+      await page.waitForFunction(expected => getComputedStyle(document.getElementById('clock')).color === expected, rgb(text));
+      await check(text, colours ? colours.accent : text);
+    }
+  } finally { await page.close(); }
+}
+
 async function visitHomeArrangement(browser, base, problems) {
   const page = await browser.newPage();
   page.on('pageerror', e => problems.push('Home arranging: ' + e.message));
@@ -630,6 +674,7 @@ async function visitHomeReadiness(browser, base, problems) {
     .concat(tv.map(t => ({ url: base + '/assets/dashboard.html?tab=' + t, label: 'TV ' + t }))), problems);
   await visitHomeArrangement(browser, base, problems);
   await visitHomePicture(browser, base, problems);
+  await visitHomeColours(browser, base, problems);
   await visitHomeEditor(browser, base, problems);
   await visitHomeOrder(browser, base, problems);
   await visitHomeUploads(browser, base, problems);
@@ -638,6 +683,6 @@ async function visitHomeReadiness(browser, base, problems) {
   await browser.close();
   for (const p of problems) console.log(p);
   console.log((web.length + tv.length) + ' tabs opened (' + web.length + ' web, ' + tv.length + ' TV app), ' +
-              'Home arranging, picture, update, editing, order, uploads, readiness and availability checked, ' + problems.length + ' problem' + (problems.length === 1 ? '' : 's'));
+              'Home arranging, picture, colours, update, editing, order, uploads, readiness and availability checked, ' + problems.length + ' problem' + (problems.length === 1 ? '' : 's'));
   process.exit(problems.length ? 1 : 0);
 })().catch(e => { console.error(e.message); process.exit(1); });
