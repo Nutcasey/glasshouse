@@ -64,7 +64,20 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
 #plStrip{font-size:23px;height:36px;line-height:38px;color:#a39d93}
 #plStrip b{font-weight:400;color:#6b665e;margin-right:12px}
 
-#rows{padding-top:34px}
+/* The rows sit centred between the clock and the arrange bar, so three rows
+   land a little below where they used to and fewer settle lower. The spacers shrink first, so rows taller than the space run on down
+   rather than under the clock. A row with nothing to show is left out, and
+   while arranging stands as a slot that can still be moved. */
+#rows{position:absolute;left:0;right:0;top:296px;bottom:40px;
+  display:-webkit-flex;display:flex;-webkit-flex-direction:column;flex-direction:column}
+#rows:before,#rows:after{content:"";-webkit-flex:1 1 0;flex:1 1 0}
+.row{-webkit-flex:0 0 auto;flex:0 0 auto}
+.row.empty{display:none}
+.arranging .row.empty{display:block}
+.slot{margin:0 112px;height:64px;line-height:60px;padding:0 22px;font-size:21px;color:#6b665e;
+  border:2px dashed #2a2825;border-radius:6px}
+.arranging .row.active .slot{color:#ece7df;border-color:#e9ad55;border-style:solid}
+.arranging .row.held-row .slot{border-style:dashed;background:#231d12}
 .row{margin-bottom:22px}
 .row h2{padding:0 112px;font-size:25px;font-weight:400;color:#a39d93;margin-bottom:10px}
 .row h2 span{color:#6b665e;margin-left:14px}
@@ -291,6 +304,13 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
     return out;
   }
   function rowKey() { return layout.rows[state.row]; }
+  // A row with nothing to show is left out of the view, but not while arranging.
+  function shown(ri) { return state.arranging || items(layout.rows[ri]).length > 0; }
+  // The first shown row from ri on in direction dir, or ri when there is none.
+  function nextShown(ri, dir) {
+    for (var i = ri; i >= 0 && i < layout.rows.length; i += dir) if (shown(i)) return i;
+    return ri;
+  }
   // -1, only while arranging, is the row's Order, left of its first tile.
   function colOf(kind) {
     if (state.arranging && state.col[kind] === -1) return -1;
@@ -319,15 +339,17 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
   function render() {
     $('stage').className = state.arranging ? 'arranging' : '';
     var html = '';
+    if (!shown(state.row)) state.row = nextShown(0, 1);
     layout.rows.forEach(function (kind, ri) {
       var list = items(kind);
       var tiles = '';
       list.forEach(function (it, i) { tiles += TILE[kind](it, i); });
-      html += '<section class="row" data-row="' + ri + '" data-key="' + kind + '">' +
-        '<h2>' + esc(ROW_TITLES[kind]) + '<span>' + esc(rowNote(kind, list)) + '</span>' +
+      var note = esc(rowNote(kind, list));
+      html += '<section class="row"' + (list.length ? '' : ' data-empty="1"') + ' data-row="' + ri + '" data-key="' + kind + '">' +
+        '<h2>' + esc(ROW_TITLES[kind]) + (list.length ? '<span>' + note + '</span>' : '') +
         '<em class="sort">' + esc(sortLabel(kind)) + '</em></h2>' +
-        '<div class="wrap"><div class="track">' + tiles +
-        '</div></div></section>';
+        (list.length ? '<div class="wrap"><div class="track">' + tiles + '</div></div>' : '<div class="slot">' + note + '</div>') +
+        '</section>';
     });
     $('rows').innerHTML = html;
     applyFocus(true);
@@ -369,7 +391,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
     var rows = document.querySelectorAll('.row');
     for (var ri = 0; ri < rows.length; ri++) {
       var rowEl = rows[ri], kind = rowEl.getAttribute('data-key'), active = ri === state.row && state.bar < 0;
-      rowEl.className = 'row' + (active ? ' active' : '') + (active && state.held ? ' held-row' : '');
+      rowEl.className = 'row' + (rowEl.getAttribute('data-empty') ? ' empty' : '') + (active ? ' active' : '') + (active && state.held ? ' held-row' : '');
       var tiles = rowEl.querySelectorAll('.tile'), c = colOf(kind);
       for (var ci = 0; ci < tiles.length; ci++) {
         var on = active && ci === c;
@@ -523,7 +545,10 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
 
   function move(dr, dc) {
     var onSort = colOf(rowKey()) === -1;
-    if (dr) state.row = Math.max(0, Math.min(layout.rows.length - 1, state.row + dr));
+    if (dr) {
+      var to = nextShown(state.row + dr, dr);
+      if (to >= 0 && to < layout.rows.length && shown(to)) state.row = to;
+    }
     // Up and down from a row's Order go to the next row's.
     if (dr && onSort) state.col[rowKey()] = -1;
     if (dc) {
@@ -721,7 +746,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
       e.preventDefault();
       if (state.arranging && state.held) { state.held = false; return toggleHidden(); }
       if (state.arranging) return setArranging(false);
-      state.row = 0; state.col[rowKey()] = 0;
+      state.row = nextShown(0, 1); state.col[rowKey()] = 0;
       return applyFocus();
     }
     if (state.arranging) { arrangeKey(k); e.preventDefault(); return; }
