@@ -1360,6 +1360,17 @@ for while Live TV is still in front: on a G3 the view asks about 0.2 s before
 sam names it. The catalogue waits for that read. Only rows set to Last opened are
 recorded, and a row going back to its own order is forgotten.
 
+Back on the view opens its Recent apps panel. LG's own is a view inside LG's
+Home with no way in from outside, so `lib/home-recent-apps.js` reads the same
+list, `com.webos.service.recent/listRecents`, and closes through its
+`removeRecent` and `removeAllRecents`. Those stop the apps they remove on
+webOS 9.2 but not on webOS 10.3, so an app still running afterwards is closed
+with `closeByAppId`
+([TV-RESEARCH](development/TV-RESEARCH.md#lg-homes-recent-apps-g3-webos-922)).
+A card shows the app's snapshot, or its splash where the TV has none since it
+restarted. Pictures are served only from the paths the last list named, and an
+app is opened or closed only while it is on the list.
+
 ## Apps kept ready in the background
 
 webOS's preload manager keeps apps loaded so they open quickly, including ones
