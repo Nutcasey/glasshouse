@@ -217,6 +217,35 @@ Checked on 18 October 2026 on the same TV, with Glasshouse Home in the place:
   /mnt/lg/cmn_data/checkpoint/*com.webos.app.home* && reboot` brought LG's
   Home back on its default layout.
 
+## LG Home's recent apps (G3, webOS 9.2.2)
+
+Read on 19 October 2026 from LG's Home's QML under the Glasshouse Home
+mount, and tried over SSH.
+
+- **The panel is part of LG's Home.** Back on LG's Home's first page sets
+  `uiController.isRecentMode` (`UIController.qml` `showRecents`), which slides
+  `Recents.qml` up from the bottom. No `activateType` or other launch
+  parameter opens it, so nothing outside LG's Home can show it.
+- **Its list is `com.webos.service.recent`**, served by the surface manager:
+  `listRecents` answers `recentsAppList`, newest first, each with `appId`,
+  `title`, `cardSnapShotFilePath` (a JPEG in `/tmp/snapshots/<id>/`) and
+  `customImageFilePath` (Netflix names `RECENTS.png` of its own). It is not the
+  running list: Apple TV was listed after it had stopped, and YouTube and the
+  browser, kept running in the background, were not.
+- **Removing closes.** LG's Close and Close all call only `removeRecent
+  { appId }` and `removeAllRecents {}`. Each closed the apps it removed:
+  Netflix left `applicationManager/running` within 2 s, and Close all took
+  Netflix and the Glasshouse app with it while YouTube and the browser,
+  unlisted, kept running.
+- A launched app joins the list once it has been left; launching Home over it
+  is enough.
+- **On a G5 (webOS 10.3.1)** the service is there with the same answers, but
+  removing does not close: Netflix was still in `running` after
+  `removeRecent` and after `removeAllRecents`, and `closeByAppId` then closed
+  it. Snapshots are in `/tmp`, so apps left before the TV restarted are
+  listed with `cardSnapShotFilePath` empty and only their
+  `splashBackground`. Checked on 19 October 2026.
+
 ## Channels and the guide (G3, webOS 9.2.2)
 
 - `com.webos.service.apiadapter/tv/getChannelList` (the method behind SSAP's
@@ -593,6 +622,12 @@ app in front. Remote Keys puts its own filter first.
   `com.webos.service.networkinput/test/sendKeyCode` with a Linux key code (the
   `IR_KEY_*` value in `/usr/share/X11/xkb/keycodes/lg` less 8: Blue 401, TV 377)
   reached a mapped key's filter like the remote's own press.
+- **A filter can send keys over the network.** On a C3 (webOS 10.2.2) the
+  filter's own `lunaCall.send` to `networkinput/test/sendKeyCode` with play
+  207, pause 119, stop 128, rewind 168, fast forward 208, volume up 115, volume
+  down 114 and mute 113 acted as the remote's keys. A play/pause toggle that
+  first asked `com.webos.service.acb/getForegroundAppInfo` (then
+  `com.webos.media`'s) and sent pause or play did nothing.
 - **A rebuild re-runs LG's `init()`s.** In Game mode each write of the key
   opened the Game Dashboard (`NL_GAMEDASHBOARD_ENTERED`,
   `"entered_by":"HotKey"` in `/var/log/messages`) on the C2. Launching an app

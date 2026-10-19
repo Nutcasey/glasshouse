@@ -584,7 +584,14 @@ before the server has started. The Apps tab's copy is kept in
 
 A key it names is consumed on press and release, the press opening what was
 chosen with `applicationManager.launch(id, "{}")` or nothing; every other key
-returns `NextPolicy`. LG's files are never written. configd has no way to
+returns `NextPolicy`. A key set to a media control holds `media:` and the
+control's name (`media:pause`) in place of an app id, and its press sends the
+control's Linux key code through `com.webos.service.networkinput/test/sendKeyCode`,
+the same codes as the dashboard's media buttons (play 207, pause 119, stop 128,
+rewind 168, fast forward 208, volume up 115, volume down 114, mute 113;
+volume repeats while the key is held). Those keys go through the chain again, and the
+filter names none of them, so they reach LG's filters and the app in front.
+LG's files are never written. configd has no way to
 delete a value, so **As LG has it** on every key leaves the filter in the
 chain, passing every key on, and `tvwebctl restore-keys` takes it out, deletes
 the file and leaves `glasshouse.remoteKeys` as an empty map.
@@ -1359,6 +1366,21 @@ channel within it changes nothing in front, and when the catalogue is asked
 for while Live TV is still in front: on a G3 the view asks about 0.2 s before
 sam names it. The catalogue waits for that read. Only rows set to Last opened are
 recorded, and a row going back to its own order is forgotten.
+
+Back on the view opens its Recent apps panel. LG's own is a view inside LG's
+Home with no way in from outside, so `lib/home-recent-apps.js` reads the same
+list, `com.webos.service.recent/listRecents`. Removing a card stops its app on
+webOS 9.2 but not on webOS 10.3, so Glasshouse first stops the selected apps:
+`closeByAppId` for native apps, WebAppMgr's `killApp` for web apps. It checks
+that they have left `running` before removing their cards with `removeRecent`;
+a refused or unconfirmed stop keeps the cards for retry. Close all acts only
+on the offered list, leaving Home and any newer cards alone
+([TV-RESEARCH](development/TV-RESEARCH.md#lg-homes-recent-apps-g3-webos-922)).
+A card shows the app's snapshot, or its splash where the TV has none since it
+restarted. Pictures are served only from the paths the last list named, and an
+app is opened or closed only while it is on the list. Snapshot responses use
+`private, no-store` caching. Back cancels a pending panel load; returning Home
+discards replies from the previous visit. OK acts once on release.
 
 ## Apps kept ready in the background
 

@@ -1,6 +1,6 @@
 /*
  * lib/remotekeys.js - what the remote's keys do: a key opens an app or an
- * input, does nothing, or stays as LG has it
+ * input, sends a media key, does nothing, or stays as LG has it
  *
  * The compositor (surface-manager) turns remote keys into actions through a
  * chain of JavaScript filters named by the configd key
@@ -93,6 +93,27 @@ var LIVE_TV = 'com.webos.app.livetv';
 // parameters it shows the same list.
 var INPUT_SWITCHER = 'com.webos.app.quickinputpicker';
 var APP_PREFIX = 'com.webos.app.';
+/*
+ * A key set to a media control holds MEDIA_PREFIX and the control's name in
+ * place of an app id: no app id has a colon. The filter sends the control's
+ * Linux key code through the network input service, whose keys go through the
+ * filter chain like the remote's own (TV-RESEARCH.md), so the app in front
+ * gets it as a play or pause key; no media key is one this filter takes. The
+ * codes are controls.js's RCU_KEY_CODES, measured on a B8. Volume up and down
+ * are the codes controls.js sends for one step, which a receiver on HDMI ARC
+ * follows too; they repeat while the key is held, as the remote's own do.
+ * Mute is KEY_MUTE, a toggle like the remote's. Each worked on a C3 (webOS
+ * 10.2.2). A play/pause toggle, asking acb what was playing first, did
+ * nothing there, so none is offered. webOS 11's native filters launch apps
+ * only, so they are not offered there.
+ */
+var MEDIA_PREFIX = 'media:';
+var MEDIA_CODES = {
+  play: 207, pause: 119, stop: 128, rewind: 168, fastForward: 208,
+  volumeUp: 115, volumeDown: 114, mute: 113
+};
+var MEDIA_ACTIONS = ['play', 'pause', 'stop', 'rewind', 'fastForward', 'volumeUp', 'volumeDown', 'mute'];
+var MEDIA_REPEATS = { volumeUp: true, volumeDown: true };
 
 // webOS 11's native key filters; see the header.
 var NATIVE_FILTERS_KEY = 'com.webos.surfacemanager.keyFiltersCpp';
@@ -304,6 +325,8 @@ function filterSource() {
     'var glasshouseHomeReady = false;',
     'var glasshouseHoldingHome = false;',
     'var glasshouseHoldOver = false;',
+    'var glasshouseMediaCodes = ' + JSON.stringify(MEDIA_CODES) + ';',
+    'var glasshouseMediaRepeats = ' + JSON.stringify(MEDIA_REPEATS) + ';',
     '',
     '// Key code by name; a name this firmware lacks is left out.',
     'function glasshouseKeyCodes() {',
@@ -333,6 +356,15 @@ function filterSource() {
     '    } catch (e) {',
     '        console.warn("glasshouse keyfilter: " + e + "; keys left as they were");',
     '    }',
+    '}',
+    '',
+    'function glasshouseSendKey(code) {',
+    '    lunaCall.send("com.webos.service.networkinput", "/test/sendKeyCode", JSON.stringify({ "keyCode": code }), function () {});',
+    '}',
+    '',
+    '// Sends the media key a key is set to, by its name after ' + JSON.stringify(MEDIA_PREFIX) + '.',
+    'function glasshouseMedia(name) {',
+    '    if (glasshouseMediaCodes.hasOwnProperty(name)) glasshouseSendKey(glasshouseMediaCodes[name]);',
     '}',
     '',
     '// Opens Home once the app manager runs Glasshouse Home under its id, and',
@@ -386,7 +418,13 @@ function filterSource() {
     '        }',
     '        if (!glasshouseKeyIds.hasOwnProperty(key)) return KeyPolicy.NextPolicy;',
     '        var id = glasshouseKeyIds[key];',
-    '        if (pressed && !autoRepeat && id) {',
+    '        if (id.indexOf(' + JSON.stringify(MEDIA_PREFIX) + ') === 0) {',
+    '            var media = id.substring(' + MEDIA_PREFIX.length + ');',
+    '            if (pressed && (!autoRepeat || glasshouseMediaRepeats.hasOwnProperty(media))) {',
+    '                if (!autoRepeat) console.info("glasshouse keyfilter: key", key, "sends", id);',
+    '                glasshouseMedia(media);',
+    '            }',
+    '        } else if (pressed && !autoRepeat && id) {',
     '            console.info("glasshouse keyfilter: key", key, "opens", id);',
     '            applicationManager.launch(id, "{}");',
     '        }',
@@ -1065,6 +1103,21 @@ function switcherChoices(cb) {
   });
 }
 
+// The media controls a key can send, where the JavaScript filter runs.
+function mediaChoices() {
+  var titles = {
+    play: msg('srv.remoteKeys.play', 'Play'),
+    pause: msg('srv.remoteKeys.pause', 'Pause'),
+    stop: msg('srv.remoteKeys.stop', 'Stop'),
+    rewind: msg('srv.remoteKeys.rewind', 'Rewind'),
+    fastForward: msg('srv.remoteKeys.fastForward', 'Fast forward'),
+    volumeUp: msg('srv.remoteKeys.volumeUp', 'Volume up'),
+    volumeDown: msg('srv.remoteKeys.volumeDown', 'Volume down'),
+    mute: msg('srv.remoteKeys.mute', 'Mute')
+  };
+  return MEDIA_ACTIONS.map(function (a) { return { id: MEDIA_PREFIX + a, title: titles[a], kind: 'media' }; });
+}
+
 // The apps a key can open: those on the Home screen, by title.
 function appChoices(apps) {
   var seen = {};
@@ -1107,8 +1160,9 @@ function describeKeys(keys, inChain, cb, native) {
       var titles = {};
       (apps || []).forEach(function (a) { if (a && a.id) titles[a.id] = a.title || a.id; });
       var inputs = inputChoices();
+      var media = native ? [] : mediaChoices();
       var cc = country();
-      switchers.concat(inputs).forEach(function (c) { titles[c.id] = c.title; });
+      switchers.concat(inputs, mediaChoices()).forEach(function (c) { titles[c.id] = c.title; });
       var out = keys.map(function (k) {
         var set = Object.prototype.hasOwnProperty.call(map, k.key);
         var id = set ? map[k.key] : null;
@@ -1127,7 +1181,7 @@ function describeKeys(keys, inChain, cb, native) {
       });
       cb({
         ok: true, supported: true, keys: out,
-        choices: switchers.concat(inputs, appChoices(apps)),
+        choices: switchers.concat(media, inputs, appChoices(apps)),
         inChain: inChain
       });
     });
@@ -1137,22 +1191,22 @@ function describeKeys(keys, inChain, cb, native) {
 /*
  * Sets a key: action 'lg' puts it back as LG has it, 'nothing' makes it do
  * nothing, 'open' opens id, an input, an app on the Home screen or LG's input
- * switcher. It takes
+ * switcher, or sends a media control where the JavaScript filter runs. It takes
  * effect at once, through the filter's configd subscription or, on webOS 11,
  * LG's own values. cb({ ok, error }).
  */
 function setRemoteKey(key, action, id, cb) {
   if (!lunaFn) return cb({ ok: false, error: 'no luna wrapper' });
   var def = keyByName(String(key || ''));
-  offeredKeys(function (onTv) {
+  offeredKeys(function (onTv, kind) {
     if (!def || !onTv || onTv.indexOf(def) === -1) {
       return cb({ ok: false, error: msg('srv.remoteKeys.badKey', 'This TV does not have that key') });
     }
-    setOfferedKey(def, action, String(id || '').trim(), cb);
+    setOfferedKey(def, action, String(id || '').trim(), kind, cb);
   });
 }
 
-function setOfferedKey(def, action, id, cb) {
+function setOfferedKey(def, action, id, kind, cb) {
   var map = readMap();
   if (action === 'lg') {
     delete map[def.key];
@@ -1167,7 +1221,8 @@ function setOfferedKey(def, action, id, cb) {
   switcherChoices(function (switchers) {
     listApps(function (apps) {
       if (!apps) return cb({ ok: false, error: msg('srv.remoteKeys.noApps', 'Could not read the TV\'s apps. Try again in a moment.') });
-      var allowed = switchers.concat(inputChoices(), appChoices(apps)).some(function (c) { return c.id === id; });
+      var media = kind === 'filter' ? mediaChoices() : [];
+      var allowed = switchers.concat(media, inputChoices(), appChoices(apps)).some(function (c) { return c.id === id; });
       if (!allowed) return cb({ ok: false, error: msg('srv.remoteKeys.unknownApp', 'That app is not on this TV') });
       map[def.key] = id;
       save(map, cb);
