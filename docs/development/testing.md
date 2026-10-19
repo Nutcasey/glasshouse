@@ -56,6 +56,11 @@ The worker itself stays Python 2.7 compatible for the TV.
 
 `test-routes.js` checks that an upload aborted before its file opens leaves no staged file, including a disconnect while disk space is being reserved.
 
+The Home suite also checks auto-launch restoration with a delayed settings
+read, no write when auto launch was already off, and a refused takeover with
+and without an earlier hold. Wake cases cover source changes, standby,
+server stop and switch-off, including delayed power-on reason replies.
+
 ## Home Assistant
 
 [`home-assistant.yml`](https://github.com/rorygallagher2024/glasshouse/blob/main/.github/workflows/home-assistant.yml) builds every discovery config the server can publish and

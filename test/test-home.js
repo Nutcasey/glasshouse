@@ -526,6 +526,115 @@ step('a layout saved from a dashboard keeps LG\'s Home auto launch as it was', f
   });
 });
 
+step('disabling during an auto-launch read leaves LG\'s setting restored', function (done) {
+  var releaseRead;
+  start(null, { luna: function (uri, payload, cb) {
+    luna(uri, payload, function (r) {
+      if (payload.keys && payload.keys.indexOf('homeAutoLaunch') !== -1) {
+        releaseRead = function () { cb(r); };
+      } else cb(r);
+    });
+  } });
+  tv.settings.homeAutoLaunch = 'on';
+  tv.settings.quickStartMode = 'off';
+  home.enable(function (r) {
+    assert.ok(r.ok, r.error);
+    wait(20, function () {
+      var result = null;
+      home.disable(function (r2) { result = r2; });
+      wait(20, function () {
+        releaseRead();
+        wait(20, function () {
+          assert.ok(result && result.ok, 'switch-off finishes after the pending read');
+          assert.strictEqual(tv.settings.homeAutoLaunch, 'on');
+          assert.strictEqual(JSON.parse(fs.readFileSync(path.join(dir, 'home.json'), 'utf8')).lgAutoLaunch, null);
+          done();
+        });
+      });
+    });
+  });
+});
+
+step('auto launch already off is never rewritten on switching off', function (done) {
+  start(null);
+  tv.settings.homeAutoLaunch = 'off';
+  tv.settings.checkHomeAutoLaunchValue = 'default';
+  tv.settings.quickStartMode = 'off';
+  home.enable(function (r) {
+    assert.ok(r.ok, r.error);
+    wait(20, function () {
+      tv.events = [];
+      home.disable(function (r2) {
+        assert.ok(r2.ok, r2.error);
+        assert.strictEqual(tv.settings.homeAutoLaunch, 'off');
+        assert.ok(!tv.events.some(function (event) { return event.indexOf('settings homeAutoLaunch') === 0; }),
+          'writing even the same value marks it as user on a G5');
+        done();
+      });
+    });
+  });
+});
+
+step('a refused takeover at start leaves LG\'s auto launch available', function (done) {
+  var cases = [false, true];
+  (function run() {
+    if (!cases.length) return done();
+    var held = cases.shift();
+    start({ enabled: true, lgAutoLaunch: held ? 'on' : null, lgAutoLaunchCheck: held ? 'default' : null });
+    tv.settings.homeAutoLaunch = held ? 'off' : 'on';
+    tv.settings.quickStartMode = 'off';
+    tv.samRefusesWeb = true;
+    home.start();
+    wait(50, function () {
+      assert.ok(!taken());
+      assert.strictEqual(tv.settings.homeAutoLaunch, 'on', held ? 'restore a previous hold' : 'do not start a hold');
+      run();
+    });
+  })();
+});
+
+step('a delayed wake never overrides a source choice or outlives its wake', function (done) {
+  var cases = ['input', 'app and back', 'standby', 'stop', 'input during reason', 'disable during reason'];
+  (function run() {
+    if (!cases.length) return done();
+    var scenario = cases.shift();
+    var releaseReason;
+    start(null, { luna: function (uri, payload, cb) {
+      luna(uri, payload, function (r) {
+        if (uri === 'com.webos.service.tvpower/power/getPowerOnReason' && scenario.indexOf('during reason') !== -1) {
+          releaseReason = function () { cb(r); };
+        } else cb(r);
+      });
+    } });
+    tv.settings.homeAutoLaunch = 'on';
+    tv.settings.quickStartMode = 'off';
+    home.enable(function (r) {
+      assert.ok(r.ok, r.error);
+      wait(20, function () {
+        foreground('com.webos.app.hdmi4');
+        powerState('Active');
+        powerState('Active Standby');
+        powerState('Active');
+        wait(scenario.indexOf('during reason') !== -1 ? 1600 : 50, function () {
+          if (scenario.indexOf('input') === 0) foreground('com.webos.app.hdmi2');
+          if (scenario === 'app and back') { foreground('netflix'); foreground('com.webos.app.hdmi4'); }
+          if (scenario === 'standby') { powerState('Active Standby'); power(false); }
+          if (scenario === 'stop') home.stop();
+          function check() {
+            if (releaseReason) releaseReason();
+            wait(scenario.indexOf('during reason') !== -1 ? 20 : 1600, function () {
+              assert.deepEqual(tv.launched, [], scenario);
+              home.disable(function (r2) { assert.ok(r2.ok, r2.error); run(); });
+            });
+          }
+          if (scenario === 'disable during reason') return home.disable(function (r2) { assert.ok(r2.ok, r2.error); check(); });
+          check();
+        });
+      });
+    });
+  })();
+});
+
 step('switched on in LG\'s settings while Glasshouse Home is on, auto launch is kept as on and off again at start', function (done) {
   start({ enabled: true, lgAutoLaunch: 'off' });
   tv.settings.homeAutoLaunch = 'on';

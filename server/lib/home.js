@@ -152,6 +152,8 @@ var homeDownAt = 0;
 var powerActive = true;
 // tvpower's raw state, null until the first reading.
 var powerState = null;
+var wakeTimer = null;
+var wakeRequest = null;
 var guideCache = { at: 0, data: {} };
 var listCache = {};
 var changing = false;
@@ -159,6 +161,7 @@ var settingsQueue = [];
 var settingsBusy = false;
 var autoLaunchBusy = false;
 var autoLaunchAgain = false;
+var autoLaunchWaiting = [];
 var switchBusy = false;
 var switchWant = null;
 var switchWaiting = [];
@@ -923,10 +926,11 @@ function disable(cb) {
   }
   wasEnabled = false;
   escaped = false;
+  cancelWake();
   stopBeatWatch();
   switchTo(false, function (r) {
     if (!r.ok) return cb({ ok: false, error: msg('srv.home.restoreFailed', 'the TV would not take its earlier Home settings back') + ' (' + r.error + ')' });
-    restoreLgAutoLaunch(function (restored) {
+    syncLgAutoLaunch(function (restored) {
       if (!restored) return cb({ ok: false, error: msg('srv.home.restoreFailed', 'the TV would not take its earlier Home settings back') });
       cleanLegacy(function (cleaned) {
         if (!cleaned) return cb({ ok: false, error: msg('srv.home.restoreFailed', 'the TV would not take its earlier Home settings back') });
@@ -985,24 +989,26 @@ function setHideLgHomeAtStart(body, cb) {
  * server start and each switch on or off, so a change to it is followed.
  */
 function syncLgAutoLaunch(cb) {
-  cb = cb || function () {};
+  if (cb) autoLaunchWaiting.push(cb);
   if (autoLaunchBusy) {
     autoLaunchAgain = true;
-    return cb(true);
+    return;
   }
   autoLaunchBusy = true;
   function done(ok) {
     autoLaunchBusy = false;
-    if (autoLaunchAgain && readConfig().enabled) {
+    if (autoLaunchAgain) {
       autoLaunchAgain = false;
-      return syncLgAutoLaunch(cb);
+      return syncLgAutoLaunch();
     }
-    autoLaunchAgain = false;
-    cb(ok);
+    var waiting = autoLaunchWaiting.splice(0, autoLaunchWaiting.length);
+    waiting.forEach(function (fn) { fn(ok); });
   }
+  // A disable waits for an in-flight hold before restoring the saved value.
+  if (!readConfig().enabled || (!escaped && !takeover.mounted())) return restoreLgAutoLaunch(done);
   luna(SETTINGS + 'getSystemSettings', { category: 'option', keys: ['quickStartMode'] }, function (r) {
     var quickStart = r && r.settings && typeof r.settings.quickStartMode === 'string' ? r.settings.quickStartMode : '';
-    if (!readConfig().enabled) return done(true);
+    if (!readConfig().enabled || (!escaped && !takeover.mounted())) return restoreLgAutoLaunch(done);
     if (quickStart === 'on') return restoreLgAutoLaunch(done);
     if (quickStart === 'off') return holdLgAutoLaunch(done);
     // Unread, as just after a wake from Quick Start+ (a G3, webOS 9.2.2):
@@ -1015,6 +1021,7 @@ function syncLgAutoLaunch(cb) {
 function holdLgAutoLaunch(cb) {
   cb = cb || function () {};
   readSettings(['homeAutoLaunch', 'checkHomeAutoLaunchValue'], function (s) {
+    if (!readConfig().enabled || (!escaped && !takeover.mounted())) return cb(true);
     var value = s && typeof s.homeAutoLaunch === 'string' ? s.homeAutoLaunch : '';
     if (!value) {
       console.error('home: could not read LG\'s Home auto launch');
@@ -1022,12 +1029,8 @@ function holdLgAutoLaunch(cb) {
     }
     var check = typeof s.checkHomeAutoLaunchValue === 'string' ? s.checkHomeAutoLaunchValue : null;
     var c = readConfig();
-    if (value === 'off') {
-      if (c.lgAutoLaunch !== null) return cb(true);
-      c.lgAutoLaunch = 'off';
-      return cb(saveConfig());
-    }
-    if (c.lgAutoLaunch === null) c.lgAutoLaunchCheck = check;
+    if (value === 'off') return cb(true);
+    if (c.lgAutoLaunch === null || c.lgAutoLaunch === 'off') c.lgAutoLaunchCheck = check;
     c.lgAutoLaunch = value;
     if (!saveConfig()) return cb(false);
     writeSettings({ homeAutoLaunch: 'off' }, function (ok) {
@@ -1249,6 +1252,10 @@ function beat() {
 function foregroundChanged(id) {
   var was = foreground;
   foreground = id;
+  if (wakeRequest && id && id !== was) {
+    if (!wakeRequest.input && isInputApp(id)) wakeRequest.input = id;
+    else if (wakeRequest.input !== id) cancelWake();
+  }
   if (legacyAppPending) tryRemoveLegacyApp();
   if (id !== HOME_APP && id !== LG_HOME && id) lastSource = { appId: id, at: nowMs() };
   if (!readConfig().enabled) return;
@@ -1294,6 +1301,12 @@ function homeKey(down) {
   }, HOLD_MS);
 }
 
+function cancelWake() {
+  if (wakeTimer) clearTimeout(wakeTimer);
+  wakeTimer = null;
+  wakeRequest = null;
+}
+
 /*
  * Switched back on before the TV had powered off, it wakes from Active Standby
  * without a boot, so the boot hook does not run, and with auto launch held off
@@ -1304,14 +1317,27 @@ function homeKey(down) {
 function powerStateChanged(raw) {
   var was = powerState;
   powerState = String(raw || '');
+  if (was === powerState) return;
+  cancelWake();
   if (was === null || names.powerState(was).systemOn || !names.powerState(powerState).systemOn) return;
   var c = readConfig();
   if (!c.enabled || c.lgAutoLaunch !== 'on') return;
-  setTimeout(function () {
-    if (escaped || !takeover.mounted() || !isInputApp(foreground)) return;
+  var request = { input: isInputApp(foreground) ? foreground : '' };
+  wakeRequest = request;
+  function canOpen() {
+    var current = readConfig();
+    return wakeRequest === request && current.enabled && current.lgAutoLaunch === 'on' &&
+      names.powerState(powerState).systemOn && powerActive && !escaped && takeover.mounted() &&
+      isInputApp(foreground) && foreground === request.input;
+  }
+  wakeTimer = setTimeout(function () {
+    wakeTimer = null;
+    if (!canOpen()) return cancelWake();
     luna('com.webos.service.tvpower/power/getPowerOnReason', {}, function (r) {
+      if (wakeRequest !== request) return;
       var reason = r && typeof r.reason === 'string' ? r.reason : '';
-      if (FULL_HOME_REASONS.indexOf(reason) === -1 || !isInputApp(foreground)) return;
+      if (FULL_HOME_REASONS.indexOf(reason) === -1 || !canOpen()) return cancelWake();
+      cancelWake();
       console.log('home: opening Glasshouse Home over ' + foreground + ' after a wake by ' + reason);
       launch(LG_HOME, null, function (res) {
         if (!res.ok) console.error('home: could not open Glasshouse Home after the wake');
@@ -1323,6 +1349,7 @@ function powerStateChanged(raw) {
 function powerChanged(active) {
   var was = powerActive;
   powerActive = active;
+  if (!active) cancelWake();
   if (was !== active && readConfig().enabled) syncLgAutoLaunch();
 }
 
@@ -1405,6 +1432,7 @@ function init(opts) {
   settingsBusy = false;
   autoLaunchBusy = false;
   autoLaunchAgain = false;
+  autoLaunchWaiting = [];
   switchBusy = false;
   switchWant = null;
   switchWaiting = [];
@@ -1468,14 +1496,15 @@ function start() {
     startingNotice(c.enabled);
     if (!c.enabled) return;
     wasEnabled = true;
-    syncLgAutoLaunch();
     switchTo(true, function (r) {
       if (!r.ok) console.error('home: could not take LG\'s Home\'s place: ' + r.error);
+      syncLgAutoLaunch();
     });
   });
 }
 
 function stop() {
+  cancelWake();
   stopBeatWatch();
   if (holdTimer) clearTimeout(holdTimer);
   holdTimer = null;

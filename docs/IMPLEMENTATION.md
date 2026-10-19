@@ -1309,8 +1309,13 @@ for and the app bootd logged as foreground (`/var/log/bootd.log`) is an input
 still in front; it then starts the server without its 5 s wait, as the page
 shows the Glasshouse mark until the server answers. Switched back on before
 it had powered off, the TV wakes from Active Standby without a boot, so the
-server opens Glasshouse Home instead, 1.5 s after the wake. With Quick Start+
-on, a power-on resumes the TV with the mount in place, and bootd opens
+server opens Glasshouse Home instead, 1.5 s after the wake, while the first
+input is still in front. A source choice, standby, switch-off or server stop
+cancels that launch, including while the power-on reason is being read.
+Auto launch is held off only after a successful takeover; a refused takeover
+puts its saved value back. Switching off waits for any pending settings work
+before restoring it, and an already-off value needs no write or snapshot.
+With Quick Start+ on, a power-on resumes the TV with the mount in place, and bootd opens
 Glasshouse Home only while auto launch is on, so there the owner's value is
 put back; Quick Start+ is read at server start and at each switch on or off,
 and an unreadable value, as just after a wake, changes nothing. Where the owner chooses **Hide LG's Home while the TV
