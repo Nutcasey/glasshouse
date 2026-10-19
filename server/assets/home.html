@@ -76,7 +76,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
   outline:2px solid transparent;opacity:.8;
   -webkit-transition:background-color .12s,outline-color .12s,-webkit-transform .12s;transition:background-color .12s,outline-color .12s,transform .12s}
 .row:not(.active) .tile{opacity:.58}
-.tile.focus{background:rgba(20,19,16,.86);outline-color:#ece7df/*focus*/;opacity:1}
+.tile.focus{background:rgba(20,19,16,.86);outline-color:#ece7df;opacity:1}
 
 .app{width:168px;padding:14px;text-align:center}
 .app img,.app .mono{display:block;width:112px;height:112px;margin:0 auto;border-radius:14px}
@@ -100,7 +100,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
 .ch .prog{font-size:21px;font-weight:600;margin-top:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ch .bar{height:2px;background:#2a2825;margin-top:10px}
 .ch .bar i{display:block;height:100%;background:#a39d93}
-.ch.focus .bar i{background:#ece7df/*focus*/}
+.ch.focus .bar i{background:#ece7df}
 .ch .next{font-size:17px;color:#6b665e;margin-top:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* Arranging */
@@ -840,8 +840,9 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
    * pages are kept to what webOS 3's Chromium 38 runs (check-es5.py). The
    * quieter text and the held tile's tint are mixed toward black from the
    * chosen colours, in the proportions the page's own have to #ece7df and
-   * #e9ad55. The view's own look frames the focused tile in its text colour;
-   * chosen colours frame it in the accent (marked focus in the stylesheet).
+   * #e9ad55. The view's own look frames whatever has focus in its text
+   * colour, always as outline-color:#ece7df; chosen colours frame it in the
+   * accent.
    */
   var LOOK = $('look').textContent, lookShown = '';
   function shade(hex, f) {
@@ -858,8 +859,9 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
     lookShown = key;
     if (!c) { $('look').textContent = LOOK; return; }
     var swap = { '#ece7df': c.text, '#a39d93': shade(c.text, 0.69), '#6b665e': shade(c.text, 0.45),
-                 '#e9ad55': c.accent, '#231d12': shade(c.accent, 0.15), '#ece7df/*focus*/': c.accent };
-    $('look').textContent = LOOK.replace(/#ece7df\/\*focus\*\/|#(?:ece7df|a39d93|6b665e|e9ad55|231d12)\b/g, function (m) { return swap[m]; });
+                 '#e9ad55': c.accent, '#231d12': shade(c.accent, 0.15) };
+    $('look').textContent = LOOK.replace(/outline-color:#ece7df\b/g, 'outline-color:' + c.accent)
+      .replace(/#(?:ece7df|a39d93|6b665e|e9ad55|231d12)\b/g, function (m) { return swap[m]; });
   }
 
   // ---------------------------------------------------------------- data
