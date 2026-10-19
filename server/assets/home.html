@@ -138,12 +138,45 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
 #banner .btn{margin-left:12px;padding:8px 18px;border-radius:5px;color:#ece7df;background:#231d12;outline:2px solid transparent}
 #banner .btn.focus{outline-color:#e9ad55}
 
-#toast{position:absolute;left:112px;bottom:26px;font-size:23px;color:#ece7df;padding:14px 22px;border-radius:6px;
+#toast{position:absolute;z-index:1;left:112px;bottom:26px;font-size:23px;color:#ece7df;padding:14px 22px;border-radius:6px;
   background:#141310;border-left:3px solid #e9ad55;opacity:0;-webkit-transform:translateY(8px);transform:translateY(8px);
   -webkit-transition:opacity .2s,-webkit-transform .2s;transition:opacity .2s,transform .2s;max-width:1100px}
 #toast.show{opacity:1;-webkit-transform:none;transform:none}
 #toast small{display:block;font-size:18px;color:#a39d93;margin-top:4px}
 .arranging #toast{bottom:96px}
+
+/* Recent apps: Back's panel, in place of the one in LG's Home. The
+   snapshots are the panel: each a small copy of the screen as it was left,
+   the focused one at full strength in a warm white frame, the rest dimmed.
+   Close shows only under the focused card; down reaches it. */
+#recents{position:absolute;left:0;right:0;bottom:0;height:560px;padding-top:92px;
+  background:linear-gradient(180deg,rgba(0,0,0,0) 0,rgba(0,0,0,.94) 64px,#000 120px);
+  -webkit-transform:translateY(100%);transform:translateY(100%);visibility:hidden;
+  -webkit-transition:-webkit-transform .32s cubic-bezier(.2,.7,.2,1),visibility 0s .32s;transition:transform .32s cubic-bezier(.2,.7,.2,1),visibility 0s .32s}
+.recents #recents{-webkit-transform:none;transform:none;visibility:visible;-webkit-transition-delay:0s;transition-delay:0s}
+#rows,#now{-webkit-transition:opacity .32s;transition:opacity .32s}
+.recents #rows,.recents #now{opacity:.25}
+.recents #rows .tile.focus{outline-color:transparent;background:none}
+#recents .head{display:-webkit-flex;display:flex;-webkit-align-items:baseline;align-items:baseline;padding:0 112px;margin-bottom:18px}
+#recents h2{-webkit-flex:1 1 auto;flex:1 1 auto;font-family:'Outfit',sans-serif;font-size:40px;font-weight:300;letter-spacing:-.3px;color:#ece7df}
+#btnCloseAll{font-size:21px;color:#a39d93;padding:8px 18px;margin-right:-18px;border-radius:5px;outline:2px solid transparent}
+#btnCloseAll.focus{color:#ece7df;background:rgba(20,19,16,.86);outline-color:#ece7df}
+#btnCloseAll.none{display:none}
+#recents .tile.rc{width:372px;margin-right:32px;padding:0;background:none;outline:0;opacity:.5}
+#recents .tile.rc.focus{opacity:1}
+.rc .shot{position:relative;width:372px;height:209px;border-radius:6px;overflow:hidden;background:#141310;
+  outline:2px solid transparent;outline-offset:4px;-webkit-transition:outline-color .12s;transition:outline-color .12s}
+.rc.focus .shot{outline-color:#ece7df}
+.rc.on-x .shot{outline-color:#3a3732}
+.rc .shot img{display:block;width:100%;height:100%;object-fit:cover}
+.rc .shot .mono{position:absolute;left:0;top:0;right:0;bottom:0;text-align:center;line-height:209px;
+  font-family:'Outfit',sans-serif;font-size:72px;font-weight:300;color:#6b665e}
+.rc .nm{font-size:22px;font-weight:600;margin-top:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rc .x{display:inline-block;visibility:hidden;font-size:19px;color:#a39d93;margin:10px 0 0 -12px;padding:5px 12px;border-radius:4px;outline:2px solid transparent}
+.rc.focus .x{visibility:visible}
+.rc.on-x .x{color:#ece7df;background:rgba(20,19,16,.86);outline-color:#ece7df}
+#recents .empty{padding:8px 0 0;font-size:26px;color:#a39d93}
+#recents .empty b{display:block;font-family:'Outfit',sans-serif;font-size:32px;font-weight:300;color:#ece7df;margin-bottom:8px}
 
 #fault{position:absolute;left:112px;top:420px;width:1200px;display:none}
 #fault.show{display:block}
@@ -189,6 +222,14 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
   </div>
   <div id="toast"></div>
 
+  <section id="recents">
+    <div class="head">
+      <h2 data-t="home.recents.title">Recent apps</h2>
+      <span class="btn" id="btnCloseAll" data-t="home.recents.closeAll">Close all</span>
+    </div>
+    <div class="wrap"><div class="track" id="recentsTrack"></div></div>
+  </section>
+
   <div id="fault">
     <h1 data-t="home.fault.title">Glasshouse is not answering</h1>
     <p data-t="home.fault.desc">Glasshouse Home comes back when it answers. Should it stay silent, LG's Home comes back in a few minutes.</p>
@@ -225,7 +266,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
   var state = { row: 0, col: {}, arranging: false, held: false, bar: -1, last: null };
   var BAR = ['btnHide', 'btnReset', 'btnDone'];
   var build = null;
-  var okDownAt = 0, okTimer = null, okLong = false;
+  var okDownAt = 0, okTimer = null, okLong = false, okInRecents = false, backDown = false;
   var beatFails = 0;
   var layoutRevision = 0, layoutBusy = false;
   // home.json's version as last loaded: a heartbeat bringing another means it
@@ -337,7 +378,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
   }
 
   function render() {
-    $('stage').className = state.arranging ? 'arranging' : '';
+    stageClass();
     var html = '';
     if (!shown(state.row)) state.row = nextShown(0, 1);
     layout.rows.forEach(function (kind, ri) {
@@ -558,6 +599,134 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
     applyFocus();
   }
 
+  function stageClass() {
+    $('stage').className = (state.arranging ? 'arranging' : '') + (recents.open ? ' recents' : '');
+  }
+
+  // ---------------------------------------------------------------- recent apps
+
+  /*
+   * Back's panel: the TV's recent apps, newest first, as LG's Home shows them
+   * (lib/home-recent-apps). Up from the cards is Close all; down from a card
+   * is its Close. Where the TV has no list, Back goes to the first tile.
+   */
+  var recents = { open: false, loading: false, revision: 0, apps: [], col: 0, onX: false, onAll: false, busy: false, stamp: 0 };
+
+  function openRecents() {
+    if (recents.busy) return;
+    recents.busy = true;
+    recents.loading = true;
+    var revision = ++recents.revision;
+    getJson('/api/home/recents', function (r) {
+      recents.busy = false;
+      if (revision !== recents.revision) return;
+      recents.loading = false;
+      if (!r || !r.ok) {
+        state.row = nextShown(0, 1); state.col[rowKey()] = 0;
+        return applyFocus();
+      }
+      recents.open = true;
+      recents.col = 0; recents.onX = false; recents.onAll = false;
+      showRecents(r.apps);
+      stageClass();
+    });
+  }
+
+  function closeRecents() {
+    recents.revision++;
+    recents.loading = false;
+    recents.open = false;
+    stageClass();
+  }
+
+  function showRecents(apps) {
+    recents.apps = apps || [];
+    recents.stamp = Date.now();
+    recents.col = Math.max(0, Math.min(recents.col, recents.apps.length - 1));
+    if (!recents.apps.length) { recents.onX = false; recents.onAll = false; }
+    var html = '';
+    recents.apps.forEach(function (a, i) {
+      var mono = '<span class="mono">' + esc(String(a.title).charAt(0)) + '</span>';
+      var shot = a.image ? '<img src="/api/home/recents/image?id=' + encodeURIComponent(a.id) + '&v=' + recents.stamp + '" alt="">' : mono;
+      html += '<div class="tile rc" data-c="' + i + '"><div class="shot">' + shot + '</div>' +
+        '<div class="nm">' + esc(a.title) + '</div><span class="x">' + esc(t('home.recents.close', 'Close')) + '</span></div>';
+    });
+    $('recentsTrack').innerHTML = html || '<div class="empty"><b>' + esc(t('home.recents.none', 'Nothing is open')) + '</b>' +
+      esc(t('home.recents.noneDesc', 'Apps stay here while they are open.')) + '</div>';
+    // A snapshot can be gone by the time it is asked for: the card keeps the app's initial.
+    var imgs = $('recentsTrack').querySelectorAll('img');
+    for (var j = 0; j < imgs.length; j++) {
+      imgs[j].onerror = function () {
+        var span = document.createElement('span');
+        span.className = 'mono';
+        span.textContent = (this.parentNode.parentNode.querySelector('.nm').textContent || '').charAt(0);
+        this.parentNode.replaceChild(span, this);
+      };
+    }
+    focusRecents(true);
+  }
+
+  function focusRecents(instant) {
+    var cards = $('recentsTrack').querySelectorAll('.rc');
+    for (var i = 0; i < cards.length; i++) {
+      var on = i === recents.col && !recents.onAll;
+      cards[i].className = 'tile rc' + (on ? ' focus' : '') + (on && recents.onX ? ' on-x' : '');
+    }
+    $('btnCloseAll').className = 'btn' + (recents.apps.length ? '' : ' none') + (recents.onAll ? ' focus' : '');
+    scrollTrack($('recents'), cards[recents.col], instant);
+  }
+
+  function recentAction(action, app) {
+    if (recents.busy) return;
+    recents.busy = true;
+    var revision = recents.revision;
+    postJson('/api/home/recents', { action: action, id: app && app.id }, function (r) {
+      recents.busy = false;
+      if (revision !== recents.revision) return;
+      if (!r || !r.ok) {
+        return toast(action === 'open' ? t('home.openFailed', 'That did not open') : t('home.recents.closeFailed', 'That did not close'), r && r.error);
+      }
+      if (action === 'open') return closeRecents();
+      if (action === 'closeAll') {
+        closeRecents();
+        return toast(t('home.recents.allClosed', 'Recent apps closed'));
+      }
+      showRecents(r.apps);
+    });
+  }
+
+  function recentsKey(k) {
+    var app = recents.apps[recents.col];
+    if (k === KEY.back) return closeRecents();
+    if (recents.onAll) {
+      if (k === KEY.ok) return recentAction('closeAll');
+      if (k === KEY.down) recents.onAll = false;
+      return focusRecents();
+    }
+    if (!app) return;
+    if (k === KEY.left || k === KEY.right) {
+      recents.col = Math.max(0, Math.min(recents.apps.length - 1, recents.col + (k === KEY.left ? -1 : 1)));
+      recents.onX = false;
+    } else if (k === KEY.up) {
+      if (recents.onX) recents.onX = false; else recents.onAll = true;
+    } else if (k === KEY.down) {
+      recents.onX = true;
+    } else if (k === KEY.ok) {
+      return recentAction(recents.onX ? 'close' : 'open', app);
+    } else if (k === KEY.red) {
+      return recentAction('close', app);
+    }
+    focusRecents();
+  }
+
+  function recentsClick(target) {
+    if (target.id === 'btnCloseAll') return recentAction('closeAll');
+    var card = tileAt(target);
+    if (!card || !/\brc\b/.test(card.className)) return closeRecents();
+    recents.col = +card.getAttribute('data-c');
+    recentAction(target.className === 'x' ? 'close' : 'open', recents.apps[recents.col]);
+  }
+
   // ---------------------------------------------------------------- arranging
 
   /*
@@ -735,6 +904,8 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
       if (okDownAt) return;
       okDownAt = Date.now();
       okLong = false;
+      okInRecents = recents.open;
+      if (okInRecents) return;
       okTimer = setTimeout(function () {
         okLong = true;
         if (state.held) return;
@@ -744,11 +915,14 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
     }
     if (k === KEY.back) {
       e.preventDefault();
+      if (backDown) return;
+      backDown = true;
+      if (recents.open || recents.loading) return closeRecents();
       if (state.arranging && state.held) { state.held = false; return toggleHidden(); }
       if (state.arranging) return setArranging(false);
-      state.row = nextShown(0, 1); state.col[rowKey()] = 0;
-      return applyFocus();
+      return openRecents();
     }
+    if (recents.open) { e.preventDefault(); return recentsKey(k); }
     if (state.arranging) { arrangeKey(k); e.preventDefault(); return; }
     if (k === KEY.left) move(0, -1);
     else if (k === KEY.right) move(0, 1);
@@ -759,11 +933,14 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
   }
 
   function onKeyUp(e) {
+    if (e.keyCode === KEY.back) { backDown = false; return; }
     if (e.keyCode !== KEY.ok || !okDownAt) return;
     e.preventDefault();
     clearTimeout(okTimer);
     okDownAt = 0;
     if (okLong || layoutBusy) return;
+    if (okInRecents) { if (recents.open) recentsKey(KEY.ok); return; }
+    if (recents.open || recents.loading) return;
     if (state.arranging) arrangeKey(KEY.ok);
     else activate();
   }
@@ -779,6 +956,13 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
   function onPointer(e) {
     if (layoutBusy) return;
     var tile = tileAt(e.target);
+    if (recents.open) {
+      if (tile && /\brc\b/.test(tile.className) && (+tile.getAttribute('data-c') !== recents.col || recents.onAll)) {
+        recents.col = +tile.getAttribute('data-c'); recents.onAll = false; recents.onX = false;
+        focusRecents();
+      }
+      return;
+    }
     if (!tile || state.held) return;
     var rowEl = tile.parentNode;
     while (rowEl && !/\brow\b/.test(rowEl.className)) rowEl = rowEl.parentNode;
@@ -790,6 +974,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
   }
   function onClick(e) {
     if (!data || !layout || layoutBusy) return;
+    if (recents.open) return recentsClick(e.target);
     var btn = e.target && e.target.id;
     if (BAR.indexOf(btn) !== -1) return pressBar(BAR.indexOf(btn));
     if (state.arranging && /\bsort\b/.test(e.target.className || '')) {
@@ -952,6 +1137,9 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
 
   function returned() {
     initialEscape = false;
+    clearTimeout(okTimer);
+    okDownAt = 0; backDown = false;
+    closeRecents();
     readLaunchParams();
     updateWall();
     state.row = 0; state.col = {}; state.bar = -1;

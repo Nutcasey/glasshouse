@@ -1094,6 +1094,14 @@ function handleHomeRoute(req, res, u, pathname) {
         send(res, status, JSON.stringify({ ok: false, error: error }));
       }, 'image/jpeg');
     }
+    if (pathname === '/api/home/recents') return homeModule.recentApps.list(reply);
+    if (pathname === '/api/home/recents/image') {
+      var snapshot = homeModule.recentApps.imagePath(u.query && u.query.id);
+      if (!snapshot) return send(res, 404, JSON.stringify({ ok: false, error: 'no picture' }));
+      return sendIconFile(req, res, snapshot, function (status, error) {
+        send(res, status, JSON.stringify({ ok: false, error: error }));
+      }, /\.png$/i.test(snapshot) ? 'image/png' : 'image/jpeg', 'private, no-store');
+    }
     if (pathname === '/api/home/icon') {
       return homeModule.iconPath(u.query && u.query.id, function (iconPath) {
         if (!iconPath) return send(res, 404, JSON.stringify({ ok: false, error: 'icon not found' }));
@@ -1126,6 +1134,13 @@ function handleHomeRoute(req, res, u, pathname) {
       if (pathname === '/api/home/enable') return homeModule.enable(reply);
       if (pathname === '/api/home/disable') return homeModule.disable(reply);
       if (pathname === '/api/home/open') return homeModule.open(body, reply);
+      if (pathname === '/api/home/recents') {
+        var recentApps = homeModule.recentApps, recentId = body && typeof body.id === 'string' ? body.id : '';
+        if (body && body.action === 'open') return recentApps.open(recentId, reply);
+        if (body && body.action === 'close') return recentApps.close(recentId, reply);
+        if (body && body.action === 'closeAll') return recentApps.closeAll(reply);
+        return reply({ ok: false, error: 'action must be open, close or closeAll' });
+      }
       send(res, 404, JSON.stringify({ ok: false, error: 'not found' }));
     });
   }

@@ -32,6 +32,7 @@ var writeJsonAtomic = require('./util').writeJsonAtomic;
 var wallpapers = require('./home-wallpapers');
 var takeover = require('./home-takeover');
 var recent = require('./home-recent');
+var recentApps = require('./home-recent-apps');
 
 // The separate app earlier builds installed: removed, and its settings undone.
 var HOME_APP = 'com.tvweb.home';
@@ -1188,6 +1189,7 @@ function init(opts) {
   if (opts.stateDir) stateDir = opts.stateDir;
   wallpapers.init(stateDir);
   recent.init(stateDir, opts.now);
+  recentApps.init({ luna: lunaFn });
   takeover.init({
     luna: lunaFn,
     samrescan: opts.samrescan || null,
@@ -1325,6 +1327,8 @@ module.exports = {
   layoutVersion: layoutVersion,
   homeKey: homeKey,
   iconPath: iconPath,
+  // Back on the view: the TV's recent apps (lib/home-recent-apps).
+  recentApps: recentApps,
   wallpaperPath: wallpapers.image,
   uploadWallpaper: function (slot, req, cb) {
     var sup = supported();

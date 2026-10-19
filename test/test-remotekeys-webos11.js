@@ -297,6 +297,16 @@ step('LG\'s input switcher is a choice of its own, first, for any key', function
   });
 });
 
+step('media controls are not offered where LG\'s native filters only launch apps', function (next) {
+  rk.getRemoteKeys(function (r) {
+    assert.ok(!r.choices.some(function (c) { return c.kind === 'media'; }));
+    rk.setRemoteKey('netflix', 'open', 'media:play', function (s) {
+      assert.strictEqual(s.ok, false);
+      next();
+    });
+  });
+});
+
 step('Home Hub opens an app or nothing through its key action, and goes back to LG\'s', function (next) {
   set('homehub', 'open', 'youtube.leanback.v4', function () {
     assert.deepEqual(tv.configs['com.webos.keyaction.inputHub'], { action: 'launch', id: 'youtube.leanback.v4' });

@@ -855,6 +855,10 @@
   "text": "Como lo tiene LG",
   "from": "As LG has it"
  },
+ "apps.remoteKeys.media": {
+  "text": "Multimedia",
+  "from": "Media"
+ },
  "apps.remoteKeys.nothing": {
   "text": "Nada",
   "from": "Nothing"
@@ -4723,6 +4727,10 @@
   "text": "La TV no aceptó el cambio",
   "from": "The TV did not take the change"
  },
+ "srv.remoteKeys.fastForward": {
+  "text": "Avance rápido",
+  "from": "Fast forward"
+ },
  "srv.remoteKeys.inputSwitcher": {
   "text": "Selector de entradas",
   "from": "Input switcher"
@@ -4730,6 +4738,10 @@
  "srv.remoteKeys.liveTv": {
   "text": "TV en directo",
   "from": "Live TV"
+ },
+ "srv.remoteKeys.mute": {
+  "text": "Silencio",
+  "from": "Mute"
  },
  "srv.remoteKeys.noApps": {
   "text": "No se pudieron leer las apps de la TV. Inténtalo de nuevo en un momento.",
@@ -4739,13 +4751,37 @@
   "text": "Esta tecla no se puede configurar para no hacer nada",
   "from": "This key cannot be set to do nothing"
  },
+ "srv.remoteKeys.pause": {
+  "text": "Pausa",
+  "from": "Pause"
+ },
+ "srv.remoteKeys.play": {
+  "text": "Reproducir",
+  "from": "Play"
+ },
+ "srv.remoteKeys.rewind": {
+  "text": "Retroceso",
+  "from": "Rewind"
+ },
  "srv.remoteKeys.saveFailed": {
   "text": "No se pudo guardar el cambio: {error}",
   "from": "Could not save the change: {error}"
  },
+ "srv.remoteKeys.stop": {
+  "text": "Detener",
+  "from": "Stop"
+ },
  "srv.remoteKeys.unknownApp": {
   "text": "Esa app no está en esta TV",
   "from": "That app is not on this TV"
+ },
+ "srv.remoteKeys.volumeDown": {
+  "text": "Bajar volumen",
+  "from": "Volume down"
+ },
+ "srv.remoteKeys.volumeUp": {
+  "text": "Subir volumen",
+  "from": "Volume up"
  },
  "srv.repo.notCatalog": {
   "text": "no es un catálogo de paquetes: {url}",

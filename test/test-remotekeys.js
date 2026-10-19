@@ -137,8 +137,10 @@ step(function (next) {
     assert.ok(r.keys.every(function (k) { return k.action === 'lg' && k.id === ''; }));
     assert.strictEqual(r.inChain, false);
     assert.deepEqual(r.choices.map(function (c) { return c.id; }),
-      ['com.webos.app.hdmi1', 'com.webos.app.hdmi2', 'com.webos.app.livetv', 'netflix', 'youtube.leanback.v4']);
-    console.log('  ✓ only the keys the TV\'s filters name are offered, each as LG has it, with the inputs and apps a key can open');
+      ['media:play', 'media:pause', 'media:stop', 'media:rewind', 'media:fastForward',
+       'media:volumeUp', 'media:volumeDown', 'media:mute',
+       'com.webos.app.hdmi1', 'com.webos.app.hdmi2', 'com.webos.app.livetv', 'netflix', 'youtube.leanback.v4']);
+    console.log('  ✓ only the keys the TV\'s filters name are offered, each as LG has it, with the media controls, inputs and apps a key can open');
     next();
   }));
 });
@@ -209,6 +211,49 @@ step(function (next) {
         assert.deepEqual(JSON.parse(fs.readFileSync(MAP, 'utf8')).keys, { netflix: 'youtube.leanback.v4', guide: '' });
         console.log('  ✓ the keys read back with what each does; a key the TV does not have, or an app not on it, is refused and changes nothing');
         next();
+      }));
+    }));
+  }));
+});
+
+step(function (next) {
+  rk.setRemoteKey('red', 'open', 'media:pause', guard(function (s1) {
+    assert.strictEqual(s1.ok, true);
+    rk.setRemoteKey('amazon', 'open', 'media:stop', guard(function (s2) {
+      assert.strictEqual(s2.ok, true);
+      rk.setRemoteKey('amazon', 'open', 'media:eject', guard(function (s3) {
+        assert.strictEqual(s3.ok, false);
+        var keyCodes = function (f) {
+          return f.sent.filter(function (m) { return m.uri === 'com.webos.service.networkinput/test/sendKeyCode'; })
+            .map(function (m) { return m.payload.keyCode; });
+        };
+        var f = loadFilter();
+        assert.strictEqual(f.handle(1002, true, false), 'accepted');
+        assert.strictEqual(f.handle(1002, false, false), 'accepted');
+        assert.deepEqual(keyCodes(f), [128]);
+        assert.strictEqual(f.handle(1004, true, false), 'accepted');
+        assert.deepEqual(keyCodes(f), [128, 119]);
+        assert.strictEqual(f.launched.length, 0);
+        // Volume repeats while held, as the remote's own key does; mute does not.
+        f.tell({ keys: { amazon: 'media:volumeUp', red: 'media:mute' } });
+        f.handle(1002, true, false);
+        f.handle(1002, true, true);
+        f.handle(1002, false, false);
+        f.handle(1004, true, false);
+        f.handle(1004, true, true);
+        assert.deepEqual(keyCodes(f).slice(2), [115, 115, 113]);
+        rk.getRemoteKeys(guard(function (r) {
+          var red = r.keys.filter(function (k) { return k.key === 'red'; })[0];
+          assert.strictEqual(red.action, 'open');
+          assert.strictEqual(red.opens, 'Pause');
+          rk.setRemoteKey('red', 'lg', '', guard(function () {
+            rk.setRemoteKey('amazon', 'lg', '', guard(function () {
+              assert.deepEqual(tv.keys.keys, { netflix: 'youtube.leanback.v4', guide: '' });
+              console.log('  ✓ a key set to a media control sends its key code once per press, or while held for volume; an unknown control is refused');
+              next();
+            }));
+          }));
+        }));
       }));
     }));
   }));

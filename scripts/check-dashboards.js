@@ -265,7 +265,9 @@ async function visitHomeArrangement(browser, base, problems) {
     await page.keyboard.up('Enter');
   }
   async function back() {
-    await page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 461, bubbles: true })));
+    await page.evaluate(() => {
+      for (const type of ['keydown', 'keyup']) document.dispatchEvent(new KeyboardEvent(type, { keyCode: 461, bubbles: true }));
+    });
   }
   try {
     await page.clock.install();
@@ -391,7 +393,9 @@ async function visitHomeOrder(browser, base, problems) {
     await page.keyboard.press('ArrowRight');
     await page.keyboard.press('Enter');
     saved = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/layout');
-    await page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 461, bubbles: true })));
+    await page.evaluate(() => {
+      for (const type of ['keydown', 'keyup']) document.dispatchEvent(new KeyboardEvent(type, { keyCode: 461, bubbles: true }));
+    });
     await saved;
     const last = saves[saves.length - 1];
     if (last.sort.app !== 'custom' || JSON.stringify(last.order.app) !== JSON.stringify(['one', 'two', 'lg-home'])) {
@@ -620,6 +624,75 @@ async function visitHomeReadiness(browser, base, problems) {
   } finally { await page.close(); }
 }
 
+async function visitHomeRecents(browser, base, problems) {
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  page.on('pageerror', e => problems.push('Home recents: ' + e.message));
+  let apps = [{ id: 'first', title: 'First' }, { id: 'second', title: 'Second' }];
+  let posts = 0, fail = false, hold = false, release = null;
+  const reply = (route, body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+  await page.route('**/api/home/**', async route => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname === '/api/home/catalogue') return reply(route, {
+      ok: true, apps: [], devices: [], channels: [], sources: {}, order: { app: ['lg-home'], dev: [], ch: [] },
+      layout: { rows: ['app', 'dev', 'ch'], hidden: { app: [], dev: [], ch: [] }, channels: [], hintSeen: true }
+    });
+    if (pathname === '/api/home/recents') {
+      if (route.request().method() === 'POST') {
+        posts++;
+        if (fail) return reply(route, { ok: false }, 400);
+        const body = route.request().postDataJSON();
+        apps = apps.filter(a => a.id !== body.id);
+      } else if (hold) await new Promise(resolve => { release = resolve; });
+      return reply(route, { ok: true, apps });
+    }
+    return reply(route, { ok: true, kind: null, build: 'one' });
+  });
+  async function back() {
+    await page.evaluate(() => {
+      for (const type of ['keydown', 'keyup']) document.dispatchEvent(new KeyboardEvent(type, { keyCode: 461 }));
+    });
+  }
+  try {
+    await page.goto(base + '/assets/home.html');
+    await page.waitForSelector('#rows .tile');
+    await back();
+    await page.waitForSelector('#stage.recents');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.down('Enter');
+    await page.keyboard.down('Enter');
+    await page.waitForTimeout(150);
+    if (posts) problems.push('Home recents: held OK acted before release');
+    await page.keyboard.up('Enter');
+    await page.waitForFunction(() => document.querySelectorAll('#recentsTrack .rc').length === 1);
+    if (posts !== 1) problems.push('Home recents: held OK closed more than one card');
+    fail = true;
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('#toast.show');
+    const visibleError = await page.evaluate(() => {
+      const toast = document.getElementById('toast'), r = toast.getBoundingClientRect();
+      return toast.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
+    });
+    if (!visibleError) problems.push('Home recents: the panel covered its close error');
+    await back();
+    for (const cancel of ['back', 'relaunch']) {
+      hold = true; release = null;
+      await back();
+      const deadline = Date.now() + 3000;
+      while (!release && Date.now() < deadline) await page.waitForTimeout(20);
+      if (!release) throw new Error('Home recents: no panel request to delay');
+      if (cancel === 'back') await back();
+      else await page.evaluate(() => document.dispatchEvent(new Event('webOSRelaunch')));
+      const answered = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/recents');
+      hold = false; release();
+      await answered;
+      await page.waitForTimeout(100);
+      if (await page.locator('#stage').evaluate(el => el.classList.contains('recents'))) {
+        problems.push('Home recents: a late reply reopened the panel after ' + cancel);
+      }
+    }
+  } finally { await page.close(); }
+}
+
 (async () => {
   const server = await startServer();
   const base = 'http://127.0.0.1:' + server.port;
@@ -635,9 +708,10 @@ async function visitHomeReadiness(browser, base, problems) {
   await visitHomeUploads(browser, base, problems);
   await visitHomeReadiness(browser, base, problems);
   await visitHomeAvailability(browser, base, problems);
+  await visitHomeRecents(browser, base, problems);
   await browser.close();
   for (const p of problems) console.log(p);
   console.log((web.length + tv.length) + ' tabs opened (' + web.length + ' web, ' + tv.length + ' TV app), ' +
-              'Home arranging, picture, update, editing, order, uploads, readiness and availability checked, ' + problems.length + ' problem' + (problems.length === 1 ? '' : 's'));
+              'Home arranging, picture, update, editing, order, uploads, readiness, availability and recents checked, ' + problems.length + ' problem' + (problems.length === 1 ? '' : 's'));
   process.exit(problems.length ? 1 : 0);
 })().catch(e => { console.error(e.message); process.exit(1); });
