@@ -1100,7 +1100,7 @@ function handleHomeRoute(req, res, u, pathname) {
       if (!snapshot) return send(res, 404, JSON.stringify({ ok: false, error: 'no picture' }));
       return sendIconFile(req, res, snapshot, function (status, error) {
         send(res, status, JSON.stringify({ ok: false, error: error }));
-      }, /\.png$/i.test(snapshot) ? 'image/png' : 'image/jpeg');
+      }, /\.png$/i.test(snapshot) ? 'image/png' : 'image/jpeg', 'private, no-store');
     }
     if (pathname === '/api/home/icon') {
       return homeModule.iconPath(u.query && u.query.id, function (iconPath) {

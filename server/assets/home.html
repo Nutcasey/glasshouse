@@ -125,7 +125,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
 #banner .btn{margin-left:12px;padding:8px 18px;border-radius:5px;color:#ece7df;background:#231d12;outline:2px solid transparent}
 #banner .btn.focus{outline-color:#e9ad55}
 
-#toast{position:absolute;left:112px;bottom:26px;font-size:23px;color:#ece7df;padding:14px 22px;border-radius:6px;
+#toast{position:absolute;z-index:1;left:112px;bottom:26px;font-size:23px;color:#ece7df;padding:14px 22px;border-radius:6px;
   background:#141310;border-left:3px solid #e9ad55;opacity:0;-webkit-transform:translateY(8px);transform:translateY(8px);
   -webkit-transition:opacity .2s,-webkit-transform .2s;transition:opacity .2s,transform .2s;max-width:1100px}
 #toast.show{opacity:1;-webkit-transform:none;transform:none}
@@ -253,7 +253,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
   var state = { row: 0, col: {}, arranging: false, held: false, bar: -1, last: null };
   var BAR = ['btnHide', 'btnReset', 'btnDone'];
   var build = null;
-  var okDownAt = 0, okTimer = null, okLong = false;
+  var okDownAt = 0, okTimer = null, okLong = false, okInRecents = false, backDown = false;
   var beatFails = 0;
   var layoutRevision = 0, layoutBusy = false;
   // home.json's version as last loaded: a heartbeat bringing another means it
@@ -585,13 +585,17 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
    * (lib/home-recent-apps). Up from the cards is Close all; down from a card
    * is its Close. Where the TV has no list, Back goes to the first tile.
    */
-  var recents = { open: false, apps: [], col: 0, onX: false, onAll: false, busy: false, stamp: 0 };
+  var recents = { open: false, loading: false, revision: 0, apps: [], col: 0, onX: false, onAll: false, busy: false, stamp: 0 };
 
   function openRecents() {
     if (recents.busy) return;
     recents.busy = true;
+    recents.loading = true;
+    var revision = ++recents.revision;
     getJson('/api/home/recents', function (r) {
       recents.busy = false;
+      if (revision !== recents.revision) return;
+      recents.loading = false;
       if (!r || !r.ok) {
         state.row = 0; state.col[rowKey()] = 0;
         return applyFocus();
@@ -604,7 +608,8 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
   }
 
   function closeRecents() {
-    if (!recents.open) return;
+    recents.revision++;
+    recents.loading = false;
     recents.open = false;
     stageClass();
   }
@@ -649,8 +654,10 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
   function recentAction(action, app) {
     if (recents.busy) return;
     recents.busy = true;
+    var revision = recents.revision;
     postJson('/api/home/recents', { action: action, id: app && app.id }, function (r) {
       recents.busy = false;
+      if (revision !== recents.revision) return;
       if (!r || !r.ok) {
         return toast(action === 'open' ? t('home.openFailed', 'That did not open') : t('home.recents.closeFailed', 'That did not close'), r && r.error);
       }
@@ -866,13 +873,14 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
     if (!data || !layout) return;
     if (layoutBusy) { e.preventDefault(); return; }
     var k = e.keyCode;
-    if (recents.open) { e.preventDefault(); return recentsKey(k); }
     if (k === KEY.ok) {
       // Acted on at release, unless held: a long press arranges.
       e.preventDefault();
       if (okDownAt) return;
       okDownAt = Date.now();
       okLong = false;
+      okInRecents = recents.open;
+      if (okInRecents) return;
       okTimer = setTimeout(function () {
         okLong = true;
         if (state.held) return;
@@ -882,10 +890,14 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
     }
     if (k === KEY.back) {
       e.preventDefault();
+      if (backDown) return;
+      backDown = true;
+      if (recents.open || recents.loading) return closeRecents();
       if (state.arranging && state.held) { state.held = false; return toggleHidden(); }
       if (state.arranging) return setArranging(false);
       return openRecents();
     }
+    if (recents.open) { e.preventDefault(); return recentsKey(k); }
     if (state.arranging) { arrangeKey(k); e.preventDefault(); return; }
     if (k === KEY.left) move(0, -1);
     else if (k === KEY.right) move(0, 1);
@@ -896,11 +908,14 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
   }
 
   function onKeyUp(e) {
+    if (e.keyCode === KEY.back) { backDown = false; return; }
     if (e.keyCode !== KEY.ok || !okDownAt) return;
     e.preventDefault();
     clearTimeout(okTimer);
     okDownAt = 0;
     if (okLong || layoutBusy) return;
+    if (okInRecents) { if (recents.open) recentsKey(KEY.ok); return; }
+    if (recents.open || recents.loading) return;
     if (state.arranging) arrangeKey(KEY.ok);
     else activate();
   }
@@ -1097,6 +1112,8 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
 
   function returned() {
     initialEscape = false;
+    clearTimeout(okTimer);
+    okDownAt = 0; backDown = false;
     closeRecents();
     readLaunchParams();
     updateWall();

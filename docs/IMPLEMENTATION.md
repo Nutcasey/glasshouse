@@ -1362,14 +1362,18 @@ recorded, and a row going back to its own order is forgotten.
 
 Back on the view opens its Recent apps panel. LG's own is a view inside LG's
 Home with no way in from outside, so `lib/home-recent-apps.js` reads the same
-list, `com.webos.service.recent/listRecents`, and closes through its
-`removeRecent` and `removeAllRecents`. Those stop the apps they remove on
-webOS 9.2 but not on webOS 10.3, so an app still running afterwards is closed
-with `closeByAppId`
+list, `com.webos.service.recent/listRecents`. Removing a card stops its app on
+webOS 9.2 but not on webOS 10.3, so Glasshouse first stops the selected apps:
+`closeByAppId` for native apps, WebAppMgr's `killApp` for web apps. It checks
+that they have left `running` before removing their cards with `removeRecent`;
+a refused or unconfirmed stop keeps the cards for retry. Close all acts only
+on the offered list, leaving Home and any newer cards alone
 ([TV-RESEARCH](development/TV-RESEARCH.md#lg-homes-recent-apps-g3-webos-922)).
 A card shows the app's snapshot, or its splash where the TV has none since it
 restarted. Pictures are served only from the paths the last list named, and an
-app is opened or closed only while it is on the list.
+app is opened or closed only while it is on the list. Snapshot responses use
+`private, no-store` caching. Back cancels a pending panel load; returning Home
+discards replies from the previous visit. OK acts once on release.
 
 ## Apps kept ready in the background
 

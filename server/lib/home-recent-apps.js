@@ -5,9 +5,10 @@
  * LG's panel is a view of its own Home app with no way in from outside, so
  * Glasshouse draws its own from the same source: the surface manager's
  * com.webos.service.recent, newest first, with each app's snapshot. Its
- * removeRecent and removeAllRecents close the apps they remove on a G3
- * (webOS 9.2.2) but only take them off the list on a G5 (webOS 10.3.1), so an
- * app still running afterwards is closed through the application manager.
+ * removeRecent closes the apps it removes on a G3 (webOS 9.2.2) but only
+ * takes them off the list on a G5 (webOS 10.3.1). Stop the listed apps first,
+ * verifying they have left running before removing their cards, so a refused
+ * close keeps its card for retry. Web apps need WebAppMgr's killApp.
  * Apps kept running in the background without a card (YouTube, the browser)
  * are not on the list.
  *
@@ -84,7 +85,7 @@ function open(id, cb) {
 function close(id, cb) {
   listed(id, function (r) {
     if (!r.ok) return cb(r);
-    luna(SERVICE + 'removeRecent', { appId: id }, done([id], cb));
+    closeListed([id], cb);
   });
 }
 
@@ -92,23 +93,61 @@ function closeAll(cb) {
   list(function (r) {
     if (!r.ok) return cb(r);
     var ids = r.apps.map(function (a) { return a.id; });
-    luna(SERVICE + 'removeAllRecents', {}, done(ids, cb));
+    closeListed(ids, cb);
   });
 }
 
-// Once removed, closes those of ids still running, then answers with the list.
-function done(ids, cb) {
-  return function (r) {
-    if (!r || r.returnValue === false) return cb({ ok: false, error: msg('srv.home.closeRefused', 'the TV would not close it') });
-    luna('com.webos.applicationManager/running', {}, function (run) {
-      var running = (run && run.running || []).map(function (a) { return a && a.id; });
-      var left = ids.filter(function (id) { return running.indexOf(id) !== -1; });
+function closeRefused(cb) {
+  cb({ ok: false, error: msg('srv.home.closeRefused', 'the TV would not close it') });
+}
+
+function running(cb) {
+  luna('com.webos.applicationManager/running', {}, function (r) {
+    cb(r && r.returnValue !== false && Object.prototype.toString.call(r.running) === '[object Array]' ? r.running : null);
+  });
+}
+
+function closeListed(ids, cb) {
+  if (!ids.length) return list(cb);
+  running(function (apps) {
+    if (!apps) return closeRefused(cb);
+    var left = apps.filter(function (a) { return a && ids.indexOf(a.id) !== -1; });
+    var pending = left.length;
+    if (!pending) return removeCards();
+    left.forEach(function (a) {
+      // closeByAppId can merely background a web app, leaving its process alive.
+      var web = a.appType === 'web';
+      luna(web ? 'com.palm.webappmanager/killApp' : 'com.webos.applicationManager/closeByAppId',
+        web ? { appId: a.id } : { id: a.id }, function () {
+          if (--pending === 0) verifyStopped(10);
+        });
+    });
+  });
+
+  function verifyStopped(tries) {
+    running(function (apps) {
+      if (!apps) return closeRefused(cb);
+      if (!apps.some(function (a) { return a && ids.indexOf(a.id) !== -1; })) return removeCards();
+      if (!tries) return closeRefused(cb);
+      setTimeout(function () { verifyStopped(tries - 1); }, 200);
+    });
+  }
+
+  function removeCards() {
+    list(function (r) {
+      if (!r.ok) return cb(r);
+      var left = r.apps.filter(function (a) { return ids.indexOf(a.id) !== -1; });
+      // A stop may already remove its card. Remove only the original selection;
+      // removeAllRecents would also remove excluded Home apps or newer cards.
       (function next() {
         if (!left.length) return list(cb);
-        luna('com.webos.applicationManager/closeByAppId', { id: left.shift() }, next);
+        luna(SERVICE + 'removeRecent', { appId: left.shift().id }, function (removed) {
+          if (!removed || !removed.returnValue) return closeRefused(cb);
+          next();
+        });
       })();
     });
-  };
+  }
 }
 
 module.exports = {
