@@ -66,6 +66,14 @@ var LG_SIDEBAR_APPS = [
 ];
 var MAX_CHANNELS = 40;
 /*
+ * The power-on reasons bootd opens Home for while auto launch is on: LG's
+ * com.webos.service.tvpower.fullHomeBootingPowerOnReasons on a G5 (webOS
+ * 10.3.1). webOS 9 has no such value (a G3), and opened Home on remoteKey.
+ */
+var FULL_HOME_REASONS = ['aiKey', 'lastPowerOn', 'localKey', 'remoteKey', 'seniorHelp'];
+// After a wake, how long bootd is given to put the last input in front.
+var WAKE_SETTLE_MS = 1500;
+/*
  * Colours for Glasshouse Home's text and accent, chosen by both dashboards.
  * The first is the view's own, used while none is chosen. Every pair keeps
  * light text on black. The accent marks what was last on and arranging and,
@@ -142,11 +150,15 @@ var lastBeatAt = 0;
 var holdTimer = null;
 var homeDownAt = 0;
 var powerActive = true;
+// tvpower's raw state, null until the first reading.
+var powerState = null;
 var guideCache = { at: 0, data: {} };
 var listCache = {};
 var changing = false;
 var settingsQueue = [];
 var settingsBusy = false;
+var autoLaunchBusy = false;
+var autoLaunchAgain = false;
 var switchBusy = false;
 var switchWant = null;
 var switchWaiting = [];
@@ -194,6 +206,10 @@ function defaults() {
     colours: null,
     // null until chosen: the first start keeps an empty layout an earlier build left.
     hideLgHomeAtStart: null,
+    // LG's Home auto launch as it was before Glasshouse Home switched it off,
+    // null while it has not, and LG's mark of whether the owner chose it.
+    lgAutoLaunch: null,
+    lgAutoLaunchCheck: null,
     snapshot: null
   };
 }
@@ -232,6 +248,8 @@ function normalise(raw) {
   d.picture = raw.picture === true;
   d.colours = validColours(raw.colours);
   if (typeof raw.hideLgHomeAtStart === 'boolean') d.hideLgHomeAtStart = raw.hideLgHomeAtStart;
+  if (typeof raw.lgAutoLaunch === 'string' && raw.lgAutoLaunch) d.lgAutoLaunch = raw.lgAutoLaunch;
+  if (typeof raw.lgAutoLaunchCheck === 'string' && raw.lgAutoLaunchCheck) d.lgAutoLaunchCheck = raw.lgAutoLaunchCheck;
   d.snapshot = validSnapshot(raw.snapshot) ? raw.snapshot : null;
   return d;
 }
@@ -321,6 +339,8 @@ function setLayout(body, cb) {
     restorePending: c.restorePending,
     snapshot: c.snapshot,
     hideLgHomeAtStart: c.hideLgHomeAtStart,
+    lgAutoLaunch: c.lgAutoLaunch,
+    lgAutoLaunchCheck: c.lgAutoLaunchCheck,
     rows: body.rows !== undefined ? body.rows : c.rows,
     order: perRow(body.order, c.order),
     sort: perRow(body.sort, c.sort),
@@ -880,6 +900,7 @@ function enable(cb) {
     }
     wasEnabled = true;
     startingNotice(true);
+    syncLgAutoLaunch();
     if (viewInFront() && powerActive) watchBeat(FIRST_BEAT_GRACE_MS);
     console.log('home: Glasshouse Home switched on');
     cb({ ok: true });
@@ -905,13 +926,16 @@ function disable(cb) {
   stopBeatWatch();
   switchTo(false, function (r) {
     if (!r.ok) return cb({ ok: false, error: msg('srv.home.restoreFailed', 'the TV would not take its earlier Home settings back') + ' (' + r.error + ')' });
-    cleanLegacy(function (cleaned) {
-      if (!cleaned) return cb({ ok: false, error: msg('srv.home.restoreFailed', 'the TV would not take its earlier Home settings back') });
-      c = readConfig();
-      c.restorePending = false;
-      if (!saveConfig()) return cb({ ok: false, error: msg('srv.home.saveFailed', 'could not save the layout') });
-      console.log('home: Glasshouse Home switched off');
-      cb({ ok: true });
+    restoreLgAutoLaunch(function (restored) {
+      if (!restored) return cb({ ok: false, error: msg('srv.home.restoreFailed', 'the TV would not take its earlier Home settings back') });
+      cleanLegacy(function (cleaned) {
+        if (!cleaned) return cb({ ok: false, error: msg('srv.home.restoreFailed', 'the TV would not take its earlier Home settings back') });
+        c = readConfig();
+        c.restorePending = false;
+        if (!saveConfig()) return cb({ ok: false, error: msg('srv.home.saveFailed', 'could not save the layout') });
+        console.log('home: Glasshouse Home switched off');
+        cb({ ok: true });
+      });
     });
   });
 }
@@ -942,6 +966,97 @@ function setHideLgHomeAtStart(body, cb) {
   c.hideLgHomeAtStart = before;
   saveConfig();
   cb({ ok: false, error: msg('srv.home.startLayoutFailed', 'the TV would not change LG\'s Home\'s layout') + ' (' + r.error + ')' });
+}
+
+/*
+ * LG's Home auto launch off while Glasshouse Home is on and Quick Start+ is
+ * off. Then every power-on is a cold start: with it on, bootd opens LG's Home
+ * about 14 s in, and it is in front until the boot hook takes its place some
+ * 25 s later; with it off, bootd opens the last input and LG's Home never comes
+ * to the front (a G5, webOS 10.3.1). The owner's value is kept, and where it
+ * was on the boot hook opens Glasshouse Home once in place. Switched back on in
+ * LG's settings since, it is kept as on and off again. Writing it turns
+ * checkHomeAutoLaunchValue from "default" to "user" (a G5, webOS 10.3.1), so
+ * that is kept and put back too.
+ *
+ * With Quick Start+ on, a power-on resumes the TV with Glasshouse Home still in
+ * place, and bootd opens it as Home only while auto launch is on (a G3, webOS
+ * 9.2.2), so there the owner's value is put back. Quick Start+ is read at each
+ * server start and each switch on or off, so a change to it is followed.
+ */
+function syncLgAutoLaunch(cb) {
+  cb = cb || function () {};
+  if (autoLaunchBusy) {
+    autoLaunchAgain = true;
+    return cb(true);
+  }
+  autoLaunchBusy = true;
+  function done(ok) {
+    autoLaunchBusy = false;
+    if (autoLaunchAgain && readConfig().enabled) {
+      autoLaunchAgain = false;
+      return syncLgAutoLaunch(cb);
+    }
+    autoLaunchAgain = false;
+    cb(ok);
+  }
+  luna(SETTINGS + 'getSystemSettings', { category: 'option', keys: ['quickStartMode'] }, function (r) {
+    var quickStart = r && r.settings && typeof r.settings.quickStartMode === 'string' ? r.settings.quickStartMode : '';
+    if (!readConfig().enabled) return done(true);
+    if (quickStart === 'on') return restoreLgAutoLaunch(done);
+    if (quickStart === 'off') return holdLgAutoLaunch(done);
+    // Unread, as just after a wake from Quick Start+ (a G3, webOS 9.2.2):
+    // changing nothing keeps a Quick Start+ TV waking on Home.
+    console.error('home: could not read Quick Start+; LG\'s Home auto launch left as it is');
+    done(false);
+  });
+}
+
+function holdLgAutoLaunch(cb) {
+  cb = cb || function () {};
+  readSettings(['homeAutoLaunch', 'checkHomeAutoLaunchValue'], function (s) {
+    var value = s && typeof s.homeAutoLaunch === 'string' ? s.homeAutoLaunch : '';
+    if (!value) {
+      console.error('home: could not read LG\'s Home auto launch');
+      return cb(false);
+    }
+    var check = typeof s.checkHomeAutoLaunchValue === 'string' ? s.checkHomeAutoLaunchValue : null;
+    var c = readConfig();
+    if (value === 'off') {
+      if (c.lgAutoLaunch !== null) return cb(true);
+      c.lgAutoLaunch = 'off';
+      return cb(saveConfig());
+    }
+    if (c.lgAutoLaunch === null) c.lgAutoLaunchCheck = check;
+    c.lgAutoLaunch = value;
+    if (!saveConfig()) return cb(false);
+    writeSettings({ homeAutoLaunch: 'off' }, function (ok) {
+      console.log(ok ? 'home: LG\'s Home auto launch switched off (was ' + value + ')'
+                     : 'home: could not switch LG\'s Home auto launch off');
+      cb(ok);
+    });
+  });
+}
+
+// LG's Home auto launch as the owner had it, once Glasshouse Home is off.
+function restoreLgAutoLaunch(cb) {
+  var c = readConfig();
+  var value = c.lgAutoLaunch;
+  if (value === null) return cb(true);
+  var put = { homeAutoLaunch: value };
+  if (c.lgAutoLaunchCheck !== null) put.checkHomeAutoLaunchValue = c.lgAutoLaunchCheck;
+  writeSettings(put, function (ok) {
+    if (!ok) {
+      console.error('home: could not put LG\'s Home auto launch back');
+      return cb(false);
+    }
+    c = readConfig();
+    c.lgAutoLaunch = null;
+    c.lgAutoLaunchCheck = null;
+    if (!saveConfig()) return cb(false);
+    console.log('home: LG\'s Home auto launch put back as ' + value);
+    cb(true);
+  });
 }
 
 function startingNotice(on, cb) {
@@ -1179,7 +1294,37 @@ function homeKey(down) {
   }, HOLD_MS);
 }
 
-function powerChanged(active) { powerActive = active; }
+/*
+ * Switched back on before the TV had powered off, it wakes from Active Standby
+ * without a boot, so the boot hook does not run, and with auto launch held off
+ * bootd opens the last input (a G3, webOS 9.2.2, off and on 6 s apart). Where
+ * the owner had auto launch on, Glasshouse Home is opened over that input, as
+ * bootd would have opened it.
+ */
+function powerStateChanged(raw) {
+  var was = powerState;
+  powerState = String(raw || '');
+  if (was === null || names.powerState(was).systemOn || !names.powerState(powerState).systemOn) return;
+  var c = readConfig();
+  if (!c.enabled || c.lgAutoLaunch !== 'on') return;
+  setTimeout(function () {
+    if (escaped || !takeover.mounted() || !isInputApp(foreground)) return;
+    luna('com.webos.service.tvpower/power/getPowerOnReason', {}, function (r) {
+      var reason = r && typeof r.reason === 'string' ? r.reason : '';
+      if (FULL_HOME_REASONS.indexOf(reason) === -1 || !isInputApp(foreground)) return;
+      console.log('home: opening Glasshouse Home over ' + foreground + ' after a wake by ' + reason);
+      launch(LG_HOME, null, function (res) {
+        if (!res.ok) console.error('home: could not open Glasshouse Home after the wake');
+      });
+    });
+  }, WAKE_SETTLE_MS);
+}
+
+function powerChanged(active) {
+  var was = powerActive;
+  powerActive = active;
+  if (was !== active && readConfig().enabled) syncLgAutoLaunch();
+}
 
 function status(cb) {
   var c = readConfig();
@@ -1251,12 +1396,15 @@ function init(opts) {
   foreground = '';
   lastSource = null;
   powerActive = true;
+  powerState = null;
   lastBeatAt = 0;
   guideCache = { at: 0, data: {} };
   listCache = {};
   changing = false;
   settingsQueue = [];
   settingsBusy = false;
+  autoLaunchBusy = false;
+  autoLaunchAgain = false;
   switchBusy = false;
   switchWant = null;
   switchWaiting = [];
@@ -1268,6 +1416,7 @@ function init(opts) {
     liveState.state.onChange(function (ev) {
       if (ev.group === 'application' && ev.key === 'app_id') foregroundChanged(String(ev.value || ''));
       if (ev.group === 'power' && ev.key === 'screenOn') powerChanged(ev.value === true);
+      if (ev.group === 'power' && ev.key === 'state') powerStateChanged(ev.value);
     });
   }
 }
@@ -1319,6 +1468,7 @@ function start() {
     startingNotice(c.enabled);
     if (!c.enabled) return;
     wasEnabled = true;
+    syncLgAutoLaunch();
     switchTo(true, function (r) {
       if (!r.ok) console.error('home: could not take LG\'s Home\'s place: ' + r.error);
     });
