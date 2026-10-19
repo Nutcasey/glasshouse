@@ -98,12 +98,16 @@ async function visit(browser, url, label, problems) {
   page.on('pageerror', e => problems.push(label + ': ' + e.message));
   // A failed request is reported with its address, which Chrome's console
   // line leaves out. Chrome, unlike the bundled browser, asks for a favicon
-  // the server does not have.
+  // the server does not have. A 404 for an app's icon is the server saying the
+  // app has none, which the page hides; the fake TV's installed apps have no
+  // icon files, and the Apps tab asks for them only when its list arrives in
+  // time.
   page.on('console', m => {
     if (m.type() === 'error' && !/^Failed to load resource/.test(m.text())) problems.push(label + ': console: ' + m.text());
   });
   page.on('response', r => {
-    if (r.status() >= 400 && !/\/favicon\.ico$/.test(r.url())) problems.push(label + ': ' + r.status() + ' for ' + r.url());
+    const expected = /\/favicon\.ico$/.test(r.url()) || (r.status() === 404 && /\/api\/apps\/icon\?/.test(r.url()));
+    if (r.status() >= 400 && !expected) problems.push(label + ': ' + r.status() + ' for ' + r.url());
   });
   let open = 0, last = Date.now();
   page.on('request', () => { open++; last = Date.now(); });
