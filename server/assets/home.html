@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <title>Glasshouse Home</title>
 <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
-<style>
+<style id="look">
 /* Glasshouse Home: the TV's home screen, driven by the remote. A 1920x1080
    stage scaled to the window. Warm white on true black, never full white on
    the panel; amber only for what was last on and for arranging. The rows sit
@@ -76,7 +76,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
   outline:2px solid transparent;opacity:.8;
   -webkit-transition:background-color .12s,outline-color .12s,-webkit-transform .12s;transition:background-color .12s,outline-color .12s,transform .12s}
 .row:not(.active) .tile{opacity:.58}
-.tile.focus{background:rgba(20,19,16,.86);outline-color:#ece7df;opacity:1}
+.tile.focus{background:rgba(20,19,16,.86);outline-color:#ece7df/*focus*/;opacity:1}
 
 .app{width:168px;padding:14px;text-align:center}
 .app img,.app .mono{display:block;width:112px;height:112px;margin:0 auto;border-radius:14px}
@@ -100,7 +100,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
 .ch .prog{font-size:21px;font-weight:600;margin-top:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ch .bar{height:2px;background:#2a2825;margin-top:10px}
 .ch .bar i{display:block;height:100%;background:#a39d93}
-.ch.focus .bar i{background:#ece7df}
+.ch.focus .bar i{background:#ece7df/*focus*/}
 .ch .next{font-size:17px;color:#6b665e;margin-top:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* Arranging */
@@ -832,6 +832,36 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
     img.src = src;
   }
 
+  // ---------------------------------------------------------------- colours
+
+  /*
+   * The dashboards' choice of text and accent colour, swapped into this
+   * page's stylesheet: custom properties would need Chromium 49, and the TV
+   * pages are kept to what webOS 3's Chromium 38 runs (check-es5.py). The
+   * quieter text and the held tile's tint are mixed toward black from the
+   * chosen colours, in the proportions the page's own have to #ece7df and
+   * #e9ad55. The view's own look frames the focused tile in its text colour;
+   * chosen colours frame it in the accent (marked focus in the stylesheet).
+   */
+  var LOOK = $('look').textContent, lookShown = '';
+  function shade(hex, f) {
+    var n = parseInt(hex.slice(1), 16), out = '#';
+    [n >> 16, (n >> 8) & 255, n & 255].forEach(function (v) {
+      var x = Math.round(v * f);
+      out += (x < 16 ? '0' : '') + x.toString(16);
+    });
+    return out;
+  }
+  function applyColours(c) {
+    var key = c ? c.text + c.accent : '';
+    if (key === lookShown) return;
+    lookShown = key;
+    if (!c) { $('look').textContent = LOOK; return; }
+    var swap = { '#ece7df': c.text, '#a39d93': shade(c.text, 0.69), '#6b665e': shade(c.text, 0.45),
+                 '#e9ad55': c.accent, '#231d12': shade(c.accent, 0.15), '#ece7df/*focus*/': c.accent };
+    $('look').textContent = LOOK.replace(/#ece7df\/\*focus\*\/|#(?:ece7df|a39d93|6b665e|e9ad55|231d12)\b/g, function (m) { return swap[m]; });
+  }
+
   // ---------------------------------------------------------------- data
 
   function load(cb, whileArranging) {
@@ -856,6 +886,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
       var firstLoad = !data;
       data = r;
       layout = r.layout;
+      applyColours(layout.colours);
       if (r.layoutVersion) layoutVersion = r.layoutVersion;
       refreshPicture();
       clearTimeout(loadRetry);

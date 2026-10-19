@@ -64,6 +64,21 @@ var LG_SIDEBAR_APPS = [
   { id: 'com.webos.app.voice', icon: false }
 ];
 var MAX_CHANNELS = 40;
+/*
+ * Colours for Glasshouse Home's text and accent, chosen by both dashboards.
+ * The first is the view's own, used while none is chosen. Every pair keeps
+ * light text on black. The accent marks what was last on and arranging and,
+ * once colours are chosen, frames the focused tile.
+ */
+var COLOUR_PRESETS = [
+  { id: 'warm', text: '#ece7df', accent: '#e9ad55' },
+  { id: 'glasshouse', text: '#ece7df', accent: '#30de61' },
+  { id: 'white', text: '#f4f4f4', accent: '#8fb8ff' },
+  { id: 'ice', text: '#d4e6f4', accent: '#5fc4ee' },
+  { id: 'rose', text: '#f4dcdc', accent: '#ec7f8c' },
+  { id: 'lilac', text: '#e0d9f6', accent: '#a98ff0' }
+];
+var COLOUR_RE = /^#[0-9a-f]{6}$/;
 
 // The settings earlier builds changed, as their snapshot kept them.
 var LEGACY_INPUT_KEYS = ['lastInputApp', 'physicalLastInputApp'];
@@ -174,6 +189,8 @@ function defaults() {
     // The plate describing the picture of what was last on: detail many
     // won't want on a home screen, so it waits to be switched on.
     picture: false,
+    // { text, accent } as #rrggbb, or null for the view's own colours.
+    colours: null,
     // null until chosen: the first start keeps an empty layout an earlier build left.
     hideLgHomeAtStart: null,
     snapshot: null
@@ -212,9 +229,16 @@ function normalise(raw) {
   d.restorePending = raw.restorePending === true;
   d.hintSeen = raw.hintSeen === true;
   d.picture = raw.picture === true;
+  d.colours = validColours(raw.colours);
   if (typeof raw.hideLgHomeAtStart === 'boolean') d.hideLgHomeAtStart = raw.hideLgHomeAtStart;
   d.snapshot = validSnapshot(raw.snapshot) ? raw.snapshot : null;
   return d;
+}
+
+function validColours(v) {
+  if (!v || typeof v !== 'object') return null;
+  var text = String(v.text || '').toLowerCase(), accent = String(v.accent || '').toLowerCase();
+  return COLOUR_RE.test(text) && COLOUR_RE.test(accent) ? { text: text, accent: accent } : null;
 }
 
 function validSnapshot(s) {
@@ -304,7 +328,9 @@ function setLayout(body, cb) {
     channels: ordered(body.order && isArray(body.order.ch) ? body.order.ch : [],
                       body.channels !== undefined ? stringList(body.channels, MAX_CHANNELS) : c.channels),
     hintSeen: body.hintSeen !== undefined ? body.hintSeen : c.hintSeen,
-    picture: typeof body.picture === 'boolean' ? body.picture : c.picture
+    picture: typeof body.picture === 'boolean' ? body.picture : c.picture,
+    // null puts the view's own colours back.
+    colours: body.colours !== undefined ? body.colours : c.colours
   });
   if (body.reset === true) {
     var d = defaults();
@@ -325,7 +351,8 @@ function setLayout(body, cb) {
 }
 
 function layoutOf(c) {
-  return { rows: c.rows, order: c.order, sort: c.sort, hidden: c.hidden, channels: c.channels, hintSeen: c.hintSeen, picture: c.picture };
+  return { rows: c.rows, order: c.order, sort: c.sort, hidden: c.hidden, channels: c.channels, hintSeen: c.hintSeen, picture: c.picture,
+    colours: c.colours };
 }
 
 // ---------------------------------------------------------------- what it shows
@@ -1171,6 +1198,7 @@ function status(cb) {
       hideLgHomeAtStartAvailable: startLayoutAvailable(),
       history: !!(historyModule && historyModule.enabled && historyModule.enabled()),
       wallpapers: wallpapers.status(),
+      colourPresets: COLOUR_PRESETS,
       layout: layoutOf(c)
     });
   });

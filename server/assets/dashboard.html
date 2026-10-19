@@ -875,6 +875,20 @@ function homeRows(d) {
              act: can ? 'homePicture' : null, on: picOn,
              press: picOn ? t('tv.press.switchOff', 'Press OK to switch off') : t('tv.press.switchOn', 'Press OK to switch on'),
              hint: t('home.pictureDesc', 'In the top right of Glasshouse Home: the resolution, refresh rate and HDR of what was last on, and the picture mode and brightness it gets.') });
+    // OK steps through the presets; colours picked on the browser dashboard show as Custom.
+    var presets = d.colourPresets || [], cur = d.layout.colours, at = cur ? -1 : 0;
+    for (var pi = 0; pi < presets.length; pi++) if (cur && presets[pi].text === cur.text && presets[pi].accent === cur.accent) at = pi;
+    if (presets.length) {
+      var lookNames = { warm: t('home.colours.warm', 'Warm'), glasshouse: t('home.colours.glasshouse', 'Glasshouse'),
+                        white: t('home.colours.white', 'White'), ice: t('home.colours.ice', 'Ice'),
+                        rose: t('home.colours.rose', 'Rose'), lilac: t('home.colours.lilac', 'Lilac') };
+      var nextLook = presets[(at + 1) % presets.length];
+      r.push({ label: t('home.colours.title', 'Colours'),
+               value: at === -1 ? t('home.colours.custom', 'Custom') : lookNames[presets[at].id] || presets[at].id, cls: 'act',
+               act: can ? 'homeColours' : null, key: nextLook,
+               press: t('tv.home.colours.press', 'Press OK for {name}', { name: lookNames[nextLook.id] || nextLook.id }),
+               hint: t('home.colours.tvHint', 'The text and accent on Glasshouse Home. Any colour can be picked on the browser dashboard’s Home tab.') });
+    }
   }
   // Opening Home opens Glasshouse Home only while it has LG's Home's place.
   if (d.enabled && d.active) {
@@ -2441,6 +2455,9 @@ function activate() {
                       r.on ? t('tv.flash.switchedOff', 'Switched off') : t('tv.flash.switchedOn', 'Switched on'));
     case 'homePicture':
       return homeLayout({ picture: !r.on });
+    case 'homeColours':
+      // The first preset is the view's own colours, saved as none chosen.
+      return homeLayout({ colours: r.key.id === homeData.colourPresets[0].id ? null : { text: r.key.text, accent: r.key.accent } });
     case 'homeOpen':
       return send({ action: 'launchApp', value: 'com.webos.app.home' });
     case 'homeRowUp':

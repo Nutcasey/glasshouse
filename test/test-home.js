@@ -846,6 +846,23 @@ step('the picture details stay off until switched on, and the server is told of 
   });
 });
 
+step('only #rrggbb colours are kept, since the view writes them into its stylesheet', function (done) {
+  start(null);
+  home.setLayout({ colours: { text: '#ECE7DF', accent: 'red;}body{display:none' } }, function (r) {
+    assert.strictEqual(r.layout.colours, null);
+    home.setLayout({ colours: { text: '#ECE7DF', accent: '#30de61' } }, function (r2) {
+      assert.deepEqual(r2.layout.colours, { text: '#ece7df', accent: '#30de61' });
+      home.setLayout({ hintSeen: true }, function (r3) {
+        assert.deepEqual(r3.layout.colours, { text: '#ece7df', accent: '#30de61' }, 'kept when not sent');
+        home.setLayout({ colours: null }, function (r4) {
+          assert.strictEqual(r4.layout.colours, null);
+          done();
+        });
+      });
+    });
+  });
+});
+
 step('a failed save switches nothing', function (done) {
   start(null);
   var blocked = path.join(dir, 'home.json.tmp');

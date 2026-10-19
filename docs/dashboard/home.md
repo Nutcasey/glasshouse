@@ -24,6 +24,8 @@ Uploads are stored in `/var/lib/tvweb/home-wallpaper-uploads`, outside the updat
 
 ![An uploaded evening wallpaper](../screenshots/home-evening.jpg)
 
+**Colours** sets the text and the accent of Glasshouse Home. The quieter text is a darker shade of the text colour. Once colours are chosen, the accent frames the focused tile and marks what was last on and the tiles being arranged; the default frames the focused tile in the text colour. The tab shows six presets, each as a small preview of the clock, a row name and the accent, with **Text** and **Accent** pickers for any other colour and **Use the default colours** to go back. The TV app's Home section steps through the same presets with OK, and shows Custom for colours picked in the browser. Glasshouse Home changes colour within a few seconds, without being reopened.
+
 The TV's screen saver, LG's or one chosen on the [Screensaver](screen-savers.md) tab, is left as it is set.
 
 ## Switching it on and off
