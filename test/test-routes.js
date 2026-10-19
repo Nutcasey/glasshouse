@@ -947,6 +947,10 @@ function createMockRes(cb) {
     (function next(i) {
       setTimeout(function () {
         if (req.destroyed || answered) return;
+        // Paused, a real request sends nothing more until resumed. An 'end'
+        // sent anyway can reach the file before it drains, and Node emits
+        // no 'drain' after end(), so the route would never resume.
+        if (req.paused > req.resumed && ++retries <= 500) return next(i);
         if (i < chunks.length) {
           if (req.listeners('data').length === 0) {
             if (++retries > 100) return;
