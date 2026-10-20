@@ -749,6 +749,8 @@ function open(body, cb) {
       var input = { app: names.inputAppId(hit.input), at: nowMs() };
       tileInput = input;
       // LG's picker selects the source behind a receiver through this launch parameter.
+      // The G3's IDs match CEC logical addresses (receiver 5, PS5 8): 0 is the
+      // TV, 15 broadcast, and EIM reports -1 for none.
       var params = typeof hit.uniqueId === 'number' && hit.uniqueId > 0 && hit.uniqueId < 15 ?
         { id: 'uniqueId', value: String(hit.uniqueId) } : null;
       launch(input.app, params, function (r) {
