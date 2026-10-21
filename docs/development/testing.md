@@ -156,3 +156,14 @@ report failure, Close all stops web and native apps while preserving Home,
 unlisted apps and newer cards, and snapshots forbid caching. The browser
 check covers held OK acting once on release, close errors above the panel,
 and Back or a Home relaunch cancelling a delayed panel reply.
+
+`test-home-search.js` feeds a G3's real answer for "Dune" to Glasshouse
+Home's search: one film on three services is one title, only the TV's apps
+are listed, a listed title opens in its app at the id LG's item detail gives,
+anything not listed opens nothing, and LG's error is a failure. With a G3's
+details for Severance and The Bear, a series opens at Prime Video's first
+season and at Disney+'s first episode, and with no detail a title opens at
+its item id less LG's service tag. From the G3's answers for promo words,
+trailers, teasers and sneak peeks are never listed while Trailer Park Boys
+and Trailer War are, a series never opens at a trailer numbered as its first
+episode, and switched off the search asks LG nothing.
