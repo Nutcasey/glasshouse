@@ -1438,6 +1438,14 @@ relaunch and the page showing again, and keeps the panel open for 30 minutes
 unless the heartbeat's `sleeps`, the times the screen has gone off since the
 server started, has changed.
 
+Only the current search may replace the launch list, including while its app
+list is still loading; an empty answer clears the previous targets. The view
+clears previous titles when a new query starts and waits for that reply before
+Enter focuses its results. A failed query can be retried with Enter. An app
+launch holds further selections until it answers, and its late reply is
+discarded if the panel has closed. Search requests allow 12 seconds for the
+server's 10-second limit; launches allow 20 seconds for sequential detail reads.
+
 ## Apps kept ready in the background
 
 webOS's preload manager keeps apps loaded so they open quickly, including ones

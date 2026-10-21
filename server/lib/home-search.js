@@ -182,6 +182,7 @@ function find(query, cb) {
   function finish(r) {
     if (current !== mine) return;
     stopCurrent();
+    if (r.ok && !r.results.length) listed = {};
     cb(r);
   }
   mine.sub = new SubscriptionType(SEARCH, {
@@ -191,8 +192,9 @@ function find(query, cb) {
     message: function (r) {
       if (r.returnValue === false || r.event === 'error' || r.event === 'exceptionResult') return finish(failure(r));
       if (r.event === 'searchResult') {
+        if (mine.answered) return;
         mine.answered = true;
-        return answer(query, r, finish);
+        return answer(query, r, mine, finish);
       }
       // LG ends the session straight after the titles, before the app list
       // has been read where it is not cached.
@@ -206,8 +208,10 @@ function find(query, cb) {
   mine.sub.start();
 }
 
-function answer(query, reply, cb) {
+function answer(query, reply, mine, cb) {
   appsFn(function (apps) {
+    // A superseded or timed-out search must not replace newer launch targets.
+    if (current !== mine) return;
     var byId = {};
     (apps || []).forEach(function (a) { byId[a.id] = a; });
     var gen = ++generation, out = [], elsewhere = 0;

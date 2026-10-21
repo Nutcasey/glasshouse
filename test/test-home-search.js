@@ -196,6 +196,40 @@ var tests = [
       assert.equal(r.detail, 'NLP invalid parameter');
       done();
     });
+  },
+
+  function onlyTheNewestSearchCanReplaceLaunchableResults(done) {
+    var subscriptions = [], appReplies = [], newest;
+    calls = [];
+    search.init({
+      luna: luna,
+      Subscription: function (uri, payload, appId, handlers) {
+        this.start = function () { subscriptions.push(handlers); };
+        this.stop = function () {};
+      },
+      apps: function (cb) { appReplies.push(cb); }
+    });
+    search.find('du', function (r) { assert.ok(r.superseded); });
+    subscriptions[0].message(answer);
+    search.find('dune', function (r) { newest = r.results[0]; });
+    subscriptions[1].message(answer);
+    var apps = [{ id: 'amazon', title: 'Prime Video' }];
+    appReplies[1](apps);
+    // The first search's app list arrives after the newer results are visible.
+    appReplies[0](apps);
+    search.open({ id: newest.id, app: 'amazon' }, function (r) {
+      assert.ok(r.ok, 'the newest displayed result remains launchable');
+      search.find('no matches', function (empty) {
+        assert.ok(empty.ok && !empty.results.length);
+        var before = calls.length;
+        search.open({ id: newest.id, app: 'amazon' }, function (old) {
+          assert.ok(!old.ok, 'an empty result replaces the previous launch list');
+          assert.equal(calls.length, before);
+          done();
+        });
+      });
+      subscriptions[2].message({ event: 'sessionEnd' });
+    });
   }
 ];
 

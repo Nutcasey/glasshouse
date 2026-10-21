@@ -167,3 +167,13 @@ its item id less LG's service tag. From the G3's answers for promo words,
 trailers, teasers and sneak peeks are never listed while Trailer Park Boys
 and Trailer War are, a series never opens at a trailer numbered as its first
 episode, and switched off the search asks LG nothing.
+Delayed app-list replies cannot replace a newer search's launch targets, and
+an empty answer removes the preceding search's targets.
+
+The browser check exercises search through the Home view: a new query clears
+the previous titles, Enter waits for its reply, failed queries can be retried,
+and repeated OK during a detail lookup sends one launch. Returning from that
+app keeps the panel, a changed sleep counter closes it, late search replies
+cannot refill a closed panel, and switching search off removes its entry point.
+Home interaction fixtures mark both introductory hints as seen so hint saves
+do not count as layout edits.

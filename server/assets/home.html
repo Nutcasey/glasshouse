@@ -372,7 +372,9 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
   function request(method, url, body, cb) {
     var x = new XMLHttpRequest();
     x.open(method, url, true);
-    x.timeout = 8000;
+    // Search waits ten seconds server-side; a series launch can need three
+    // detail reads before opening the app.
+    x.timeout = url === '/api/home/search' ? 12000 : url === '/api/home/search/open' ? 20000 : 8000;
     if (body !== null) x.setRequestHeader('Content-Type', 'application/json');
     x.onload = function () {
       var j = null;
@@ -838,7 +840,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
   // commit: Enter was pressed, so the titles take the focus once they come.
   // leftAt and leftSleeps: when an app was opened from the panel, and the
   // heartbeat's sleeps then.
-  var finder = { open: false, typing: false, commit: false, okDown: false, query: '', results: [], row: 0, col: 0,
+  var finder = { open: false, typing: false, commit: false, okDown: false, loading: false, opening: false, query: '', results: [], row: 0, col: 0,
     revision: 0, timer: null, leftAt: 0, leftSleeps: null, shown: '' };
 
   function openSearch() {
@@ -861,6 +863,8 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
     finder.revision++;
     finder.open = false;
     finder.typing = false;
+    finder.loading = false;
+    finder.opening = false;
     finder.leftAt = 0;
     finder.leftSleeps = null;
     $('query').blur();
@@ -921,18 +925,22 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
   function runSearch() {
     clearTimeout(finder.timer);
     var q = $('query').value.replace(/\s+/g, ' ').replace(/^ | $/g, '');
-    if (q === finder.query) return committed();
+    if (q === finder.query) return finder.loading ? null : committed();
     finder.query = q;
     var revision = ++finder.revision;
+    finder.results = [];
+    finder.loading = false;
+    showHits();
     if (q.length < 2) {
-      finder.results = [];
-      showHits();
       return setStatus(t('home.search.ready', 'Films and series on this TV\u2019s apps, from LG\u2019s search'));
     }
+    finder.loading = true;
     setStatus(t('home.search.looking', 'Looking for \u201c{query}\u201d', { query: q }));
     postJson('/api/home/search', { query: q }, function (r) {
       if (revision !== finder.revision || !finder.open) return;
+      finder.loading = false;
       if (!r || !r.ok) {
+        finder.query = null;
         finder.results = [];
         showHits();
         return setStatus(t('home.search.failed', 'LG\u2019s search did not answer. It needs the TV online, and the ad blocker on Ads & telemetry or off.'));
@@ -1020,14 +1028,19 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
   }
 
   function openHit() {
+    if (finder.opening || finder.loading) return;
     var hit = finder.results[finder.row], app = hit && hit.apps[finder.col];
     if (!app) return;
+    finder.opening = true;
+    var revision = finder.revision;
     // A series is looked up to its start first, which takes a second or two;
     // the line says what is opening until the app is in front, and is put
     // back for a return to the panel.
     finder.shown = $('status').textContent;
     setStatus(t('home.search.opening', 'Opening {title} on {app}', { title: hit.title, app: app.title }));
     postJson('/api/home/search/open', { id: hit.id, app: app.id }, function (r) {
+      if (revision !== finder.revision || !finder.open) return;
+      finder.opening = false;
       if (!r || !r.ok) {
         setStatus(finder.shown);
         return toast(t('home.openFailed', 'That did not open'), r && r.error);
@@ -1047,6 +1060,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
       else closeSearch();
       return true;
     }
+    if (finder.opening) return true;
     if (finder.typing) {
       // The keyboard has the arrows; Enter on it, or Down, goes to the titles.
       if (k === KEY.ok) {
@@ -1090,7 +1104,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
   // The pointer over a title or an app on it focuses that.
   function finderPointer(target) {
     var el = chipAt(target);
-    if (!el || finder.typing) return;
+    if (!el || finder.typing || finder.opening) return;
     var hit = /\bhit\b/.test(el.className) ? el : chipAt(el.parentNode);
     if (!hit) return;
     var r = +hit.getAttribute('data-r'), c = /\bchip\b/.test(el.className) ? +el.getAttribute('data-c') : finder.col;
@@ -1100,9 +1114,10 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
   }
 
   function finderClick(target) {
-    if (within(target, 'ask')) return finder.typing ? null : startTyping();
     // A click on Home, dimmed beside the panel, closes it.
     if (!within(target, 'finder')) return closeSearch();
+    if (finder.opening) return;
+    if (within(target, 'ask')) return finder.typing ? null : startTyping();
     var el = chipAt(target);
     if (!el || !/\bchip\b/.test(el.className)) return;
     finderPointer(target);
