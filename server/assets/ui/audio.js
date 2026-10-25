@@ -29,12 +29,13 @@ async function audioRequest(body) {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
   } : { cache: 'no-store' });
   const r = await res.json();
-  if (!r || r.ok === false) throw new Error((r && r.error) || t('common.unknownError', 'unknown error'));
+  if (!res.ok || !r || r.ok === false) throw new Error((r && r.error) || t('common.unknownError', 'unknown error'));
   return r;
 }
 
 // A poll (fromPoll true) leaves the Refresh button and any shown error alone.
 async function loadAudio(fromPoll) {
+  if (audioChanging) return;
   clearTimeout(audioTimer);
   audioTimer = null;
   const revision = ++audioRevision;
@@ -44,11 +45,21 @@ async function loadAudio(fromPoll) {
     const st = await audioRequest();
     if (revision !== audioRevision) return;
     audioState = st;
+    q('audio-readings').hidden = false;
     renderAudio();
     renderAudioSettings(st.lgSettings || []);
     if (fromPoll !== true && !audioChanging) audioError('');
   } catch (e) {
-    if (revision === audioRevision) audioError(e.message);
+    if (revision === audioRevision) {
+      audioState = null;
+      audioArmed = false;
+      clearTimeout(audioArmTimer);
+      q('audio-override').disabled = true;
+      q('audio-readings').hidden = true;
+      q('audio-sound-head').hidden = true;
+      q('audio-settings').innerHTML = '';
+      audioError(e.message);
+    }
   } finally {
     if (revision === audioRevision) {
       refresh.disabled = false;
@@ -153,12 +164,18 @@ async function audioOverride() {
   clearTimeout(audioArmTimer);
   audioArmed = false;
   audioChanging = true;
+  // A read started before this write must not replace its confirmed result.
+  ++audioRevision;
+  clearTimeout(audioTimer);
+  q('audio-refresh').disabled = true;
   renderAudioOverride();
   audioError('');
   try {
     const result = await audioRequest({ enabled: on });
+    const writable = audioState.writable;
     audioState = result.status;
-    audioState.writable = true;
+    audioState.writable = writable;
+    renderAudio();
   } catch (e) { audioError(e.message); }
-  finally { audioChanging = false; renderAudioOverride(); }
+  finally { audioChanging = false; renderAudioOverride(); loadAudio(true); }
 }

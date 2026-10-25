@@ -6,7 +6,7 @@ TV app has the same tab, with the same rows in the same order.
 
 ## Sound
 
-![Sound: sound output and mode, digital sound output, balance, automatic volume, Bluetooth speaker mode and eARC](../screenshots/advanced-sound.png)
+![Audio tab on a G3: sound output, digital format, balance, automatic volume and eARC](../screenshots/audio-g3-sound.png)
 
 LG's own sound settings: sound output, sound mode, digital sound output,
 balance, automatic volume levelling, eARC and Bluetooth speaker mode, then each
@@ -16,6 +16,8 @@ audio. As in LG's menu, only the input on screen can have its audio format
 changed.
 
 ## What reaches the receiver
+
+![G3 audio declarations and the unavailable experimental forwarding control](../screenshots/audio-g3-formats.png)
 
 The audio coming in, where the TV sends it, and the return channel it has
 negotiated with the receiver (ARC, eARC or none). The negotiated link is
@@ -51,3 +53,17 @@ audio briefly. Enabling takes two presses; disabling takes one.
 
 TV-app playback, ordinary ARC and untested firmware are not established. The
 helper has not been switched on through Glasshouse on a G5.
+
+The helper's upstream trial recorded DTS and DTS:X on that exact 77-inch G5,
+with a Ugoos SK1 source and Samsung HW-Q950A receiver. That result does not
+qualify the Glasshouse integration or a different G5 size, firmware or kernel.
+The forwarding route uses the TV's existing DSP; it does not add a TV-app DTS
+decoder. A G5 model name alone does not enable the switch.
+
+![Simulated G5 preview: exact supported profile and a verified helper offer Enable override; this is not a hardware trial](../screenshots/audio-g5-preview-ready.png)
+
+This G5 screenshot uses illustrative data to show the control. It is not a
+capture from a G5 or evidence of DTS reaching a receiver.
+
+A failed reading removes the web tab's controls until a successful refresh.
+Readings started before a forwarding change cannot replace its result.

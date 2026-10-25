@@ -649,17 +649,27 @@ async function visitHomeAvailability(browser, base, problems) {
 
 async function visitAudioOverride(browser, base, problems) {
   const page = await browser.newPage();
+  page.on('pageerror', e => problems.push('Web audio: ' + e.message));
   try {
     const state = await page.request.get(base + '/api/audio?with=settings').then(r => r.json());
     state.override = Object.assign({}, state.override, { available: true, verified: true, installed: true,
       enabled: false, running: true, canDisable: true });
     const writes = [];
+    let failed = false, holdRead = false, readHeld, releaseRead;
     await page.route('**/api/audio*', route => {
       if (route.request().method() === 'POST') {
-        writes.push(route.request().postDataJSON());
-        state.override.running = false;
-        state.override.canDisable = false;
+        const body = route.request().postDataJSON();
+        writes.push(body);
+        state.override.enabled = state.override.running = state.override.canDisable = body.enabled;
         return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, status: state }) });
+      }
+      if (failed) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'Audio service unavailable' }) });
+      if (holdRead) {
+        holdRead = false;
+        const snapshot = JSON.stringify(state);
+        releaseRead = () => route.fulfill({ contentType: 'application/json', body: snapshot });
+        readHeld();
+        return;
       }
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify(state) });
     });
@@ -670,6 +680,30 @@ async function visitAudioOverride(browser, base, problems) {
     await page.waitForFunction(() => !audioChanging);
     if (JSON.stringify(writes) !== '[{"enabled":false}]')
       problems.push('Audio override: a running helper without its startup marker did not offer immediate disable');
+    await page.waitForFunction(() => !document.querySelector('#audio-refresh').disabled);
+    const pendingRead = new Promise(resolve => { readHeld = resolve; });
+    holdRead = true;
+    const pendingLoad = page.evaluate(() => loadAudio(true));
+    await pendingRead;
+    await page.locator('#audio-override').click();
+    if (writes.length !== 1) problems.push('Web audio: enabled without a second press');
+    await page.locator('#audio-override').click();
+    await page.waitForFunction(() => audioState.override.enabled && !audioChanging);
+    await releaseRead();
+    await pendingLoad;
+    await page.waitForFunction(() => !document.querySelector('#audio-refresh').disabled);
+    if (await page.locator('#audio-override').getAttribute('aria-pressed') !== 'true')
+      problems.push('Web audio: a late read replaced a completed override change');
+    failed = true;
+    await page.locator('#audio-refresh').click();
+    await page.waitForFunction(() => !document.querySelector('#audio-error').hidden);
+    if (!await page.locator('#audio-override').isDisabled() || await page.locator('#audio-readings').isVisible() ||
+        await page.locator('#audio-settings :enabled').count()) problems.push('Web audio: a failed read left stale controls usable');
+    failed = false;
+    await page.locator('#audio-refresh').click();
+    await page.waitForFunction(() => document.querySelector('#audio-error').hidden);
+    if (!await page.locator('#audio-readings').isVisible() || await page.locator('#audio-override').isDisabled())
+      problems.push('Web audio: controls did not recover after a failed read');
   } finally { await page.close(); }
 }
 

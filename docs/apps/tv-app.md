@@ -29,6 +29,8 @@ and the format declarations. Enabling forwarding takes a second OK; disabling
 takes one. Where no helper profile matches, the row says why and does
 nothing.
 
+![Audio tab on the office G3, showing its sound settings](../screenshots/audio-g3-tv-sound.png)
+
 ### First-run setup wizard
 
 Opening the TV app on a fresh install starts an on-screen setup wizard to configure the TV in a few quick steps with the remote:

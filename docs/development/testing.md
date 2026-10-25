@@ -20,6 +20,8 @@ are gone from the TV app's System tab, experimental forwarding asks for a
 second OK to enable and stops in one, and unsupported, read-only and
 failed-read states offer no override. Helper writes are
 intercepted in the browser; this does not qualify forwarding on hardware.
+The web tab also rejects a late pre-change snapshot, removes stale controls
+after a failed read and restores them after a successful retry.
 
 [`checks.yml`](https://github.com/rorygallagher2024/glasshouse/blob/main/.github/workflows/checks.yml) runs these on each pull request and each merge to main.
 
