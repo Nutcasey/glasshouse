@@ -937,6 +937,18 @@ where tvpower drops the request, except over full-screen playback, tracks it
 through sam's `running` list, and closes it on any key the remote-button
 worker reads from `/dev/input`.
 
+On 25 October 2026 the same G3 refused again, and `ls-monitor` showed which
+client: when nop's `[TIMER]ScreenSaver:180` expired and tvpower asked,
+`com.webos.service.oledepl` (`/usr/sbin/eplmanager`) answered `ack: false`
+within 3 ms without calling any other service, while the browser, Netflix and
+screenmanager answered true. A `turnOnScreenSaver` got the same answer with
+Glasshouse Home in front, with the dashboard app in front, and with the Home
+view stopped. The last screen saver that day had started at 09:55 UTC with
+the dashboard app in front. Why eplmanager refuses is not known. Its strings
+include `supportScreenSaverPolicy`, a test menu's `Set Screen Saver Policy
+(0:Default, 1:Forcely Enable, 2:Forcely Disable)` and `Don't create
+screensaver timer with ad apps`.
+
 ## Home's snapshot (webOS 5.6.2, CX)
 
 The webOS 9 entries above describe the home app's CRIU checkpoint. On a CX:
@@ -1060,6 +1072,15 @@ Tried on 25 October 2026 with Glasshouse Home's native view
   with `"preload":"full"` in `argv[1]`; a native app that shows its window
   then takes the screen from Live TV, so it has to stay hidden until a
   relaunch.
+- LG's SDL has a `ScreensaverTimer` thread whose strings reset nop's
+  `[TIMER]ScreenSaver` (`removeNopTimer` with `"option":"reset"`). With
+  `SDL_VIDEO_ALLOW_SCREENSAVER=1` set before `SDL_Init`, nop's 180 s timer
+  expired with the view in front and nothing reset it; without the hint was
+  not tried.
+- LG's SDL also sends a window `SDL_WINDOWEVENT_ENTER` as the Magic
+  Remote's cursor appears, and the cursor stays up while the arrows are used
+  unless the app hides it. Mouse motion has upstream SDL2's layout (x at
+  offset 20, y at 24).
 - Measured with remote keys sent through `networkinput/test/sendKeyCode`,
   the web view's `requestAnimationFrame` missed 25 of ~480 vsyncs over 8 s of
   continuous scrolling, with frame gaps up to 87 ms (173 ms opening Recent
@@ -1170,7 +1191,8 @@ use normally, limit 1024). faultmanager recorded `fd leak is happened on
 "process = ls-hubd"` in `/var/spool/faultmanager` and answered the next
 suspend request with `rebootToSuspend`, so the TV restarted with
 `PowerOnReason: rebootByFault` at its next standby. It happened both times
-`ls-monitor` was run, and not without it.
+`ls-monitor` was run, and not without it. On a G3 (webOS 9.2.2), after five
+runs of up to 200 s, `ls-hubd` held 415 handles and stayed there.
 
 ## Consent flags on a CX and a C5 (webOS 5.6.2 and 10.3.1)
 

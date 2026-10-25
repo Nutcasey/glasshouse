@@ -1272,8 +1272,12 @@ web page got for free:
 - LG's SDL keyboard event carries 4 more bytes before the key than upstream
   SDL2's.
 - Arrow presses hide LG's compositor pointer and resume directional focus.
-  Fresh pointer motion restores it; stationary motion events cannot change
-  focus. SDL's cursor image stays enabled on the TV so LG can restore it.
+  Fresh pointer motion restores it once it has travelled 24 stage pixels, so
+  the hand's drift while the arrows are in use does not; stationary motion
+  events cannot change focus. SDL's cursor image stays enabled on the TV so
+  LG can restore it.
+- `SDL_VIDEO_ALLOW_SCREENSAVER` is set, since SDL otherwise holds the
+  system's screen saver off while its window is up.
 - A native app's output goes nowhere; the view logs to
   `/tmp/glasshouse-home.log`.
 - The preload manager starts Home in the background during boot

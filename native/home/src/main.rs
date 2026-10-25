@@ -193,6 +193,9 @@ fn main() {
         // Back reaches the app rather than the system, which would send it away.
         sdl::hint("SDL_WEBOS_ACCESS_POLICY_KEYS_BACK", "true");
         sdl::hint("SDL_WEBOS_ACCESS_POLICY_KEYS_EXIT", "false");
+        // SDL holds the system's screen saver off for any window by default;
+        // Home is where the TV is left idle, so the screen saver must come.
+        sdl::hint("SDL_VIDEO_ALLOW_SCREENSAVER", "1");
         if sdl::SDL_Init(sdl::SDL_INIT_VIDEO | sdl::SDL_INIT_EVENTS) != 0 {
             log(&format!("SDL_Init: {}", sdl::error()));
             std::process::exit(1);
@@ -269,6 +272,7 @@ fn main() {
         let mut was_animating = false;
         let mut pointer_visible = true;
         let mut pointer_position = None;
+        let mut pointer_travel = 0.0f32;
         loop {
             let animating = v.animating();
             let mut wait = v.next_timer_ms();
@@ -321,6 +325,7 @@ fn main() {
                             Some(k) if e.kind() == sdl::SDL_KEYDOWN => {
                                 if matches!(k, Key::Up | Key::Down | Key::Left | Key::Right) && pointer_visible {
                                     pointer_visible = false;
+                                    pointer_travel = 0.0;
                                     sdl::cursor_visible(false);
                                     log("input: directional");
                                 }
@@ -337,12 +342,22 @@ fn main() {
                     sdl::SDL_MOUSEMOTION => {
                         let (x, y) = e.mouse_xy();
                         let moved = e.mouse_moved() && pointer_position != Some((x, y));
-                        pointer_position = Some((x, y));
+                        let last = pointer_position.replace((x, y));
                         if moved {
                             // LG does not always send cursor-show again after
                             // an explicit hide. Genuine motion restores it;
-                            // stationary events cannot steal directional focus.
+                            // stationary events cannot steal directional focus,
+                            // nor the hand's drift while the arrows are in use.
                             if !pointer_visible {
+                                if let Some((lx, ly)) = last {
+                                    let (ax, ay) = stage_point(win, lx, ly);
+                                    let (bx, by) = stage_point(win, x, y);
+                                    pointer_travel += ((bx - ax).powi(2) + (by - ay).powi(2)).sqrt();
+                                }
+                                if pointer_travel < POINTER_WAKE {
+                                    got = sdl::SDL_PollEvent(&mut e);
+                                    continue;
+                                }
                                 pointer_visible = true;
                                 sdl::cursor_visible(true);
                                 log("input: pointer");
@@ -549,6 +564,9 @@ fn main() {
         }
     }
 }
+
+/// Stage pixels the pointer must travel after an arrow press before it comes back.
+const POINTER_WAKE: f32 = 24.0;
 
 struct Offscreen {
     fbo: u32,
