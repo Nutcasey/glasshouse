@@ -7,6 +7,20 @@ something is wrong, and Home Assistant and the TV's own browser fail quietly.
 
 ## On every pull request
 
+`test-audio.js` exercises the public audio endpoint with captured G3/Marantz
+declarations: receiver formats remain separate from TV capabilities, an eARC
+EDID flag does not promote ARC, stale driver values do not become live audio,
+and corrupt or missing evidence remains unknown. It also checks that wrong
+targets, unverified helpers, read-only mode and cross-origin requests cannot
+launch the privileged helper. Hardware qualification of a DTS override still
+requires a source-to-receiver trial.
+
+The dashboard check opens both Audio tabs: the sound settings come first and
+are gone from the TV app's System tab, experimental forwarding asks for a
+second OK to enable and stops in one, and unsupported, read-only and
+failed-read states offer no override. Helper writes are
+intercepted in the browser; this does not qualify forwarding on hardware.
+
 [`checks.yml`](https://github.com/rorygallagher2024/glasshouse/blob/main/.github/workflows/checks.yml) runs these on each pull request and each merge to main.
 
 | Check | What it catches |

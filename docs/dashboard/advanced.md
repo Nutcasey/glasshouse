@@ -67,17 +67,11 @@ The limits are counted by [watch time](metrics.md#watch-time), so they apply onl
 * **LG logo:** Controls whether the LG logo animation displays during power-on and power-off (LG Logo Display).
 * **Ambient light (PicCap):** When PicCap is installed, captures on-screen content and streams it to a Hyperion server to drive ambient backlighting behind the TV. Turning it off stops video capture and the ambient lighting with it. See [PicCap and ambient light](../piccap.md) for how it works and setup details.
 
-## Sound
-
-![Sound: sound output and mode, digital sound output, balance, automatic volume, Bluetooth speaker mode and eARC](../screenshots/advanced-sound.png)
-
-Hold the TV's advanced audio settings, including sound output, sound mode, digital sound output format, balance, automatic volume leveling, eARC, and Bluetooth speaker mode. Sound mode and balance apply to the internal TV speakers only.
-
 ## HDMI inputs
 
 ![HDMI inputs: Deep Colour and audio format for each input, changeable only for the input on screen](../screenshots/advanced-hdmi.png)
 
-Per-port settings for HDMI Deep Colour (extended bandwidth for 4K HDR) and audio input format (Bitstream or PCM). In accordance with webOS design, an HDMI input's settings can be adjusted only while that specific input is actively displayed on screen.
+Per-port settings for HDMI Deep Colour (extended bandwidth for 4K HDR). Each input's audio format is on the [Audio tab](audio.md). In accordance with webOS design, an HDMI input's settings can be adjusted only while that specific input is actively displayed on screen.
 
 ## Devices and connectivity
 

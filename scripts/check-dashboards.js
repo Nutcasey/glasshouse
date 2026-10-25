@@ -647,6 +647,32 @@ async function visitHomeAvailability(browser, base, problems) {
   }
 }
 
+async function visitAudioOverride(browser, base, problems) {
+  const page = await browser.newPage();
+  try {
+    const state = await page.request.get(base + '/api/audio?with=settings').then(r => r.json());
+    state.override = Object.assign({}, state.override, { available: true, verified: true, installed: true,
+      enabled: false, running: true, canDisable: true });
+    const writes = [];
+    await page.route('**/api/audio*', route => {
+      if (route.request().method() === 'POST') {
+        writes.push(route.request().postDataJSON());
+        state.override.running = false;
+        state.override.canDisable = false;
+        return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, status: state }) });
+      }
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify(state) });
+    });
+    await page.goto(base + '/?tab=audio');
+    await page.waitForFunction(() => audioState && audioState.override.running);
+    if (!await page.locator('#audio-settings [data-lgs]').count()) problems.push('Audio tab: LG sound settings missing');
+    await page.locator('#audio-override').click();
+    await page.waitForFunction(() => !audioChanging);
+    if (JSON.stringify(writes) !== '[{"enabled":false}]')
+      problems.push('Audio override: a running helper without its startup marker did not offer immediate disable');
+  } finally { await page.close(); }
+}
+
 async function visitHomeReadiness(browser, base, problems) {
   const page = await browser.newPage();
   page.on('pageerror', e => problems.push('Home readiness: ' + e.message));
@@ -875,6 +901,66 @@ async function visitTvDashboard(browser, base, problems) {
   }
 }
 
+async function visitTvAudio(browser, base, problems) {
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  page.on('pageerror', e => problems.push('TV audio: ' + e.message));
+  const state = await page.request.get(base + '/api/audio?with=settings').then(r => r.json());
+  const posts = [];
+  let failed = false;
+  await page.route('**/api/audio*', async route => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON();
+      posts.push(body);
+      state.override.enabled = state.override.running = body.enabled;
+      state.override.canDisable = body.enabled;
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, status: state }) });
+    }
+    return route.fulfill({ status: failed ? 503 : 200, contentType: 'application/json',
+      body: JSON.stringify(failed ? { ok: false, error: 'Audio service unavailable' } : state) });
+  });
+  const selected = () => page.locator('#rows .row.sel .lbl').textContent();
+  const forwarding = () => page.locator('#rows .row').filter({ has: page.locator('.bdg') });
+  const forwardingSays = word => page.waitForFunction(w => document.querySelector('.bdg').parentNode.parentNode.textContent.indexOf(w) !== -1, word);
+  async function open() {
+    await page.goto(base + '/assets/dashboard.html?tab=audio');
+    await page.waitForSelector(failed ? '#rows .row:has-text("Audio readings unavailable")' : '#rows .bdg');
+  }
+  try {
+    await open();
+    if (await selected() !== 'Sound output') problems.push('TV audio: did not open on the Sound settings');
+    await forwarding().click();
+    await page.keyboard.press('Enter');
+    if (posts.length) problems.push('TV audio: unsupported helper offered an override');
+    if (!/Experimental/.test(await forwarding().textContent())) problems.push('TV audio: missing experimental label');
+    state.override = { ...state.override, available: true, verified: true, enabled: false, running: false, canDisable: false };
+    await open();
+    await forwarding().click();
+    await page.keyboard.press('Enter');
+    if (posts.length) problems.push('TV audio: enabled without a second OK');
+    await page.keyboard.press('Enter');
+    await forwardingSays('On');
+    await page.keyboard.press('Enter');
+    await forwardingSays('Off');
+    if (JSON.stringify(posts) !== '[{"enabled":true},{"enabled":false}]') problems.push('TV audio: wrong enable/disable actions');
+    state.override.running = state.override.canDisable = true;
+    await open();
+    await forwarding().click(); await page.keyboard.press('Enter');
+    await forwardingSays('Off');
+    if (posts.length !== 3 || posts[2].enabled !== false) problems.push('TV audio: running helper without marker could not be stopped');
+    state.writable = false;
+    await open();
+    if (await forwarding().evaluate(el => el.classList.contains('doable'))) problems.push('TV audio: read-only override was actionable');
+    failed = true;
+    await open();
+    if (await forwarding().count()) problems.push('TV audio: a failed read left the override on screen');
+    failed = false;
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('#rows .bdg');
+    await page.goto(base + '/assets/dashboard.html?tab=options');
+    await page.waitForSelector('#rows .row');
+    if (await page.locator('#rows .row').filter({ hasText: /Audio capabilities|Sound output/ }).count()) problems.push('TV audio: sound still listed under System');
+  } finally { await page.close(); }
+}
 async function visitTvNonOled(browser, base, problems) {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   page.on('pageerror', e => problems.push('TV non-OLED: ' + e.message));
@@ -902,6 +988,7 @@ async function visitTvNonOled(browser, base, problems) {
   await visitAll(browser, web.map(t => ({ url: base + '/?tab=' + t, label: 'web ' + t }))
     .concat(tv.map(t => ({ url: base + '/assets/dashboard.html?tab=' + t, label: 'TV ' + t }))), problems);
   await visitTvDashboard(browser, base, problems);
+  await visitTvAudio(browser, base, problems);
   await visitTvNonOled(browser, base, problems);
   await visitHomeArrangement(browser, base, problems);
   await visitHomePicture(browser, base, problems);
@@ -911,6 +998,7 @@ async function visitTvNonOled(browser, base, problems) {
   await visitHomeUploads(browser, base, problems);
   await visitHomeReadiness(browser, base, problems);
   await visitHomeAvailability(browser, base, problems);
+  await visitAudioOverride(browser, base, problems);
   await visitHomeRecents(browser, base, problems);
   await browser.close();
   for (const p of problems) console.log(p);

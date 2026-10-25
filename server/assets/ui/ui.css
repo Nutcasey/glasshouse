@@ -1416,11 +1416,51 @@ button.tools-jump:active{background:var(--w80)}
 /* Orange marks a change from LG's own setting. */
 .sys-tile.sys-changed .rk-name{color:var(--cand)}
 
+/* The Audio tab. The path is a sequence - what comes in, where the TV sends
+   it, what the receiver negotiated - so it reads left to right, joined by a
+   rule, and stacks top to bottom on a phone. */
+.audio-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin:0 0 18px}
+.audio-head .pill{flex-shrink:0;min-height:36px}
+.audio-path{list-style:none;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;padding:20px 0 22px;border-block:1px solid var(--w12)}
+.audio-path>li{position:relative;padding:0 20px 0 0}
+.audio-path>li+li{padding-left:28px}
+.audio-path>li+li::before{content:'';position:absolute;left:0;top:7px;width:16px;border-top:1px solid var(--w40)}
+.audio-path>li+li::after{content:'';position:absolute;left:12px;top:4px;border:3.5px solid transparent;border-left:5px solid var(--w40)}
+.audio-label{font-size:12px;color:var(--w60);margin-bottom:5px}
+.audio-value{font-size:16px;color:var(--w100);overflow-wrap:anywhere}
+.audio-path .prot-desc{margin-top:4px}
+.audio-formats-wrap{overflow-x:auto;margin:20px 0 10px}
+.audio-formats{width:100%;border-collapse:collapse;text-align:left;font-size:14px}
+.audio-formats caption{text-align:left;margin-bottom:10px}
+.audio-formats th,.audio-formats td{padding:11px 12px;border-bottom:1px solid var(--w08);vertical-align:top}
+.audio-formats th:first-child{padding-left:0}
+.audio-formats thead th{font-size:12px;color:var(--w60);font-weight:400}
+.audio-formats tbody th{font-weight:500;color:var(--w90)}
+.audio-formats td{color:var(--w60)}
+.audio-formats td.audio-yes{color:var(--w100)}
+.audio-playback{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 24px;margin:10px 0}
+.audio-playback>div{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--w08);font-size:14px}
+.audio-playback>div>span:last-child{color:var(--w60)}
+.audio-helper{margin:12px 0 28px}
+.audio-helper a{color:var(--w80);text-decoration-color:var(--w40);text-underline-offset:3px}
+.audio-helper a:hover{color:var(--w100)}
+.audio-error{padding:12px 0;color:var(--red);overflow-wrap:anywhere}
+@media(max-width:600px){
+  .audio-path{grid-template-columns:1fr;gap:18px}
+  .audio-path>li,.audio-path>li+li{padding:0 0 0 18px}
+  .audio-path>li::before,.audio-path>li+li::before{content:'';position:absolute;left:3px;top:6px;width:7px;height:7px;border:0;border-radius:50%;background:var(--w40)}
+  .audio-path>li+li::after{content:'';position:absolute;left:6px;top:-18px;height:24px;width:0;border:0;border-left:1px solid var(--w40)}
+  .audio-playback{grid-template-columns:1fr}
+  .audio-formats{font-size:13px}
+  .audio-formats th,.audio-formats td{padding:10px 7px}
+}
+
 /* The Home tab */
 #home-rows{margin-top:14px}
 .home-row{border-top:1px solid var(--edge);padding:10px 0}
 .home-row summary{display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;list-style:none;padding:6px 0}
 .home-row-move{display:flex;gap:6px}
+@media(max-width:600px){.home-row-move{min-width:0;flex-wrap:wrap;justify-content:flex-end}}
 .home-tile .prot-title{display:flex;align-items:center;gap:10px}
 .home-tile .prot-status{display:flex;gap:6px;align-items:center}
 .home-tile .rk-ico{width:28px;height:28px;border-radius:6px}

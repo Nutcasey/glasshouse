@@ -11,6 +11,7 @@ On a wide screen the tabs are listed down the left. On a phone, or wherever Pref
 * [Privacy](privacy.md): screen recognition, ad tracking, data agreements and the blocker
 * [OLED Care](oled-care.md): panel wear and the burn-in protections
 * [Game](game.md): frame rate and the Game Optimizer
+* [Audio](audio.md): sound settings, the formats the TV and its receiver report, and experimental DTS forwarding
 * [Screen savers](screen-savers.md): replacements for LG's
 * [Advanced Controls](advanced.md): power and standby, sound routing, HDMI, auto device detection and front lights
 * [Service menu](service-menu.md): LG's engineering menu

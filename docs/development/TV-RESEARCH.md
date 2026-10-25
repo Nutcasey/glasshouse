@@ -4,6 +4,31 @@ Findings about how LG's webOS works, kept so the same ground is not covered
 twice. Each entry names the TV and webOS version it was found on. For how
 Glasshouse itself works, see [IMPLEMENTATION.md](../IMPLEMENTATION.md).
 
+## Audio declarations and the negotiated link (G3, webOS 9.2.2)
+
+OLED55G36LA, firmware 23.25.55, kernel `5.4.268-320`, read on 25 October 2026:
+`tv.model.edidType` is `TrueHD+dts`, `dts_audiodec` accepts DTS/DTS-HD/DTS:X
+input caps, and DSP0 contains `dec_dtsx`. These are native declarations and
+decoder evidence, not a receiver-side pass-through trial.
+
+`arccontroller/getARCState` reported `arcActivation: ARC`, `audioDeviceType:
+arc`, and a two-channel PCM receiver descriptor for the HDMI 2 STEREO 70s.
+At the same time, `getARCEDIDInfo` reported `eARC: true` and DTS/HD/MAT SADs.
+Its eARC flag and source-facing descriptors therefore do not identify the
+negotiated link or the receiver's accepted formats. With TV speakers selected,
+ARC state reported no active link and empty receiver descriptors.
+
+The current HDMI input's `/proc/lg/hdmi20/portN/edid` provides a checksummed
+CTA declaration even with ARC off. LG's public-input-to-receiver map must be
+applied before selecting that file. The media-resource file lists local
+playback codecs; it is a separate declaration from HDMI forwarding.
+
+With no audio playing, the HDMI driver still reported `AudioData=1` and
+`Codec=PCM`, with zero sampling rate and an unstarted ADEC. Those values are
+not a live PCM signal. Native sound-output and Pass Through controls were
+exercised and their original settings restored. The PCM-only receiver did
+not provide a DTS reception test.
+
 ## HDMI CEC devices (G3, webOS 9.2.2)
 
 `com.webos.service.eim/getAllInputStatus` returns CEC devices in each HDMI

@@ -393,6 +393,7 @@ var TABS = [
   { key: 'apps',    label: t('tab.apps', 'Apps'),         url: '/api/apps',        build: appsRows },
   { key: 'oled',    label: t('tab.oledCare', 'OLED Care'),    url: '/api/oledcare',    build: oledRows, optional: true },
   { key: 'game',    label: t('tab.game', 'Game'),         url: '/api/game',        build: gameRows, optional: true },
+  { key: 'audio',   label: t('tab.audio', 'Audio'),        url: '/api/audio?with=settings', build: audioRows, poll: 8000 },
   { key: 'saver',   label: t('tv.tab.screenSaver', 'Screen Saver'), url: '/api/screensaver', build: saverRows, optional: true },
   { key: 'home',    label: t('tab.home', 'Home'),         url: '/api/home?with=catalogue,channels', build: homeRows, optional: true },
   { key: 'privacy', label: t('tab.privacy', 'Privacy'),      url: '/api/privacy',     build: privacyRows },
@@ -572,15 +573,11 @@ function optionRows(d) {
     if (timers.on) r.push(timerRow(timers.on, 'on', t('adv.onTimer', 'On Timer')));
     if (timers.off) r.push(timerRow(timers.off, 'off', t('adv.offTimer', 'Off Timer')));
   }
-  // Sound and SIMPLINK, from lgsettings.js; each shows only where the TV has it.
+  // HDMI and SIMPLINK, from lgsettings.js; each shows only where the TV has it.
+  // Sound, and each input's audio format, are on the Audio tab.
   var ls = d.lgSettings || [];
-  var snd = ls.filter(function (x) { return x.section === 'sound'; });
   var dev = ls.filter(function (x) { return x.section === 'devices'; });
-  var hin = ls.filter(function (x) { return x.section === 'hdmi'; });
-  if (snd.length) {
-    r.push(head(t('adv.sound', 'Sound')));
-    for (var si = 0; si < snd.length; si++) r.push(lgRow(snd[si]));
-  }
+  var hin = ls.filter(function (x) { return x.section === 'hdmi' && x.column !== 'audioFormat'; });
   if (hin.length) {
     r.push(head(t('adv.hdmi', 'HDMI inputs')));
     for (var hi = 0; hi < hin.length; hi++) r.push(lgRow(hin[hi]));
@@ -692,7 +689,7 @@ function lgRow(g) {
              press: t('tv.game.next', 'Press OK for {name}', { name: nx.label }), hint: g.desc };
   }
   if (g.type === 'number') {
-    if (g.max - g.min > 30) return { label: g.title, value: String(g.value), hint: g.desc, web: '/?tab=advanced' };
+    if (g.max - g.min > 30) return { label: g.title, value: String(g.value), hint: g.desc, web: g.section === 'sound' ? '/?tab=audio' : '/?tab=advanced' };
     var up = g.value >= g.max ? g.min : g.value + 1;
     return { label: g.title, value: String(g.value), cls: 'act', act: 'lgValue', key: g.id, next: up,
              press: t('tv.game.next', 'Press OK for {name}', { name: String(up) }), hint: g.desc };
@@ -1382,6 +1379,78 @@ function backRow() {
 function backRowApps() {
   return { label: t('tv.backRow.apps', '‹ Apps'), value: '', act: 'close', press: t('tv.backRow.privacy.press', 'Press OK or Back to return'),
            hint: t('tv.backRow.apps.hint', 'Back to the Apps tab.') };
+}
+
+function audioDeclaration(value) {
+  return value === true ? t('audio.advertised', 'Advertised') : value === false
+    ? t('audio.notAdvertised', 'Not advertised') : t('audio.unknown', 'Unknown');
+}
+
+/*
+ * The Audio tab: LG's sound settings first, as the rows most often changed,
+ * then what the TV and the receiver report, then the experimental forwarding.
+ * A failed read shows nothing stale, so the override cannot act on old state.
+ */
+function audioRows(d) {
+  if (!d) return [];
+  if (d.ok === false) return [{ label: t('tv.audio.readFailed', 'Audio readings unavailable'), value: t('tv.apps.install.retry', 'Retry'),
+    act: 'audioRefresh', hint: d.error || '', press: t('tv.apps.install.press.retry', 'Press OK to try again') }];
+  var r = [], ls = d.lgSettings || [];
+  r.push(head(t('adv.sound', 'Sound')));
+  ls.forEach(function (g) { if (g.section === 'sound') r.push(lgRow(g)); });
+  ls.forEach(function (g) { if (g.column === 'audioFormat') r.push(lgRow(g)); });
+  r.push(head(t('audio.pathTitle', 'What reaches the receiver')));
+  var unknown = t('audio.unknown', 'Unknown'), receiver = d.receiver, helper = d.override;
+  var dts = null;
+  d.tv.formats.forEach(function (f) { if (f.id === 'dts') dts = f; });
+  r.push({ label: t('tv.system.model', 'Model'), value: d.identity.model || unknown,
+    sub: d.identity.firmware || '', hint: t('tv.audio.identityHint', 'Audio support depends on the exact TV model and firmware.') });
+  r.push({ label: 'DTS', value: audioDeclaration(dts && dts.advertised),
+    hint: d.tv.dtsDecoder === true ? t('audio.decoderPresent', 'LG DTS decoder present') : d.tv.dtsDecoder === false
+      ? t('audio.decoderAbsent', 'LG DTS-core decoder not registered') : t('tv.audio.decoderUnknown', 'DTS decoder registration is unknown.') });
+  r.push({ label: t('audio.inputNow', 'Incoming audio'), value: d.live.input ? d.live.input.codec : t('audio.noInput', 'No audio reported'),
+    hint: t('tv.audio.inputHint', 'The TV’s current input reading. TV-app playback and HDMI-input forwarding use different audio paths.') });
+  // The output itself is the Sound output setting above; only a live codec adds to it.
+  if (d.live.output) r.push({ label: t('tv.audio.outputFormat', 'Output format'), value: d.live.output,
+    hint: t('tv.audio.outputHint', 'The output codec the audio driver reports now. The receiver’s own incoming-signal display confirms what arrives.') });
+  r.push({ label: t('audio.receiverNow', 'Return channel'), value: receiver.link === 'inactive'
+      ? t('audio.linkInactive', 'No active ARC link') : receiver.link === 'unknown' ? t('audio.linkUnknown', 'Link unknown') : receiver.link,
+    sub: receiver.name || '', hint: t('tv.audio.linkHint', 'The negotiated link is separate from the eARC setting. Standard DTS can use ARC; DTS-HD needs eARC. Receiver capability declarations do not prove reception.') });
+  r.push(head(t('audio.overrideTitle', 'Experimental DTS forwarding')));
+  var on = helper.enabled || helper.running === true;
+  var can = d.writable !== false && !helper.busy && (on ? helper.canDisable : helper.available);
+  var hint = on && !helper.verified ? helper.reason : on
+    ? helper.active ? t('audio.overrideActive', 'The helper reports an active compressed forwarding route. Check the receiver’s incoming format to confirm DTS reception.')
+      : helper.running ? t('audio.overrideWaiting', 'Running and waiting for a matching DTS input on HDMI 3 over eARC.')
+      : t('audio.overrideStopped', 'Enabled, but its service is not running. Disable the override before retrying.')
+    : helper.available ? t('audio.overrideReady', 'Experimental HDMI 3 to eARC forwarding is available with the checked helper. Changing it can briefly interrupt HDMI audio.')
+      : dts && dts.advertised === true && d.tv.dtsDecoder === true
+        ? t('audio.overrideNative', 'The TV already advertises DTS and has LG’s DTS decoder. Use its native audio settings first. No experimental forwarding profile is offered for this TV.')
+        : helper.reason || t('audio.overrideUnknown', 'No validated DTS forwarding helper is available for this TV.');
+  r.push({ label: t('tv.audio.forwarding', 'DTS forwarding'), badge: t('tv.audio.experimental', 'Experimental'),
+    value: helper.busy ? t('audio.changing', 'Changing…') : on ? t('common.on', 'On') : helper.available
+      ? t('common.off', 'Off') : t('audio.unavailable', 'Unavailable'),
+    cls: on ? 'warn' : 'off', act: can ? 'audioOverride' : null, on: on,
+    press: on ? t('tv.audio.disable', 'Press OK to disable the override') : t('tv.audio.enable', 'Press OK, then again, to enable the override'),
+    hint: d.writable === false ? t('tv.audio.readOnly', 'TV controls are disabled in the server configuration.') : hint });
+  r.push(head(t('audio.tableCaption', 'HDMI and receiver declarations')));
+  d.tv.formats.forEach(function (f) {
+    r.push({ label: f.name, value: audioDeclaration(f.advertised),
+      sub: t('tv.audio.receiverFormat', 'Receiver: {format}', { format: audioDeclaration(f.receiver) }),
+      hint: t('tv.audio.formatHint', 'The main value is what the TV advertises to an HDMI source; the line below is what the ARC/eARC receiver reports. Unknown stays unknown. DTS:X is not established by a DTS-HD entry.') +
+        (d.tv.input ? ' ' + t('audio.inputDeclaration', 'The TV column describes HDMI {port}.', { port: d.tv.input }) : '') });
+  });
+  r.push(head(t('audio.playbackTitle', 'TV playback declarations')));
+  var declarations = d.tv.playbackDeclarations;
+  var playbackNames = { AC3: 'Dolby Digital', EAC3: 'Dolby Digital Plus', DTSH: 'DTS-HD', DTSE: 'DTS Express', WMAP: 'WMA Pro', WMAL: 'WMA Lossless', OPUS: 'Opus' };
+  if (!declarations || !declarations.length) r.push({ label: t('tv.audio.playback', 'TV playback'), value: unknown,
+    hint: t('audio.playbackUnknown', 'The TV did not expose a playback declaration list.') });
+  else declarations.forEach(function (f) {
+    r.push({ label: playbackNames[f.name] || f.name,
+      value: f.channels ? t('audio.channels', '{count} channels', { count: f.channels }) : unknown,
+      hint: t('tv.audio.playbackHint', 'LG’s media-resource declaration for TV-app playback. A listed decoder or channel count does not establish bitstream pass-through.') });
+  });
+  return r;
 }
 
 // Only the supervised services: an on-demand one starts whenever anything asks
@@ -2187,11 +2256,11 @@ function flash(text) {
 // ---- data ----
 
 function fetchTab(keepSel) {
-  var section = T(), key = section.key;
+  var section = T(), key = section.key, view = sub;
   fetch(section.url, { cache: 'no-store' })
     .then(function (r) { return r.json(); })
     .then(function (d) {
-      if (T().key !== key) return;        // the user moved on while this was in flight
+      if (T().key !== key || sub !== view) return; // the user moved on while this was in flight
       data[key] = d;
       rows = buildRows(section, d);
       if (initialSel !== null && initialSel < rows.length && (!rows[initialSel] || !rows[initialSel].head)) {
@@ -2203,7 +2272,14 @@ function fetchTab(keepSel) {
       render();
     })
     .catch(function () {
-      if (T().key !== key || rows.length) return;
+      if (T().key !== key || sub !== view) return;
+      if (key === 'audio') {
+        data.audio = { ok: false, error: t('tv.msg.noResponse', 'The dashboard’s server on this TV did not respond.') };
+        rows = buildRows(section, data.audio);
+        sel = firstSel();
+        return render();
+      }
+      if (rows.length) return;
       document.getElementById('rows').innerHTML = '';
       var msg = document.getElementById('msg');
       msg.style.display = 'block';
@@ -2356,6 +2432,13 @@ function activate() {
   var r = rows[sel];
   if (!r || !r.act) return;
   switch (r.act) {
+    case 'audioRefresh':
+      return fetchTab(true);
+    case 'audioOverride':
+      if (!r.on && confirmFirst(r, t('tv.audio.confirm', 'Press OK again to enable experimental DTS forwarding'))) return;
+      r.value = t('audio.changing', 'Changing…');
+      render();
+      return sendPost('/api/audio', { enabled: !r.on });
     case 'uninstall':
       if (!r.confirming) {
         r.confirming = true;

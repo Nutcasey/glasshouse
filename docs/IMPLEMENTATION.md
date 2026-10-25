@@ -143,6 +143,21 @@ dynamic range while the TV reports no format, as in standby.
 The names of the dynamic range, the HDR type, the EOTF, the colorimetry, and
 the pixel encoding come from `server/lib/names.js`.
 
+The Audio tabs' `/api/audio` snapshot in `lib/audio.js` separates source-facing HDMI
+EDID, receiver formats from `arccontroller/getARCState`, local playback
+declarations, and live audio-driver readings. The EDID parser checks block
+checksums and uses telemetry's input map. `getARCEDIDInfo.eARC` is not treated
+as negotiation evidence. `?with=settings` adds LG's sound and HDMI setting rows, so
+each dashboard reads one endpoint. Reads run only while an Audio tab is open;
+there is no audio-capability background subscription.
+
+The optional DTS override wraps a separately installed, pinned lg-g5-dts
+package. Its exact target, manifest, runtime hashes and boot-hook hash must
+match before enable; the helper retains its own kernel instruction guards.
+Disable calls the helper's complete restoration. The UI distinguishes the
+enabled preference, running supervisor and active kernel route. A failed or
+unknown state is not reported as successful forwarding.
+
 The audio output in the stats is named from the `soundOutput` of
 `com.webos.service.audio/master/getVolume`, which uses the sound settings'
 keys, or `tv_speaker_bt_surround` for `tv_speaker_bluetooth` when the

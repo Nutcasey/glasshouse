@@ -87,6 +87,7 @@ var say = require('./lib/say');
 var lgSettings = require('./lib/lgsettings');
 var game = require('./lib/game');
 var piccapTransport = require('./lib/piccap');
+var audioCapabilities = require('./lib/audio');
 var remotebuttons = require('./lib/remotebuttons');
 var logsModule = require('./lib/logs');
 var syslogForwarder = require('./lib/syslog');
@@ -523,6 +524,7 @@ var LIVE_STALE = {
 };
 
 lgSettings.init({ luna: luna, lunaCached: lunaCached, clearLunaCache: clearLunaCache });
+audioCapabilities.init({ luna: luna, lunaCached: lunaCached, clearLunaCache: clearLunaCache, hdmiReceiverMap: telemetry.hdmiReceiverMap });
 game.init({ lunaCached: lunaCached, inputKey: telemetry.inputKey });
 privacy.init({ luna: luna, lunaCached: lunaCached, config: CONFIG, lgSettings: lgSettings, services: servicesModule });
 oled.init({ luna: luna, config: CONFIG });
@@ -880,6 +882,7 @@ function appsChanged() {
 
 routes.init({
   config: CONFIG,
+  audio: audioCapabilities,
   piccapStatus: piccap.status,
   repo: repo,
   installer: installer,
