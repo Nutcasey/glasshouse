@@ -31,6 +31,7 @@ var names = require('./names');
 var writeJsonAtomic = require('./util').writeJsonAtomic;
 var wallpapers = require('./home-wallpapers');
 var takeover = require('./home-takeover');
+var lifecycle = require('./home-lifecycle');
 var recent = require('./home-recent');
 var recentApps = require('./home-recent-apps');
 
@@ -813,6 +814,8 @@ function switchTo(on, cb) {
   (function run() {
     var want = switchWant;
     var batch = switchWaiting.splice(0, switchWaiting.length);
+    // LG's Home's place given back: sam's registration of the view goes with it.
+    if (!want) lifecycle.stop();
     (want ? takeover.take : takeover.release)(function (r) {
       function finish() {
         if (r.ok) {
@@ -1242,8 +1245,10 @@ function watchBeat(ms) {
   }, ms);
 }
 
-function beat() {
+// The view's heartbeat, naming its process for sam's registration.
+function beat(body) {
   lastBeatAt = nowMs();
+  if (body && takeover.mounted()) lifecycle.view(body.pid);
   if (viewInFront()) watchBeat(BEAT_GRACE_MS);
   return { ok: true, enabled: readConfig().enabled, build: buildId, wallpapers: wallpapers.status(),
            layoutVersion: layoutVersion() };
@@ -1356,7 +1361,7 @@ function powerChanged(active) {
 function status(cb) {
   var c = readConfig();
   var sup = supported();
-  takeover.samType(function (type) {
+  takeover.samOurs(function (ours) {
     cb({
       ok: true,
       // Both dashboards leave Home out where it is false, as for other features a TV lacks.
@@ -1365,7 +1370,7 @@ function status(cb) {
       enabled: c.enabled,
       restorePending: c.restorePending,
       // In LG's Home's place now; false while one of the ways back has LG's Home open.
-      active: takeover.mounted() && type === 'web',
+      active: takeover.mounted() && ours === true,
       lgHomeOpen: escaped,
       hideLgHomeAtStart: c.hideLgHomeAtStart === true,
       hideLgHomeAtStartAvailable: startLayoutAvailable(),
@@ -1390,11 +1395,13 @@ function init(opts) {
   wallpapers.init(stateDir);
   recent.init(stateDir, opts.now);
   recentApps.init({ luna: lunaFn });
+  lifecycle.init({ Subscription: opts.Subscription || null, signal: opts.signal, launchFile: opts.launchFile });
   takeover.init({
     luna: lunaFn,
     samrescan: opts.samrescan || null,
     stageDir: opts.takeoverDir || path.join(stateDir, 'home-takeover'),
     sourceDir: opts.appSource,
+    exeSource: opts.homeExe,
     appDir: opts.lgHomeDir,
     procDir: opts.procDir,
     layoutDir: opts.lgLayoutDir,

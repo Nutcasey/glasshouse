@@ -148,13 +148,33 @@ node scripts/emulate-tv.js [--port 8080] [--model c2|b8|c3] [--open]
 ```
 
 
-Home recovery checks cover a switch-off cut short, failed layout restoration and its retry, failed migration without losing the snapshot or removing the old app, closing the old app when it is left running in the background, and a missing first heartbeat when Home already has the foreground id. A refused device tile is followed by a remote input switch to check that Last opened still records the whole input. Remote-key checks cover clearing the startup notice on escape and retrying a configd write after the local map was saved. Browser checks cover pending/failed layout edits, each row's Order on the view, the Home tab and the TV app, edits attempted during an Order save and refresh, keeping unsaved moves when Order changes, clicking Order while a tile is held, first-catalogue failure, delayed readiness, the Home tab left out where Glasshouse Home is not offered, and the Apps tab's notes while it is on.
+Home recovery checks cover a switch-off cut short, failed layout restoration and its retry, failed migration without losing the snapshot or removing the old app, closing the old app when it is left running in the background, and a missing first heartbeat when Home already has the foreground id. A refused device tile is followed by a remote input switch to check that Last opened still records the whole input. Remote-key checks cover clearing the startup notice on escape and retrying a configd write after the local map was saved. Browser checks cover pending/failed layout edits, each row's Order on the Home tab and the TV app, the Home tab left out where Glasshouse Home is not offered, and the Apps tab's notes while it is on.
 
 `test-home-wallpaper-upload.js` exercises the real HTTP boundary: rejected and interrupted uploads preserve the previous image, concurrent uploads are refused, the lock is released after an abort, and an uploaded JPEG survives reinitialisation and is served with its image type. The dashboard check prepares a PNG as JPEG, shows the uploaded image and verifies that a second tab recovers after the first finishes uploading.
 
 `test-home-recent-apps.js` exercises the recent-app HTTP routes: refused and
 unconfirmed stops retain their cards for retry, unavailable running lists
 report failure, Close all stops web and native apps while preserving Home,
-unlisted apps and newer cards, and snapshots forbid caching. The browser
-check covers held OK acting once on release, close errors above the panel,
-and Back or a Home relaunch cancelling a delayed panel reply.
+unlisted apps and newer cards, and snapshots forbid caching.
+
+`test-home-lifecycle.js` plays sam's messages to the view's registration:
+relaunch passed on as a signal with its parameters, the view ended when the
+registration is lost, the registration ended when the view has gone, and a
+leftover registration ended at start.
+
+## Glasshouse Home's native view
+
+`cargo test` in `native/home` runs the view against a server played by hand
+(`src/view_tests.rs`): OK acting once on release and arranging when held,
+each row's Order and no edit lost while it saves or its order loads, a moved
+tile keeping a Last opened row's order as its own, unsaved moves kept when
+Order changes, clicking Order while a tile is held, a failing first catalogue
+opening LG's Home once, Back cancelling a recent apps panel still loading,
+the heartbeat naming the process, and a scrolled tile staying between the
+rows' edges. `scripts/build-home.sh` builds it for the TV; CI does not build
+it yet.
+
+On a TV, `touch /tmp/glasshouse-home.trace` makes the view write every frame
+and remote key to `/tmp/glasshouse-home.frames`, with each frame's work time,
+for measuring motion; `/tmp/glasshouse-home.log` reports each motion's frame
+rate and dropped frames whether or not it is on.

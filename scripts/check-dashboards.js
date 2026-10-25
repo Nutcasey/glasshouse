@@ -139,258 +139,13 @@ async function visitAll(browser, jobs, problems) {
   await Promise.all([worker(), worker(), worker(), worker()]);
 }
 
-async function visitHomePicture(browser, base, problems) {
-  const page = await browser.newPage();
-  page.on('pageerror', e => problems.push('Home picture: ' + e.message));
-  const layout = { rows: ['app', 'dev', 'ch'], order: { app: [], dev: [], ch: [] },
-    hidden: { app: [], dev: [], ch: [] }, channels: [], hintSeen: true };
-  const hdmi4 = { ok: true, range: 'hdr', mode: { display: 'HDR Filmmaker' }, light: 100, oled: true,
-    signal: { width: 3840, height: 2160, hz: 24, chroma: 'YCbCr 4:4:4', bits: 10, hdr: 'hdr10' } };
-  const netflix = { ok: true, range: 'dolbyHdr', mode: { display: 'Dolby Vision Cinema Bright' }, light: 100, oled: true,
-    signal: { width: 3840, height: 2160, hz: 23.98, hdr: 'dolby_vision', played: true } };
-  const asleep = { ok: true, range: null, mode: null, light: null, oled: true, signal: null };
-  let source = { kind: 'input', port: 4, title: 'HDMI 4' };
-  let releaseCatalogue = null, latePicture = null, holdPicture = false, pictureReads = 0;
-  const reply = (route, body) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
-  await page.route('**/api/home/**', route => {
-    const url = new URL(route.request().url());
-    if (url.pathname.endsWith('/catalogue')) {
-      const body = { ok: true, layout, apps: [], devices: [], channels: [], sources: { channels: 0 },
-        order: { app: ['lg-home'], dev: [], ch: [] } };
-      if (!releaseCatalogue) {
-        const snapshot = JSON.parse(JSON.stringify(body));
-        releaseCatalogue = () => reply(route, snapshot);
-        return;
-      }
-      return reply(route, body);
-    }
-    if (url.pathname.endsWith('/now')) return reply(route, source);
-    if (url.pathname.endsWith('/picture')) {
-      pictureReads++;
-      const body = url.searchParams.get('kind') === 'app' ? netflix : url.searchParams.get('port') === '2' ? asleep : hdmi4;
-      if (holdPicture) {
-        holdPicture = false;
-        latePicture = () => reply(route, body);
-        return;
-      }
-      return reply(route, body);
-    }
-    return reply(route, { ok: true, build: 'one' });
-  });
-  async function returned() {
-    const catalogue = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/catalogue');
-    const now = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/now');
-    await page.evaluate(() => document.dispatchEvent(new Event('webOSRelaunch')));
-    await Promise.all([catalogue, now]);
-    await page.waitForTimeout(100);
-  }
-  async function delayPicture() {
-    latePicture = null;
-    holdPicture = true;
-    await page.clock.fastForward(15000);
-    const until = Date.now() + 4000;
-    while (!latePicture && Date.now() < until) await page.waitForTimeout(20);
-    if (!latePicture) throw new Error('Home picture: no refresh to delay');
-  }
-  try {
-    await page.clock.install();
-    await page.goto(base + '/assets/home.html');
-    await page.waitForFunction(() => document.getElementById('srcTitle').textContent === 'HDMI 4');
-    if (pictureReads) problems.push('Home picture: fetched a plate before the layout was known');
-    await releaseCatalogue();
-    await page.waitForSelector('.tile');
-    await page.waitForTimeout(100);
-    if (await page.locator('#plate').isVisible()) problems.push('Home picture: a layout without picture details showed a plate');
-    layout.picture = true;
-    await returned();
-    await page.waitForFunction(() => document.getElementById('plMode').textContent === 'HDR Filmmaker');
-    if (await page.locator('#plStrip > div').count() !== 1) problems.push('Home picture: the strip held more than the OLED light');
-    source = { kind: 'input', port: 2, title: 'HDMI 2' };
-    await returned();
-    await page.waitForFunction(() => document.getElementById('plSig').textContent === 'No picture coming in');
-    const level = await page.evaluate(() => {
-      const top = id => document.getElementById(id).getBoundingClientRect().top;
-      return { shown: document.getElementById('plMode').textContent + document.getElementById('plStrip').textContent,
-        off: Math.abs(top('plSig') - top('srcKind')) };
-    });
-    if (level.shown) problems.push('Home picture: no signal still showed a mode or OLED light');
-    if (level.off > 1) problems.push('Home picture: no signal left its line off the source\'s first line');
-    source = { kind: 'input', port: 4, title: 'HDMI 4' };
-    await returned();
-    await page.waitForFunction(() => document.getElementById('plMode').textContent === 'HDR Filmmaker');
-    await delayPicture();
-    source = { kind: 'app', appId: 'netflix', title: 'Netflix' };
-    await returned();
-    await page.waitForFunction(() => document.getElementById('plMode').textContent === 'Dolby Vision Cinema Bright');
-    await latePicture();
-    await page.waitForTimeout(100);
-    if (await page.locator('#plMode').textContent() !== 'Dolby Vision Cinema Bright') problems.push('Home picture: a late HDMI reply replaced the app picture');
-    await delayPicture();
-    layout.picture = false;
-    await returned();
-    if (await page.locator('#plate').isVisible()) problems.push('Home picture: returning with details off kept the plate');
-    await latePicture();
-    await page.waitForTimeout(100);
-    if (await page.locator('#plate').isVisible()) problems.push('Home picture: a late reply restored a disabled plate');
-  } finally { await page.close(); }
-}
-
-async function visitHomeColours(browser, base, problems) {
-  const page = await browser.newPage();
-  page.on('pageerror', e => problems.push('Home colours: ' + e.message));
-  const layout = { rows: ['app', 'dev', 'ch'], order: { app: [], dev: [], ch: [] },
-    hidden: { app: [], dev: [], ch: [] }, channels: [], hintSeen: true, colours: null };
-  let version = 1;
-  await page.route('**/api/home/**', route => {
-    const pathname = new URL(route.request().url()).pathname;
-    const body = pathname === '/api/home/catalogue'
-      ? { ok: true, layout, layoutVersion: String(version), apps: [], devices: [], channels: [],
-          sources: { channels: 0 }, order: { app: ['lg-home'], dev: [], ch: [] } }
-      : { ok: true, build: 'one', layoutVersion: String(version) };
-    return route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
-  });
-  const rgb = hex => 'rgb(' + hex.slice(1).match(/../g).map(v => parseInt(v, 16)).join(', ') + ')';
-  async function check(text, accent) {
-    const actual = await page.evaluate(() => ({
-      text: getComputedStyle(document.getElementById('clock')).color,
-      focus: getComputedStyle(document.querySelector('.tile.focus')).outlineColor
-    }));
-    if (actual.text !== rgb(text)) problems.push('Home colours: text ' + text + ' rendered as ' + actual.text);
-    if (actual.focus !== rgb(accent)) problems.push('Home colours: accent ' + accent + ' rendered as ' + actual.focus);
-  }
-  try {
-    await page.clock.install();
-    // Chosen colours can coincide with any original colour in the stylesheet.
-    for (const accent of ['#ece7df', '#a39d93', '#6b665e', '#e9ad55', '#231d12', '#30de61']) {
-      layout.colours = { text: '#d4e6f4', accent };
-      await page.goto(base + '/assets/home.html');
-      await page.waitForSelector('.tile.focus');
-      await check('#d4e6f4', accent);
-    }
-    // Changes made elsewhere, including reset, arrive through the heartbeat.
-    for (const colours of [{ text: '#f4dcdc', accent: '#30de61' }, null]) {
-      layout.colours = colours;
-      version++;
-      await page.clock.fastForward(5000);
-      const text = colours ? colours.text : '#ece7df';
-      await page.waitForFunction(expected => getComputedStyle(document.getElementById('clock')).color === expected, rgb(text));
-      await check(text, colours ? colours.accent : text);
-    }
-  } finally { await page.close(); }
-}
-
-async function visitHomeArrangement(browser, base, problems) {
-  const page = await browser.newPage();
-  page.on('pageerror', e => problems.push('Home arranging: ' + e.message));
-  const layout = {
-    rows: ['app', 'dev', 'ch'], order: { app: [], dev: [], ch: [] },
-    hidden: { app: [], dev: [], ch: [] }, channels: [], hintSeen: true
-  };
-  const defaultOrder = ['netflix', 'youtube', 'lg-home'];
-  const saves = [];
-  let catalogueReads = 0, staleReply = null, build = 'first';
-  await page.route('**/api/home/**', async route => {
-    const pathname = new URL(route.request().url()).pathname;
-    let body = { ok: true, build };
-    if (pathname === '/api/home/catalogue') {
-      body = {
-        ok: true, apps: [{ id: 'netflix', title: 'Netflix' }, { id: 'youtube', title: 'YouTube' }],
-        devices: [], channels: [], sources: { channels: 0 }, layout,
-        order: { app: layout.order.app.length ? layout.order.app : defaultOrder, dev: [], ch: [] }
-      };
-      // Keep the response as sent, even if a later save changes the fixture.
-      const reply = { contentType: 'application/json', body: JSON.stringify(body) };
-      if (++catalogueReads === 2) { staleReply = () => route.fulfill(reply); return; }
-      return route.fulfill(reply);
-    }
-    if (pathname === '/api/home/layout') {
-      const patch = route.request().postDataJSON();
-      saves.push(patch);
-      if (patch.reset) {
-        layout.rows = ['app', 'dev', 'ch'];
-        layout.order = { app: [], dev: [], ch: [] };
-        layout.hidden = { app: [], dev: [], ch: [] };
-      } else {
-        if (patch.order) Object.assign(layout.order, patch.order);
-        if (patch.rows) layout.rows = patch.rows;
-        if (patch.hidden) layout.hidden = patch.hidden;
-      }
-      body = { ok: true, layout };
-    }
-    return route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
-  });
-  async function arrange() {
-    await page.keyboard.down('Enter');
-    await page.clock.fastForward(900);
-    await page.keyboard.up('Enter');
-  }
-  async function back() {
-    await page.evaluate(() => {
-      for (const type of ['keydown', 'keyup']) document.dispatchEvent(new KeyboardEvent(type, { keyCode: 461, bubbles: true }));
-    });
-  }
-  try {
-    await page.clock.install();
-    await page.goto(base + '/assets/home.html');
-    await page.waitForSelector('.tile');
-    const pending = page.waitForRequest(r => new URL(r.url()).pathname === '/api/home/catalogue');
-    await page.clock.fastForward(5 * 60000);
-    await pending;
-    await arrange();
-    await page.keyboard.press('Enter');
-    await page.keyboard.press('ArrowRight');
-    const received = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/catalogue');
-    await staleReply();
-    await received;
-    await page.waitForTimeout(50);
-    await page.keyboard.press('Enter');
-    let saved = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/layout');
-    await back();
-    await saved;
-    if (JSON.stringify(saves[0].order.app) !== JSON.stringify(['youtube', 'netflix', 'lg-home'])) {
-      problems.push('Home arranging: a late catalogue reply lost the moved tile order');
-    }
-    await page.waitForTimeout(50);
-    await arrange();
-    await page.keyboard.press('Enter');
-    await page.keyboard.press('ArrowRight');
-    saved = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/layout');
-    const resetCatalogue = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/catalogue');
-    await page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 405, bubbles: true })));
-    await saved;
-    await resetCatalogue;
-    await page.waitForTimeout(50);
-    // An update noticed while arranging must still reload after arranging ends.
-    build = 'second';
-    const beat = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/beat');
-    await page.clock.fastForward(5000);
-    await beat;
-    let navigations = 0;
-    page.on('framenavigated', frame => { if (frame === page.mainFrame()) navigations++; });
-    saved = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/layout');
-    await back();
-    await saved;
-    if (Object.keys(saves[saves.length - 1].order).length) {
-      problems.push('Home arranging: finishing after Reset pinned the Apps order again');
-    }
-    await page.clock.fastForward(5000);
-    await page.waitForTimeout(100);
-    if (!navigations) problems.push('Home arranging: an update seen while arranging was never reloaded');
-  } finally { await page.close(); }
-}
-
-
-
-// Each row's Order, on Glasshouse Home's own view, the Home tab and the TV app's Home section.
+// Each row's Order, on the Home tab and the TV app's Home section.
 async function visitHomeOrder(browser, base, problems) {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   page.on('pageerror', e => problems.push('Home order: ' + e.message));
   const layout = { rows: ['app', 'dev', 'ch'], order: { app: [], dev: [], ch: [] },
     sort: { app: 'custom', dev: 'custom', ch: 'custom' }, hidden: { app: [], dev: [], ch: [] }, channels: [], hintSeen: true };
   const saves = [];
-  let pauseSave = false, pauseCatalogue = false, saveHeld, catalogueHeld;
-  const saveReady = new Promise(resolve => { saveHeld = resolve; });
-  const catalogueReady = new Promise(resolve => { catalogueHeld = resolve; });
   await page.route('**/api/home**', async route => {
     const pathname = new URL(route.request().url()).pathname;
     // The server sends a Last opened row in that order: here, YouTube was opened last.
@@ -407,89 +162,16 @@ async function visitHomeOrder(browser, base, problems) {
       if (patch.sort) Object.assign(layout.sort, patch.sort);
       body = { ok: true, layout: JSON.parse(JSON.stringify(layout)) };
     }
-    const reply = { contentType: 'application/json', body: JSON.stringify(body) };
-    if (pathname === '/api/home/layout' && pauseSave) {
-      pauseSave = false;
-      await new Promise(resolve => saveHeld(resolve));
-    }
-    if (pathname === '/api/home/catalogue' && pauseCatalogue) {
-      pauseCatalogue = false;
-      await new Promise(resolve => catalogueHeld(resolve));
-    }
-    await route.fulfill(reply);
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
   });
-  const appTiles = () => page.evaluate(() => [...document.querySelectorAll('.row[data-key="app"] .tile .nm')].map(n => n.textContent).join(','));
   try {
-    await page.goto(base + '/assets/home.html');
-    await page.waitForSelector('.tile');
-    await page.keyboard.down('Enter');
-    await page.waitForTimeout(900);
-    await page.keyboard.up('Enter');
-    await page.keyboard.press('ArrowLeft');
-    pauseSave = pauseCatalogue = true;
-    let saved = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/layout');
-    await page.keyboard.press('Enter');
-    const releaseSave = await saveReady;
-    const tryMoving = async () => {
-      await page.keyboard.press('ArrowRight');
-      await page.keyboard.press('Enter');
-      await page.keyboard.press('ArrowRight');
-      await page.keyboard.press('Enter');
-    };
-    await tryMoving();
-    if (await appTiles() !== 'One,Two,LG Home') problems.push('Home order: an edit can be lost while Order is saving');
-    releaseSave();
-    const releaseCatalogue = await catalogueReady;
-    await tryMoving();
-    if (await appTiles() !== 'One,Two,LG Home') problems.push('Home order: an edit can be lost while the saved order is loading');
-    releaseCatalogue();
-    await saved;
-    await page.waitForTimeout(200);
-    if (!saves.length || !saves[0].sort || saves[0].sort.app !== 'recent') problems.push('Home order: the Apps row\'s Order did not save Last opened');
-    if (await appTiles() !== 'Two,One,LG Home') problems.push('Home order: arranging did not show the row in last opened order');
-    // Picking a tile up keeps the order shown, now the row's own.
-    await page.keyboard.press('ArrowRight');
-    await page.keyboard.press('Enter');
-    await page.keyboard.press('ArrowRight');
-    await page.keyboard.press('Enter');
-    saved = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/layout');
-    await page.evaluate(() => {
-      for (const type of ['keydown', 'keyup']) document.dispatchEvent(new KeyboardEvent(type, { keyCode: 461, bubbles: true }));
-    });
-    await saved;
-    const last = saves[saves.length - 1];
-    if (last.sort.app !== 'custom' || JSON.stringify(last.order.app) !== JSON.stringify(['one', 'two', 'lg-home'])) {
-      problems.push('Home order: moving a tile in a Last opened row did not keep the order shown as the row\'s own');
-    }
-
-    await page.waitForTimeout(200);
-    await page.keyboard.down('Enter');
-    await page.waitForTimeout(900);
-    await page.keyboard.up('Enter');
-    await page.keyboard.press('ArrowLeft');
-    await page.keyboard.press('Enter');
-    await page.keyboard.press('ArrowRight');
-    await page.keyboard.press('Enter');
-    await page.keyboard.press('Enter');
-    saved = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/layout');
-    await page.locator('.row[data-key="app"] .sort').click();
-    await saved;
-    if (JSON.stringify(saves[saves.length - 1].order.app) !== JSON.stringify(['two', 'one', 'lg-home'])) {
-      problems.push('Home order: switching Order discarded the row\'s unsaved moves');
-    }
-    await page.waitForTimeout(200);
-    await page.keyboard.press('ArrowRight');
-    if (await page.locator('.tile.focus .nm').allTextContents() + '' !== 'Two') {
-      problems.push('Home order: clicking Order while holding a tile did not release it');
-    }
-
     layout.sort.app = 'recent';
     await page.goto(base + '/?tab=home');
     await page.waitForSelector('#home-sort-app:not(:disabled)');
     if (!await page.locator('details.home-row[data-kind="app"] .home-tile button[aria-label="Later"]').first().isDisabled()) {
       problems.push('Home order: tiles in a Last opened row can be moved on the Home tab');
     }
-    saved = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/layout');
+    const saved = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/layout');
     await page.locator('#home-sort-app').selectOption('custom');
     await saved;
     if (saves[saves.length - 1].sort.app !== 'custom') problems.push('Home order: the Home tab did not save Your order');
@@ -647,112 +329,6 @@ async function visitHomeAvailability(browser, base, problems) {
   }
 }
 
-async function visitHomeReadiness(browser, base, problems) {
-  const page = await browser.newPage();
-  page.on('pageerror', e => problems.push('Home readiness: ' + e.message));
-  let failed = true, release = null, beats = 0, escapes = 0;
-  await page.route('**/api/home/**', async route => {
-    const pathname = new URL(route.request().url()).pathname;
-    if (pathname.endsWith('/beat')) beats++;
-    if (pathname.endsWith('/open')) escapes++;
-    if (pathname.endsWith('/catalogue')) {
-      if (failed) return route.fulfill({ status: 503, body: '{}' });
-      await new Promise(resolve => { release = resolve; });
-      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, apps: [], devices: [], channels: [],
-        order: { app: ['lg-home'], dev: [], ch: [] }, sources: { channels: 0 },
-        layout: { rows: ['app', 'dev', 'ch'], hidden: { app: [], dev: [], ch: [] }, order: { app: [], dev: [], ch: [] },
-          channels: [], hintSeen: true } }) });
-    }
-    return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, build: 'one', kind: null }) });
-  });
-  try {
-    await page.clock.install();
-    await page.goto(base + '/assets/home.html');
-    await page.waitForTimeout(100);
-    await page.keyboard.press('ArrowDown');
-    if (!escapes) problems.push('Home readiness: failed first catalogue did not ask for LG Home');
-    if (beats) problems.push('Home readiness: unusable view sent a healthy heartbeat');
-    failed = false;
-    await page.reload();
-    await page.waitForTimeout(100);
-    await page.clock.fastForward(6500);
-    if (beats) problems.push('Home readiness: heartbeat preceded initial rendering');
-    release();
-    await page.waitForSelector('.tile');
-    await page.waitForTimeout(100);
-    if (beats !== 1) problems.push('Home readiness: delayed first render did not immediately send a heartbeat');
-  } finally { await page.close(); }
-}
-
-async function visitHomeRecents(browser, base, problems) {
-  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
-  page.on('pageerror', e => problems.push('Home recents: ' + e.message));
-  let apps = [{ id: 'first', title: 'First' }, { id: 'second', title: 'Second' }];
-  let posts = 0, fail = false, hold = false, release = null;
-  const reply = (route, body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
-  await page.route('**/api/home/**', async route => {
-    const pathname = new URL(route.request().url()).pathname;
-    if (pathname === '/api/home/catalogue') return reply(route, {
-      ok: true, apps: [], devices: [], channels: [], sources: {}, order: { app: ['lg-home'], dev: [], ch: [] },
-      layout: { rows: ['app', 'dev', 'ch'], hidden: { app: [], dev: [], ch: [] }, channels: [], hintSeen: true }
-    });
-    if (pathname === '/api/home/recents') {
-      if (route.request().method() === 'POST') {
-        posts++;
-        if (fail) return reply(route, { ok: false }, 400);
-        const body = route.request().postDataJSON();
-        apps = apps.filter(a => a.id !== body.id);
-      } else if (hold) await new Promise(resolve => { release = resolve; });
-      return reply(route, { ok: true, apps });
-    }
-    return reply(route, { ok: true, kind: null, build: 'one' });
-  });
-  async function back() {
-    await page.evaluate(() => {
-      for (const type of ['keydown', 'keyup']) document.dispatchEvent(new KeyboardEvent(type, { keyCode: 461 }));
-    });
-  }
-  try {
-    await page.goto(base + '/assets/home.html');
-    await page.waitForSelector('#rows .tile');
-    await back();
-    await page.waitForSelector('#stage.recents');
-    await page.keyboard.press('ArrowDown');
-    await page.keyboard.down('Enter');
-    await page.keyboard.down('Enter');
-    await page.waitForTimeout(150);
-    if (posts) problems.push('Home recents: held OK acted before release');
-    await page.keyboard.up('Enter');
-    await page.waitForFunction(() => document.querySelectorAll('#recentsTrack .rc').length === 1);
-    if (posts !== 1) problems.push('Home recents: held OK closed more than one card');
-    fail = true;
-    await page.keyboard.press('Enter');
-    await page.waitForSelector('#toast.show');
-    const visibleError = await page.evaluate(() => {
-      const toast = document.getElementById('toast'), r = toast.getBoundingClientRect();
-      return toast.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
-    });
-    if (!visibleError) problems.push('Home recents: the panel covered its close error');
-    await back();
-    for (const cancel of ['back', 'relaunch']) {
-      hold = true; release = null;
-      await back();
-      const deadline = Date.now() + 3000;
-      while (!release && Date.now() < deadline) await page.waitForTimeout(20);
-      if (!release) throw new Error('Home recents: no panel request to delay');
-      if (cancel === 'back') await back();
-      else await page.evaluate(() => document.dispatchEvent(new Event('webOSRelaunch')));
-      const answered = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/recents');
-      hold = false; release();
-      await answered;
-      await page.waitForTimeout(100);
-      if (await page.locator('#stage').evaluate(el => el.classList.contains('recents'))) {
-        problems.push('Home recents: a late reply reopened the panel after ' + cancel);
-      }
-    }
-  } finally { await page.close(); }
-}
-
 async function visitTvDashboard(browser, base, problems) {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   page.on('pageerror', e => problems.push('TV dashboard: ' + e.message));
@@ -903,18 +479,13 @@ async function visitTvNonOled(browser, base, problems) {
     .concat(tv.map(t => ({ url: base + '/assets/dashboard.html?tab=' + t, label: 'TV ' + t }))), problems);
   await visitTvDashboard(browser, base, problems);
   await visitTvNonOled(browser, base, problems);
-  await visitHomeArrangement(browser, base, problems);
-  await visitHomePicture(browser, base, problems);
-  await visitHomeColours(browser, base, problems);
   await visitHomeEditor(browser, base, problems);
   await visitHomeOrder(browser, base, problems);
   await visitHomeUploads(browser, base, problems);
-  await visitHomeReadiness(browser, base, problems);
   await visitHomeAvailability(browser, base, problems);
-  await visitHomeRecents(browser, base, problems);
   await browser.close();
   for (const p of problems) console.log(p);
   console.log((web.length + tv.length) + ' tabs opened (' + web.length + ' web, ' + tv.length + ' TV app), ' +
-              'TV navigation and LCD profile, Home arranging, picture, colours, update, editing, order, uploads, readiness, availability and recents checked, ' + problems.length + ' problem' + (problems.length === 1 ? '' : 's'));
+              'TV navigation and LCD profile, and the Home tab\'s editing, order, uploads and availability checked, ' + problems.length + ' problem' + (problems.length === 1 ? '' : 's'));
   process.exit(problems.length ? 1 : 0);
 })().catch(e => { console.error(e.message); process.exit(1); });

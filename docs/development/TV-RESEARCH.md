@@ -1010,6 +1010,54 @@ The webOS 9 entries above describe the home app's CRIU checkpoint. On a CX:
 - The TV has no `/etc/issue`. `/etc/starfish-release` has
   `Rockhopper release 10.3.1-3006`, and `/etc/os-release` `VERSION_ID=10.3.1`.
 
+## A native app as Home (G3, webOS 9.2.2; G5, webOS 10.3.1)
+
+Tried on 25 October 2026 with Glasshouse Home's native view
+(`native/home`) staged under `com.webos.app.home` as `type: native`.
+
+- Userland is 32-bit soft-float ARM (`/lib/ld-linux.so.3`, glibc 2.35) on an
+  aarch64 kernel. The webosbrew toolchain's sysroot has glibc 2.12, older than
+  Rust's standard library supports; linking against the TV's own libraries
+  works.
+- LG's `libSDL2-2.0.so.0` (2.0.14) has a webOS Wayland backend that works for
+  a root native app: a fullscreen GLES 2 window at 1920x1080, vsync on.
+- Its `SDL_KeyboardEvent` has 4 bytes more before the key than upstream
+  SDL2: state at offset 16, scancode at 20, keycode at 24. The arrows and OK
+  arrive as standard scancodes (79 to 82, 40).
+- Back never reaches the app unless the window sets
+  `_WEBOS_ACCESS_POLICY_KEYS_BACK` (SDL hint
+  `SDL_WEBOS_ACCESS_POLICY_KEYS_BACK`): `systemUi.js` checks it in
+  `activeSurfaceAcceptsBackKey()`, and without it the window just loses
+  focus.
+- sam passes `{"@system_native_app":true,"nid":"com.webos.app.home"}` (and a
+  launch's `params` merged in) as `argv[1]` but sets no `APPID`; LG's SDL names
+  the surface from `APPID`, and without it `getForegroundAppInfo` answered an
+  empty `appId` with the view in front.
+- Unregistered, sam ends the view (`SDL_QUIT`) and starts another on every
+  launch, Home key included; the first frame came about 0.5 s later.
+  `luna-send -a com.webos.app.home -i
+  luna://com.webos.applicationManager/registerNativeApp '{}'` as root answers
+  `{"message":"registered"}`, then `{"message":"relaunch","parameters":
+  {"launchType":"homeKey","activateType":"home"}}` on each launch, and the
+  process is kept; the app must raise its own window (SDL Show, Restore and
+  Raise work).
+- `luna-send` over SSH only answers with its standard input from
+  `/dev/null`; without it a launch sent that way was never made.
+  `com.webos.service.capture/executeOneShot` takes `width` 1920 and `height`
+  1080 for a full-size capture.
+- The G5 (webOS 10.3.1) behaves the same in all of the above, with a
+  different build of LG's SDL 2.0.14 (other checksum, same event layout) and
+  `launchDefaultApp {category: "home"}`, the Home key's route there,
+  relaunching the registered view. During a cold boot there
+  `com.webos.service.preloadmanager` launched `com.webos.app.home` at 67 s
+  with `"preload":"full"` in `argv[1]`; a native app that shows its window
+  then takes the screen from Live TV, so it has to stay hidden until a
+  relaunch.
+- Measured with remote keys sent through `networkinput/test/sendKeyCode`,
+  the web view's `requestAnimationFrame` missed 25 of ~480 vsyncs over 8 s of
+  continuous scrolling, with frame gaps up to 87 ms (173 ms opening Recent
+  apps), where the native view missed none.
+
 ## What the TV opens as it starts (G5, webOS 10.3.1)
 
 Measured on 19 October 2026 on an OLED55G56LS, Quick Start+ off.
