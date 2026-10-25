@@ -99,6 +99,18 @@ fn ok_opens_the_focused_tile_once_on_release() {
 }
 
 #[test]
+fn a_click_opens_its_tile_after_directional_navigation() {
+    let mut f = Fixture::new("custom");
+    f.press(Key::Right);
+    f.sent();
+    f.v.hits.push((Rect::new(0.0, 0.0, 10.0, 10.0), Hit::Tile(0, 0)));
+    f.v.click(5.0, 5.0);
+    let opens: Vec<_> = f.sent().into_iter().filter(|s| s.1 == "/api/home/open").collect();
+    assert_eq!(opens.len(), 1);
+    assert_eq!(opens[0].2.as_ref().unwrap()["id"], "one");
+}
+
+#[test]
 fn holding_ok_arranges_instead_of_opening() {
     let mut f = Fixture::new("custom");
     f.sent();
@@ -213,7 +225,12 @@ fn back_cancels_a_recent_apps_panel_still_loading() {
 fn the_heartbeat_names_the_process_and_a_new_build_restarts() {
     let mut f = Fixture::new("custom");
     let beat = f.sent().into_iter().find(|s| s.1 == "/api/home/beat").expect("a heartbeat once loaded");
-    assert_eq!(beat.2.as_ref().unwrap()["pid"], std::process::id());
+    let pid = &beat.2.as_ref().unwrap()["pid"];
+    if cfg!(target_arch = "arm") {
+        assert_eq!(pid, &json!(std::process::id()));
+    } else {
+        assert!(pid.is_null(), "a desktop preview cannot register its PID on the TV");
+    }
     f.v.reply(beat.0, Reply::Posted(Some((200, json!({ "ok": true, "build": "a" })))));
     assert!(!f.v.restart_for_build);
     f.v.reply(Tag::Beat, Reply::Posted(Some((200, json!({ "ok": true, "build": "b" })))));

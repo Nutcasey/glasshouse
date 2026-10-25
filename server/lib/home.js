@@ -1395,7 +1395,7 @@ function init(opts) {
   wallpapers.init(stateDir);
   recent.init(stateDir, opts.now);
   recentApps.init({ luna: lunaFn });
-  lifecycle.init({ Subscription: opts.Subscription || null, signal: opts.signal, launchFile: opts.launchFile });
+  lifecycle.init({ Subscription: opts.Subscription || null, signal: opts.signal, launchFile: opts.launchFile, procDir: opts.procDir });
   takeover.init({
     luna: lunaFn,
     samrescan: opts.samrescan || null,

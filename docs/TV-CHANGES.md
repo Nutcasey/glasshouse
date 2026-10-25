@@ -72,6 +72,11 @@ Glasshouse Home leaves empty rows out and centres the remaining rows below the c
 
 Glasshouse Home's text and accent colours are saved in `/var/lib/tvweb/home.json` and applied to its view within a few seconds. **Use the default colours** clears the choice.
 
+On native Home, arrow presses hide the Magic Remote pointer and resume
+directional selection; new pointer movement restores it. This changes no
+saved remote setting. The native executable remains optional in source-only
+installs and packages; without it, a takeover fails and restores LG's Home.
+
 While Glasshouse Home and its picture details (off by default) are on and the TV is out of standby, a read-only `videooutput/getStatus` subscription records the last video each app plays for the plate. It starts before the first Home visit and stops when either is switched off or the TV goes into standby. Recorded videos stay in memory until the server restarts. HDMI signal and picture-mode reads change no TV settings.
 
 Back on Glasshouse Home reads the TV's recent-app list and its snapshots.

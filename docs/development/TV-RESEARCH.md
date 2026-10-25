@@ -1024,6 +1024,13 @@ Tried on 25 October 2026 with Glasshouse Home's native view
 - Its `SDL_KeyboardEvent` has 4 bytes more before the key than upstream
   SDL2: state at offset 16, scancode at 20, keycode at 24. The arrows and OK
   arrive as standard scancodes (79 to 82, 40).
+- The SDK's `SDL_webOS.h` defines cursor-show and cursor-hide scancodes 484
+  and 485. On the G3, handling those notifications alone did not restore a
+  pointer explicitly hidden with `SDL_webOSCursorVisibility(false)`.
+  Keeping SDL's cursor image enabled, requesting compositor visibility on
+  arrows and fresh motion, and ignoring stationary motion worked in the
+  physical Magic Remote trial: arrows hid it and resumed selection, and
+  shaking restored it. This transition has not been retried on the G5.
 - Back never reaches the app unless the window sets
   `_WEBOS_ACCESS_POLICY_KEYS_BACK` (SDL hint
   `SDL_WEBOS_ACCESS_POLICY_KEYS_BACK`): `systemUi.js` checks it in

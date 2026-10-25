@@ -1034,7 +1034,13 @@ impl View {
                 self.col.insert(k, -1);
                 self.toggle_sort(k);
             }
-            Some(Hit::Tile(..)) => {
+            Some(Hit::Tile(row, col)) => {
+                if !self.held {
+                    self.row = row;
+                    self.col.insert(self.row_key(), col);
+                    self.bar = -1;
+                    self.apply_focus(false);
+                }
                 if self.arranging {
                     self.pick_up()
                 } else {
@@ -1148,7 +1154,9 @@ impl View {
             return;
         }
         // The process, for the server to hold sam's registration of it.
-        self.api.post(Tag::Beat, "/api/home/beat", json!({ "pid": std::process::id() }));
+        // A desktop preview's PID belongs to another machine, not the TV.
+        let pid = if cfg!(target_arch = "arm") { Some(std::process::id()) } else { None };
+        self.api.post(Tag::Beat, "/api/home/beat", json!({ "pid": pid }));
     }
 
     fn take_wallpapers(&mut self, v: Option<&Value>) {

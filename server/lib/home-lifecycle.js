@@ -62,6 +62,8 @@ function endOrphans() {
 
 function alive(p) {
   try {
+    var argv0 = fs.readFileSync(path.join(procDir, String(p), 'cmdline'), 'utf8').split('\0')[0];
+    if (path.basename(argv0) !== 'glasshouse-home') return false;
     signalFn(p, 0);
     return true;
   } catch (e) {
@@ -88,6 +90,7 @@ function end(why) {
 }
 
 function relaunch(params) {
+  if (!alive(pid)) return end('lost its view');
   try { fs.writeFileSync(launchFile, JSON.stringify(params || {})); } catch (e) {}
   try { signalFn(pid, 'SIGUSR1'); } catch (e) { end('lost its view'); }
 }
@@ -98,7 +101,7 @@ function relaunch(params) {
  * before.
  */
 function view(p) {
-  if (!Subscription || typeof p !== 'number' || p <= 0 || p !== Math.floor(p)) return;
+  if (!Subscription || typeof p !== 'number' || p <= 0 || p !== Math.floor(p) || !alive(p)) return;
   if (p === pid && sub) return;
   stop();
   pid = p;

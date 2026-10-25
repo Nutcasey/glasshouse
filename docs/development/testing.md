@@ -161,6 +161,8 @@ unlisted apps and newer cards, and snapshots forbid caching.
 relaunch passed on as a signal with its parameters, the view ended when the
 registration is lost, the registration ended when the view has gone, and a
 leftover registration ended at start.
+Process-identity checks reject a desktop preview's PID and end a registration
+whose PID has been reused without signalling the unrelated process.
 
 ## Glasshouse Home's native view
 
@@ -170,11 +172,52 @@ each row's Order and no edit lost while it saves or its order loads, a moved
 tile keeping a Last opened row's order as its own, unsaved moves kept when
 Order changes, clicking Order while a tile is held, a failing first catalogue
 opening LG's Home once, Back cancelling a recent apps panel still loading,
-the heartbeat naming the process, and a scrolled tile staying between the
-rows' edges. `scripts/build-home.sh` builds it for the TV; CI does not build
-it yet.
+the heartbeat naming only an on-TV process, a click opening its own tile
+after directional navigation, and a scrolled tile staying between the
+rows' edges. The [Native Home behaviour job](https://github.com/rorygallagher2024/glasshouse/blob/main/.github/workflows/checks.yml#L99-L107)
+compiles and tests the desktop view with SDL2. `scripts/build-home.sh` builds
+the ARM executable for the TV; CI does not cross-compile that executable yet.
+The package build accepts a source-only checkout and includes the native
+executable when one has been built locally.
 
 On a TV, `touch /tmp/glasshouse-home.trace` makes the view write every frame
 and remote key to `/tmp/glasshouse-home.frames`, with each frame's work time,
 for measuring motion; `/tmp/glasshouse-home.log` reports each motion's frame
 rate and dropped frames whether or not it is on.
+
+### Appearance comparison
+
+Captured on 25 October 2026 at 1920 × 1080: main's web view in Chromium and
+the native desktop view, both reading the office G3's live catalogue,
+wallpapers and recent-app snapshots. These are renderer captures, not panel
+photographs or performance measurements. The clock and wallpaper drift are
+sampled at different times. The native arranging banner keeps its state and
+buttons on one line, so its wrapping differs from the web view.
+
+| State | Web view | Native view |
+|---|---|---|
+| Home | ![Web Home](../screenshots/home-web-home.png) | ![Native Home](../screenshots/home-native-home.png) |
+| Arranging | ![Web arranging](../screenshots/home-web-arranging.png) | ![Native arranging](../screenshots/home-native-arranging.png) |
+| Recent apps | ![Web recent apps](../screenshots/home-web-recents.png) | ![Native recent apps](../screenshots/home-native-recents.png) |
+
+The proposal's earlier on-TV trials used identical remote-key scenarios
+(continuous scrolling, individual steps, row changes and recent apps):
+
+| Frame production | G3 web | G3 native | G5 web | G5 native |
+|---|---:|---:|---:|---:|
+| Gaps over 33.4 ms across four scenarios | 66 | 0 | 79 | 0 |
+| Longest gap | 173 ms | 31 ms | 182 ms | 32 ms |
+
+Web timings sample JavaScript animation callbacks; native timings sample
+buffer swaps and exclude idle intervals. They describe frame production,
+not every frame presented by the panel or complete input latency. The saved
+G3 native scrolling trace averages 60.0 fps; its web trace averages 56.8 fps.
+The G5 native scrolling run includes idle pauses and has no comparable fps
+figure. CPU usage recorded during the trials was 9–13 seconds for the web
+view and 0.4–1.6 seconds for the native view per scenario. Browser-process
+sharing prevents a like-for-like memory claim.
+
+On hardware, check pointer → arrows → pointer, stationary motion after an
+arrow, clicking a different tile, and a server-build restart both before
+and after opening a boot preload. Desktop event injection cannot establish
+physical Magic Remote behaviour.

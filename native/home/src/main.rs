@@ -267,6 +267,8 @@ fn main() {
         let mut run_cpu: Vec<f64> = Vec::new();
         let mut run_view: Vec<f64> = Vec::new();
         let mut was_animating = false;
+        let mut pointer_visible = true;
+        let mut pointer_position = None;
         loop {
             let animating = v.animating();
             let mut wait = v.next_timer_ms();
@@ -299,11 +301,31 @@ fn main() {
                     }
                     sdl::SDL_KEYDOWN | sdl::SDL_KEYUP => {
                         let (repeat, sc) = key_fields(&e);
+                        if let Some(visible) = sdl::cursor_key(sc) {
+                            // These are compositor notifications, not requests
+                            // to change its mode again.
+                            if pointer_visible != visible {
+                                log(if visible { "input: pointer" } else { "input: directional" });
+                            }
+                            pointer_visible = visible;
+                            if visible {
+                                pointer_position = None;
+                            }
+                            got = sdl::SDL_PollEvent(&mut e);
+                            continue;
+                        }
                         if e.kind() == sdl::SDL_KEYDOWN {
                             trace(&format!("K {:.1} {}", i18n::now_ms(), sc));
                         }
                         match key_of(sc) {
-                            Some(k) if e.kind() == sdl::SDL_KEYDOWN => v.key_down(k, repeat),
+                            Some(k) if e.kind() == sdl::SDL_KEYDOWN => {
+                                if matches!(k, Key::Up | Key::Down | Key::Left | Key::Right) && pointer_visible {
+                                    pointer_visible = false;
+                                    sdl::cursor_visible(false);
+                                    log("input: directional");
+                                }
+                                v.key_down(k, repeat);
+                            }
                             Some(k) => v.key_up(k),
                             None => {
                                 if e.kind() == sdl::SDL_KEYDOWN {
@@ -314,11 +336,27 @@ fn main() {
                     }
                     sdl::SDL_MOUSEMOTION => {
                         let (x, y) = e.mouse_xy();
-                        let (sx, sy) = stage_point(win, x, y);
-                        v.pointer(sx, sy);
+                        let moved = e.mouse_moved() && pointer_position != Some((x, y));
+                        pointer_position = Some((x, y));
+                        if moved {
+                            // LG does not always send cursor-show again after
+                            // an explicit hide. Genuine motion restores it;
+                            // stationary events cannot steal directional focus.
+                            if !pointer_visible {
+                                pointer_visible = true;
+                                sdl::cursor_visible(true);
+                                log("input: pointer");
+                            }
+                            if pointer_visible {
+                                let (sx, sy) = stage_point(win, x, y);
+                                v.pointer(sx, sy);
+                            }
+                        } else if !pointer_visible && !cfg!(target_arch = "arm") {
+                            sdl::SDL_ShowCursor(0);
+                        }
                     }
                     sdl::SDL_MOUSEBUTTONUP => {
-                        if e.mouse_button() == 1 {
+                        if e.mouse_button() == 1 && (pointer_visible || !cfg!(target_arch = "arm")) {
                             let (x, y) = e.mouse_xy();
                             let (sx, sy) = stage_point(win, x, y);
                             v.click(sx, sy);
@@ -376,7 +414,20 @@ fn main() {
                 // The path sam started, which the server has replaced: /proc/self/exe
                 // names the old file, deleted.
                 let exe = std::env::args().next().unwrap_or_default();
-                let args: Vec<String> = std::env::args().skip(1).collect();
+                let mut args: Vec<String> = std::env::args().skip(1).collect();
+                // A boot preload may already have been opened, or a foreground
+                // launch may now be behind another app. Keep the current state.
+                let launch = args.first().and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok());
+                if let Some(serde_json::Value::Object(mut launch)) = launch {
+                    if hidden {
+                        launch.insert("preload".into(), serde_json::json!("full"));
+                    } else {
+                        launch.remove("preload");
+                    }
+                    args[0] = serde_json::Value::Object(launch).to_string();
+                } else if hidden {
+                    args.insert(0, serde_json::json!({ "preload": "full" }).to_string());
+                }
                 let err = std::os::unix::process::CommandExt::exec(std::process::Command::new(exe).args(args));
                 log(&format!("restart failed: {}", err));
                 v.restart_for_build = false;

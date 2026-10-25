@@ -61,6 +61,7 @@ signals = [];
 
 // The view's heartbeat registers it, acting for LG's Home's id.
 alive[3716] = true;
+proc(3716, ['/usr/palm/applications/com.webos.app.home/glasshouse-home']);
 lifecycle.view(3716);
 assert.strictEqual(subs.length, 1);
 assert.strictEqual(subs[0].uri, 'com.webos.applicationManager/registerNativeApp');
@@ -70,6 +71,14 @@ assert.strictEqual(subs.length, 1, 'a heartbeat from the same view does not regi
 lifecycle.view('3716');
 lifecycle.view(-1);
 assert.strictEqual(subs.length, 1, 'anything but a process id is ignored');
+
+// A preview's PID belongs to a different computer and can name another
+// process on the TV. It must not replace the actual view's registration.
+alive[9000] = true;
+proc(9000, ['/usr/bin/node']);
+lifecycle.view(9000);
+assert.strictEqual(subs.length, 1, 'a process that is not the view is ignored');
+assert.ok(!subs[0].stopped, 'the actual view stays registered');
 
 subs[0].handlers.message({ returnValue: true, message: 'registered' });
 assert.deepEqual(lifecycle.state(), { pid: 3716, registered: true });
@@ -82,6 +91,7 @@ signals = [];
 
 // A new view replaces the registration.
 alive[4000] = true;
+proc(4000, ['/usr/palm/applications/com.webos.app.home/glasshouse-home']);
 lifecycle.view(4000);
 assert.strictEqual(subs.length, 2);
 assert.ok(subs[0].stopped, 'the old registration is stopped');
@@ -97,6 +107,7 @@ signals = [];
 
 // The luna-send ending does the same.
 alive[4100] = true;
+proc(4100, ['/usr/palm/applications/com.webos.app.home/glasshouse-home']);
 lifecycle.view(4100);
 subs[2].handlers.message({ returnValue: true, message: 'registered' });
 subs[2].handlers.close();
@@ -105,18 +116,28 @@ signals = [];
 
 // Refused before it was registered: the view is left as sam started it.
 alive[4200] = true;
+proc(4200, ['/usr/palm/applications/com.webos.app.home/glasshouse-home']);
 lifecycle.view(4200);
 subs[3].handlers.message({ returnValue: false, errorText: 'refused' });
 assert.deepEqual(signals, []);
 
 // A view that has gone takes its registration with it.
 alive[4300] = true;
+proc(4300, ['/usr/palm/applications/com.webos.app.home/glasshouse-home']);
 lifecycle.view(4300);
 subs[4].handlers.message({ returnValue: true, message: 'registered' });
-delete alive[4300];
+fs.writeFileSync(path.join(procDir, '4300', 'cmdline'), '/usr/bin/node\0');
 setTimeout(function () {
-  assert.ok(subs[4].stopped, 'the registration of a view that has gone is stopped');
-  assert.deepEqual(signals, []);
+  assert.ok(subs[4].stopped, 'a reused PID cannot keep the view registered');
+  assert.deepEqual(signals, [], 'the unrelated process that reused its PID is not killed');
+  alive[4400] = true;
+  proc(4400, ['/usr/palm/applications/com.webos.app.home/glasshouse-home']);
+  lifecycle.view(4400);
+  subs[5].handlers.message({ returnValue: true, message: 'registered' });
+  fs.writeFileSync(path.join(procDir, '4400', 'cmdline'), '/usr/bin/node\0');
+  subs[5].handlers.message({ returnValue: true, message: 'relaunch' });
+  assert.ok(subs[5].stopped, 'a relaunch checks identity without waiting for the timer');
+  assert.deepEqual(signals, [], 'a relaunch cannot signal a reused PID');
   lifecycle.stop();
   console.log('All home lifecycle tests passed.');
 }, 2300);

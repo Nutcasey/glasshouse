@@ -65,6 +65,12 @@ builds it for this computer, and `native/home/tools/preview.sh <tv-ip>` runs it
 in a window against a TV's server. Its text goes through the same `t()` keys
 as the dashboards, in `native/home/src/view.rs`.
 
+The executable is optional in `deploy.sh` and the Homebrew Channel package
+while the ARM release build remains separate. Without it, the takeover
+refuses to stage Home and keeps LG's Home available. CI compiles the desktop
+view and runs its Rust tests; building the ARM executable in CI and shipping
+it through self-update remain required before release.
+
 ### Adding new server assets
 
 The deploy script (`server/deploy.sh`) maintains an explicit list of files copied to the TV via SSH (`FILES`). Any new module or asset in `server/` required by the TV must be added to this list. `scripts/check-drift.py` verifies that all files on disk match the deploy manifest.

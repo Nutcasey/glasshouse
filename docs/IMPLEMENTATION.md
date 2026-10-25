@@ -1271,6 +1271,9 @@ web page got for free:
   `SDL_WEBOS_ACCESS_POLICY_KEYS_BACK`).
 - LG's SDL keyboard event carries 4 more bytes before the key than upstream
   SDL2's.
+- Arrow presses hide LG's compositor pointer and resume directional focus.
+  Fresh pointer motion restores it; stationary motion events cannot change
+  focus. SDL's cursor image stays enabled on the TV so LG can restore it.
 - A native app's output goes nowhere; the view logs to
   `/tmp/glasshouse-home.log`.
 - The preload manager starts Home in the background during boot
@@ -1278,7 +1281,12 @@ web page got for free:
   on a G5). A web page stayed hidden; the view starts with its window hidden
   and draws offscreen as its data arrives, and shows itself at the first
   relaunch, so the TV stays on the input it started on and the first Home
-  press is drawn as quickly as later ones.
+  press is drawn as quickly as later ones. A restart for a new server build
+  preserves the window's current visibility rather than its boot argument.
+
+Source-only deployments and packages omit the optional executable. A
+takeover without it fails and restores LG's Home. ARM release packaging and
+self-update delivery of the executable remain prerequisites for release.
 
 `tvweb.js` loads it and `lib/home-picture.js` inside a `try`: where one of
 their files cannot be loaded, the server starts without Glasshouse Home and
@@ -1338,6 +1346,10 @@ window and draws in about 150 ms. When either the view or the registration
 ends, the other is ended too, since a registration with no view behind it
 would leave the Home key with nothing to open, and the server ends any
 registration left from before it started.
+Desktop previews send no process id. Before registering or signalling a
+process, the server checks `/proc/<pid>/cmdline` still names the native view,
+so a preview or a reused process id cannot displace the TV's registration or
+receive the view's signals.
 
 The boot hook (`50-tvweb.sh`) mounts it again about 25 s into a cold start
 (31 to 36 s on a G5), before its other mounts, and stops LG's Home where it has

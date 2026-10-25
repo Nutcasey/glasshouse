@@ -92,6 +92,9 @@ impl Event {
     pub fn mouse_button(&self) -> u8 {
         self.raw[16]
     }
+    pub fn mouse_moved(&self) -> bool {
+        self.i32_at(28) != 0 || self.i32_at(32) != 0
+    }
     // SDL_UserEvent: type, timestamp, windowID, code.
     pub fn user_code(&self) -> i32 {
         self.i32_at(12)
@@ -128,6 +131,31 @@ extern "C" {
     pub fn SDL_GetTicks() -> u32;
     pub fn SDL_ShowCursor(toggle: c_int) -> c_int;
     pub fn SDL_GetCurrentVideoDriver() -> *const c_char;
+    #[cfg(target_arch = "arm")]
+    pub fn SDL_webOSCursorVisibility(visible: c_int) -> c_int;
+}
+
+pub fn cursor_visible(visible: bool) {
+    unsafe {
+        // LG's compositor owns the Magic Remote's pointer mode separately
+        // from SDL's cursor image. Removing that image with SDL_ShowCursor(0)
+        // prevents a shake from bringing it back on the G3 (webOS 9.2.2).
+        #[cfg(target_arch = "arm")]
+        SDL_webOSCursorVisibility(visible as c_int);
+        #[cfg(not(target_arch = "arm"))]
+        SDL_ShowCursor(visible as c_int);
+    }
+}
+
+pub fn cursor_key(scancode: i32) -> Option<bool> {
+    #[cfg(target_arch = "arm")]
+    match scancode {
+        484 => return Some(true),
+        485 => return Some(false),
+        _ => {}
+    }
+    let _ = scancode;
+    None
 }
 
 pub fn error() -> String {
