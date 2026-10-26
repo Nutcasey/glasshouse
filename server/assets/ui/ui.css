@@ -558,6 +558,9 @@ html.nav-hidden body.nav-open{overflow:hidden}
 .toast-form input::placeholder{color:var(--w60)}
 .toast-form button{flex-shrink:0;padding:0 22px;min-height:48px}
 #port-input{flex:0 0 84px;width:84px;font-variant-numeric:tabular-nums}
+#ss-poweroff-form{max-width:340px}
+#ss-poweroff{font-variant-numeric:tabular-nums}
+#ss-poweroff-desc{margin-top:8px}
 button{
   font-family:'Manrope';font-weight:500;font-size:14px;letter-spacing:.08em;text-transform:uppercase;
   color:var(--w80);background:transparent;border:1px solid var(--edge);
@@ -693,26 +696,33 @@ button.key-hit{background:var(--w10)}
 /* The long lists stay one column - a consent row is a sentence, not a tile -
    but capped so the pill stays near what it describes on a wide screen. */
 .priv.panel{max-width:1180px}
-.ss-list{display:grid;gap:14px;grid-template-columns:1fr;margin-top:22px;max-width:760px}
-@media(min-width:820px){.ss-list{grid-template-columns:1fr 1fr}}
-/* A card is the control, not a container with a button in it: the whole thing
+/* One list that scrolls, a row per screen saver, so more fit without the tab
+   growing: the name, and what it shows under it. */
+.ss-list{position:relative;display:flex;flex-direction:column;margin-top:22px;max-width:760px;
+         max-height:clamp(320px,60vh,620px);overflow-y:auto;overscroll-behavior:contain;
+         border:1px solid var(--w12);border-radius:3px}
+/* A row is the control, not a container with a button in it: the whole thing
    is the click target, so there is nothing to hunt for. */
-.ss-card{display:block;width:100%;text-align:left;background:transparent;cursor:pointer;
-         border:1px solid var(--w12);border-radius:3px;padding:18px 20px;min-height:0;
+.ss-card{display:block;flex:none;
+         width:100%;text-align:left;background:transparent;cursor:pointer;
+         border:0;border-bottom:1px solid var(--w12);border-radius:0;padding:12px 16px;min-height:0;
          color:inherit;font-family:inherit;
-         /* The global button voice is an uppercase pill. These are cards. */
+         /* The global button voice is an uppercase pill. These are rows. */
          text-transform:none;letter-spacing:normal;font-weight:400}
-.ss-card:hover:not([disabled]):not(.on){border-color:var(--w25);background:rgba(var(--fg),.04)}
+.ss-card:last-child{border-bottom:0}
+.ss-card:hover:not([disabled]):not(.on){background:rgba(var(--fg),.04)}
 .ss-card[disabled]{cursor:default;opacity:.45}
 /* The one in use is marked, not dimmed: it is the answer to what is running,
    so it should read as the strongest thing on the panel. */
-.ss-card.on,.ss-card.on:hover{background:transparent;color:inherit;font-weight:400;
-         border-color:var(--green);cursor:default;opacity:1}
-.ss-name{font-family:'Manrope',sans-serif;font-weight:600;font-size:14px;letter-spacing:.02em;
-         display:flex;align-items:center;justify-content:space-between;gap:12px}
-.ss-desc{font-size:14px;color:var(--w60);margin-top:7px;line-height:1.45;max-width:46ch}
+.ss-card.on,.ss-card.on:hover{background:rgba(var(--fg),.03);color:inherit;font-weight:400;
+         box-shadow:inset 3px 0 0 var(--green);cursor:default;opacity:1}
+.ss-name{font-family:'Manrope',sans-serif;font-weight:600;font-size:14px;letter-spacing:.02em}
+.ss-desc{font-size:14px;color:var(--w60);margin-top:3px;line-height:1.45;max-width:60ch}
+.ss-meta{font-size:12px;color:var(--w60);margin-top:4px;letter-spacing:.02em}
+.ss-meta.bad{color:var(--red)}
+.ss-meta.warn{color:var(--w80)}
 .ss-card.on .ss-name{color:var(--green)}
-.ss-tag{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--green)}
+.ss-tag{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--green);margin-left:10px}
 .ss-level-row{margin-top:22px;max-width:760px}
 /* The choice on the left, and what to do with it - brightness, starting it,
    the firmware note - beside it on a wide screen rather than below the list. */
@@ -797,8 +807,13 @@ span.pill,span.pill.good,span.pill.warn,span.pill.bad,span.pill.idle{border-colo
 span.pill{min-width:0;padding:0;gap:8px}
 span.pill.good::before,span.pill.warn::before,span.pill.bad::before{
   content:'';width:7px;height:7px;border-radius:50%;background:currentColor;flex:none}
-.pill-sel{font:500 12.5px 'Manrope';letter-spacing:.08em;height:32px;min-width:116px;padding:0 8px;
-          color:var(--w100);background:transparent;border:1px solid var(--edge);border-radius:2px;cursor:pointer}
+/* The arrow is drawn here, in the text's colour, with room to its right: the
+   browser's own sat against the right edge. */
+.pill-sel{font:500 12.5px 'Manrope';letter-spacing:.08em;height:32px;min-width:116px;padding:0 30px 0 10px;
+          color:var(--w100);background-color:transparent;border:1px solid var(--edge);border-radius:2px;cursor:pointer;
+          -webkit-appearance:none;appearance:none;
+          background-image:linear-gradient(45deg,transparent 50%,currentColor 50%),linear-gradient(135deg,currentColor 50%,transparent 50%);
+          background-position:calc(100% - 16px) 55%,calc(100% - 11px) 55%;background-size:5px 5px;background-repeat:no-repeat}
 .pill-sel option{color:initial}
 /* A settable flag keeps the pill vocabulary of the read-only rows: the row
    should read the same, it just answers to a click. */
@@ -924,6 +939,8 @@ button.pill.flash.idle[disabled]:hover{color:var(--w60);border-color:var(--edge)
 .pv-note{font-size:14px;color:var(--w60);border-left:2px solid var(--w25);padding:10px 14px;margin:16px 0;max-width:64ch}
 /* A note that warns: the yellow accent of the OLED and service menu warnings. */
 .pv-note.warn{border-left-color:var(--cand)}
+/* Links in a note read as part of it, not the browser's blue. */
+.pv-note a{color:var(--w90);text-underline-offset:3px}
 .cfg-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(232px,100%),1fr));
   gap:18px 20px;max-width:840px;margin-top:4px}
 .cfg-f{display:flex;flex-direction:column;gap:7px;min-width:0}
@@ -1104,6 +1121,9 @@ button.pill.flash.idle[disabled]:hover{color:var(--w60);border-color:var(--edge)
 @media (max-width:620px){.src{text-align:left}.hero{gap:22px}}
 footer{margin-top:38px;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--w60);display:flex;justify-content:flex-end;gap:16px;flex-wrap:wrap}
 /* The separator rides on the link so both appear only once a version is known. */
+/* Which TV this is, for a household with several, as "name · version". */
+#tv-name{text-transform:none;margin-left:.55em}
+#tv-name::after{content:'·';margin-left:.55em}
 #version{text-transform:none;color:inherit;text-decoration:none}
 #version{margin-left:.55em}
 #version:hover{color:var(--w80);text-decoration:underline}
@@ -1167,6 +1187,7 @@ footer{margin-top:38px;font-size:13px;letter-spacing:.08em;text-transform:upperc
   max-width:62ch;
 }
 .prot-status{flex-shrink:0}
+.prot-main .pv-note{margin:10px 0 0}
 .timer-ctl{display:flex;gap:8px;align-items:center}
 .timer-ctl input[type=time]{min-width:0;width:112px}
 /* The days take the row's full width, under the title and the time, so all
@@ -1423,14 +1444,24 @@ button.tools-jump:active{background:var(--w80)}
 #home-rows{margin-top:14px}
 .home-row{border-top:1px solid var(--edge);padding:10px 0}
 .home-row summary{display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;list-style:none;padding:6px 0}
-.home-row-move{display:flex;gap:6px}
+/* Folds as the dashboard's other sections do: a plus that turns to a minus. */
+.home-row summary::-webkit-details-marker{display:none}
+.home-row summary::after{content:'+';font-size:17px;line-height:1;color:var(--w60);width:12px;text-align:center;flex:none}
+.home-row[open] summary::after{content:'\2212'}
+.home-row summary:hover::after{color:var(--w90)}
+/* Pushed right, beside the fold's plus, rather than spread to the middle. */
+.home-row-move{display:flex;gap:6px;margin-left:auto}
 .home-tile .prot-title{display:flex;align-items:center;gap:10px}
 .home-tile .prot-status{display:flex;gap:6px;align-items:center}
 .home-tile .rk-ico{width:28px;height:28px;border-radius:6px}
 .home-hidden .prot-main{opacity:.45}
 .home-tile .home-move{min-width:0;width:36px;padding:0}
-.home-ch-add{margin-top:14px;padding-top:12px;border-top:1px dashed var(--edge)}
-.home-ch-filter{margin:12px 0;padding:8px 10px;width:100%;max-width:320px;background:transparent;color:inherit;border:1px solid var(--edge);border-radius:6px}
+.home-ch-add{margin-top:14px;border-top:1px dashed var(--edge)}
+/* The dashboard's own field, as the Apps tab's search is. */
+.home-ch-filter{margin:4px 0 12px;width:100%;max-width:320px;font:400 14px 'Manrope';letter-spacing:.03em;
+  color:var(--w100);background:transparent;border:1px solid var(--edge);border-radius:0;padding:10px 12px;outline:none}
+.home-ch-filter:focus{border-color:var(--w100)}
+.home-ch-filter::placeholder{color:var(--w60)}
 .home-ch-list{max-height:420px;overflow:auto}
 .home-walls{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-top:12px}
 .home-wall{margin:0}

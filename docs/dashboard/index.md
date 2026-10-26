@@ -84,6 +84,8 @@ For companion applications, see [Glasshouse apps](../apps/tv-app.md), including 
 
 The page works with no internet access, and has a dark/light mode toggle (via the UI or `/?theme=light`).
 
+The footer names the TV, by its DNS name where the home network's DNS has one or else by its address, beside the Glasshouse version.
+
 Use the search button at the top of the sidebar (or press `/` or `Ctrl`/`Cmd` + `K`)
 to find sections, settings, controls, and installed apps. Useful destinations can be pinned
 with the star beside a search result, keeping shortcuts to them in the sidebar.

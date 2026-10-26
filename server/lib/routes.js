@@ -9,6 +9,7 @@ var crypto = require('crypto');
 var http = require('http');
 var say = require('./say');
 var localAddress4 = require('./util').localAddress4;
+var localAddress6 = require('./util').localAddress6;
 var listenDualStack = require('./util').listenDualStack;
 var hostPort = require('./util').hostPort;
 var sendIconFile = require('./iconserver').sendIconFile;
@@ -77,6 +78,8 @@ var remoteKeysModule = null;
 var homeScreenModule = null;
 /** @type {typeof import('./home')} */
 var homeModule = null;
+/** @type {typeof import('./clock')} */
+var clockModule = null;
 /** @type {typeof import('./home-picture')} */
 var homePictureModule = null;
 /** @type {typeof import('./screensavers')} */
@@ -112,6 +115,7 @@ var assetDirsList = [];
 var lunaFn = null;
 var getMqttStatusFn = null;
 var piccapStatusFn = function (cb) { cb(null); };
+var huesyncStatusFn = function (cb) { cb(null); };
 var appsChangedFn = function () {};
 var versionStr = '';
 // With the commit of a git build: what a person reads, and what tells one
@@ -340,6 +344,11 @@ function prometheusEnabled() {
   return !!(config.prometheus && config.prometheus.enabled === true);
 }
 
+// Whether the clocks draw 12-hour time, as the TV's own setting has it (lib/clock).
+function clockHour12() {
+  return !!(clockModule && clockModule.hour12());
+}
+
 function handoffPort() { return (config.port || 8080) + 1; }
 
 function stopHandoff() {
@@ -399,16 +408,21 @@ function setupState(isDemo) {
   if (isDemo && simulatedSetupState.network !== null && simulatedSetupState.network !== undefined) {
     open = simulatedSetupState.network;
   }
+  var ip4 = localAddress4(), ip6 = localAddress6();
+  var name = telemetryModule ? telemetryModule.localName(ip4, ip6) : null;
+  // The TV app shows the address and the name each with the port, as a
+  // browser on a phone would open them.
   var st = {
     ok: true,
     needed: setupPending(),
     writable: config.allowControl,
     network: open,
     token: !!config.token,
-    address: localAddress4() ? hostPort(localAddress4(), config.port) : (isDemo ? hostPort('192.168.1.131', config.port || 8080) : null),
-    hostname: telemetryModule ? telemetryModule.localHostname(localAddress4()) : null,
+    address: ip4 ? hostPort(ip4, config.port) : (isDemo ? hostPort('192.168.1.131', config.port || 8080) : null),
+    address6: ip6 ? hostPort(ip6, config.port) : null,
+    hostname: name ? hostPort(name, config.port) : null,
     homeAssistant: (isDemo && simulatedSetupState.homeAssistant) ? simulatedSetupState.homeAssistant : { configured: !!(m.enabled && m.host), state: mqttStat.state },
-    handoff: HANDOFF.server ? handoffUrl() : (isDemo ? 'http://' + hostPort(localAddress4() || '192.168.1.131', config.port || 8080) + '/?c=demo' : null)
+    handoff: HANDOFF.server ? handoffUrl() : (isDemo ? 'http://' + hostPort(ip4 || '192.168.1.131', config.port || 8080) + '/?c=demo' : null)
   };
   if (isDemo) {
     st.demo = true;
@@ -611,6 +625,7 @@ function updateSummary() {
   s.isWebos10 = !!(screensaversModule && screensaversModule.experimental && screensaversModule.experimental());
   s.homeLayout = homeScreenModule ? homeScreenModule.experimental() : null;
   s.prometheusEnabled = prometheusEnabled();
+  s.clockHour12 = clockHour12();
   s.watchHistory = historyModule ? historyModule.status() : null;
   s.backupDaily = backupModule ? backupModule.dailyStatus() : null;
   s.ntp = ntpModule ? ntpModule.getStatus() : null;
@@ -838,6 +853,8 @@ function handleUpload(req, res) {
       // A stream destroyed before its file has opened creates the file
       // afterwards, so it is removed again once the stream has closed.
       ws.once('close', function () { fs.unlink(file, function () {}); });
+      // Node 0.12's destroy() leaves a pending open's descriptor alive.
+      ws.once('open', function () { ws.close(); });
       try { ws.destroy(); } catch (e) {}
       installerModule.releaseUpload(file);
       return true;
@@ -1056,6 +1073,8 @@ function handleHomeRoute(req, res, u, pathname) {
       var wants = String((u.query && u.query['with']) || '').split(',');
       return homeModule.status(function (st) {
         st.writable = !!config.allowControl || fromTV(req);
+        // What the Home pane draws its colour previews' clock as.
+        st.clockHour12 = clockHour12();
         if (wants.indexOf('catalogue') === -1) return reply(st);
         homeModule.catalogue(function (c) {
           st.catalogue = c;
@@ -1126,7 +1145,10 @@ function handleHomeRoute(req, res, u, pathname) {
     if (pathname === '/api/home/beat') {
       if (!postGuard(req, res, 'application/json', false)) return;
       req.resume();
-      return reply(homeModule.beat());
+      // The hour cycle the view's clock draws, which follows the TV's setting.
+      var beatBody = homeModule.beat();
+      beatBody.clockHour12 = clockHour12();
+      return reply(beatBody);
     }
     return readJsonBody(req, res, function (body) {
       if (pathname === '/api/home/layout') return homeModule.setLayout(body, reply);
@@ -1135,6 +1157,8 @@ function handleHomeRoute(req, res, u, pathname) {
       if (pathname === '/api/home/enable') return homeModule.enable(reply);
       if (pathname === '/api/home/disable') return homeModule.disable(reply);
       if (pathname === '/api/home/open') return homeModule.open(body, reply);
+      if (pathname === '/api/home/search') return homeModule.search.find(body && body.query, reply);
+      if (pathname === '/api/home/search/open') return homeModule.search.open(body, reply);
       if (pathname === '/api/home/recents') {
         var recentApps = homeModule.recentApps, recentId = body && typeof body.id === 'string' ? body.id : '';
         if (body && body.action === 'open') return recentApps.open(recentId, reply);
@@ -1224,7 +1248,9 @@ function handleRequest(req, res) {
       ok: true, allowControl: config.allowControl, allowPower: config.allowPower,
       // Bare: the Homebrew Channel app's launch page compares it with its own.
       origin: lanOrigin(), version: versionStr,
-      fromHomebrewChannel: fromHomebrewChannel(), setupNeeded: setupPending()
+      fromHomebrewChannel: fromHomebrewChannel(), setupNeeded: setupPending(),
+      // The hour cycle the dashboard's own clock draws.
+      clockHour12: clockHour12()
     };
     // The token goes into the TV's QR codes, so a phone that scans one can use
     // what it opens. Only to the TV itself: whoever sees the screen holds the
@@ -1760,19 +1786,24 @@ function handleRequest(req, res) {
 
   if (pathname === '/api/stats') {
     return telemetryModule.collectStats(function (s) {
-      // PicCap's capture, where it is installed, for the Advanced tab.
+      // PicCap's capture and Hue Sync's streaming, where installed, for the
+      // Advanced tab.
       piccapStatusFn(function (pc) {
-        if (!pc && u.query.with !== 'settings') return send(res, 200, JSON.stringify(s));
-        // Copied, since s is telemetry's cache.
-        var copy = {};
-        for (var k in s) copy[k] = s[k];
-        if (pc) copy.piccapCapture = pc;
-        if (u.query.with !== 'settings') return send(res, 200, JSON.stringify(copy));
-        // The TV dashboard's System page, which reads one endpoint, also lists
-        // the sound and SIMPLINK settings.
-        lgSettingsModule.collect(['sound', 'hdmi', 'devices'], function (ls) {
-          copy.lgSettings = ls.rows;
-          send(res, 200, JSON.stringify(copy));
+        huesyncStatusFn(function (hs) {
+          if (!pc && !hs && !clockModule && u.query.with !== 'settings') return send(res, 200, JSON.stringify(s));
+          // Copied, since s is telemetry's cache.
+          var copy = {};
+          for (var k in s) copy[k] = s[k];
+          if (clockModule) copy.clockHour12 = clockHour12();
+          if (pc) copy.piccapCapture = pc;
+          if (hs) copy.huesyncStreaming = hs;
+          if (u.query.with !== 'settings') return send(res, 200, JSON.stringify(copy));
+          // The TV dashboard's System page, which reads one endpoint, also
+          // lists the sound and SIMPLINK settings.
+          lgSettingsModule.collect(['sound', 'hdmi', 'devices'], function (ls) {
+            copy.lgSettings = ls.rows;
+            send(res, 200, JSON.stringify(copy));
+          });
         });
       });
     });
@@ -1940,6 +1971,7 @@ function init(opts) {
   if (opts.remoteKeys) remoteKeysModule = opts.remoteKeys;
   if (opts.homeScreen) homeScreenModule = opts.homeScreen;
   if (opts.home) homeModule = opts.home;
+  if (opts.clock) clockModule = opts.clock;
   if (opts.homePicture) homePictureModule = opts.homePicture;
   if (opts.screensavers) screensaversModule = opts.screensavers;
   if (opts.updater) updaterModule = opts.updater;
@@ -1947,6 +1979,7 @@ function init(opts) {
   if (opts.tvApp) tvAppFn = opts.tvApp;
   if (opts.restartSelf) restartSelfFn = opts.restartSelf;
   if (opts.piccapStatus) piccapStatusFn = opts.piccapStatus;
+  if (opts.huesyncStatus) huesyncStatusFn = opts.huesyncStatus;
   if (opts.repo) repoModule = opts.repo;
   if (opts.installer) installerModule = opts.installer;
   if (opts.prometheus) prometheusModule = opts.prometheus;
