@@ -1387,6 +1387,24 @@ Quick Start+ on, Always Ready on, `homeAutoLaunch` `on`
 - **Switched on by Always Ready** the power-on reason is `alwaysOn`, which is
   not in `fullHomeBootingPowerOnReasons`.
 
+## What the TV opens as it starts (QNED72B6B, webOS 11.1.0)
+
+Measured on 26 October 2026 on a 50QNED72B6B (43.11.85), Quick Start+ off.
+
+- **bootd put Live TV in front at 22 s** (`'com.webos.app.livetv' is
+  foreground`), with `general.homeAutoLaunch` `off` and the power-on reason
+  `remoteKey`.
+- **The boot hook ran 41 s in**, after `rest-boot-done` at 39.6 s, and had
+  Glasshouse Home mounted 4 to 9 s later.
+- **LG's Home's id is reported in front once the hook has stopped it.** At
+  44 s, while the hook had sam reread the mounted app, bootd logged `'com.webos.app.home'
+  is foreground`, and `getForegroundAppInfo` gave `com.webos.app.home`, with
+  Live TV still on screen and nothing of Home drawn. A check that the input
+  bootd started on is still in front then opens nothing. Launching
+  `com.webos.app.home` from there brought Glasshouse Home to the front.
+- **With Quick Start+ on**, a wake by the remote from Active Standby or
+  Suspend had Glasshouse Home in front with no Live TV before it.
+
 ## Muting and pausing (webOS 5.6.2, CX)
 
 - `com.webos.audio/setMuted` only changes audiod's own status: the TV keeps
