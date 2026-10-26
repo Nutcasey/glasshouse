@@ -307,7 +307,9 @@ function status(cb, force) {
   ask('arc', 'com.webos.service.arccontroller/getARCState', {}, 3000);
   ask('edid', 'com.webos.service.arccontroller/getARCEDIDInfo', {}, 3000);
   ask('devices', 'com.webos.service.eim/getAllInputStatus', {}, 10000);
-  ask('settings', 'com.webos.service.settings/getSystemSettings', { category: 'sound', keys: ['soundOutput', 'soundOutputDigital', 'eArcSupport', 'inputAudioFormatHDMI1', 'inputAudioFormatHDMI2', 'inputAudioFormatHDMI3', 'inputAudioFormatHDMI4'] }, 3000);
+  // The whole category, as lgsettings asks: webOS 4.4 answers nothing when a
+  // named key it lacks, such as eArcSupport, is in the list.
+  ask('settings', 'com.webos.service.settings/getSystemSettings', { category: 'sound' }, 3000);
   ask('input', 'com.webos.service.audio/tv/getAudioInputProperty', {}, 3000);
   inspectDts(function (value) { decoder = value; done(); });
   if (receiverMap) receiverMap(function (map) { replies.receiverMap = map; done(); });
