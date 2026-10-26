@@ -15,9 +15,14 @@ only. Pass Through and Bitstream request encoded audio; PCM requests decoded
 audio. As in LG's menu, only the input on screen can have its audio format
 changed.
 
-## What reaches the receiver
+## Soundbar and receiver
 
 ![G3 audio declarations](../screenshots/audio-g3-formats.png)
+
+Whether a soundbar or receiver is connected over HDMI ARC or eARC, and which
+audio formats the TV and the receiver say they support: useful when Dolby Atmos
+or DTS doesn't come through. On the web tab it is folded under Sound; the TV
+app lists it below Sound.
 
 The audio coming in, where the TV sends it, and the return channel it has
 negotiated with the receiver (ARC, eARC or none). The negotiated link is

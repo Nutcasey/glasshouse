@@ -1517,7 +1517,7 @@ function audioRows(d) {
   r.push(head(t('adv.sound', 'Sound')));
   ls.forEach(function (g) { if (g.section === 'sound') r.push(lgRow(g)); });
   ls.forEach(function (g) { if (g.column === 'audioFormat') r.push(lgRow(g)); });
-  r.push(head(t('audio.pathTitle', 'What reaches the receiver')));
+  r.push(head(t('audio.pathTitle', 'Soundbar and receiver')));
   var unknown = t('audio.unknown', 'Unknown'), receiver = d.receiver;
   var dts = null;
   d.tv.formats.forEach(function (f) { if (f.id === 'dts') dts = f; });
@@ -1534,7 +1534,7 @@ function audioRows(d) {
   r.push({ label: t('audio.receiverNow', 'Return channel'), value: receiver.link === 'inactive'
       ? t('audio.linkInactive', 'No active ARC link') : receiver.link === 'unknown' ? t('audio.linkUnknown', 'Link unknown') : receiver.link,
     sub: receiver.name || '', hint: t('tv.audio.linkHint', 'The negotiated link is separate from the eARC setting. Standard DTS can use ARC; DTS-HD needs eARC. Receiver capability declarations do not prove reception.') });
-  r.push(head(t('audio.tableCaption', 'HDMI and receiver declarations')));
+  r.push(head(t('audio.tableCaption', 'Supported formats')));
   d.tv.formats.forEach(function (f) {
     r.push({ label: f.name, value: audioDeclaration(f.advertised),
       sub: t('tv.audio.receiverFormat', 'Receiver: {format}', { format: audioDeclaration(f.receiver) }),

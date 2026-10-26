@@ -518,7 +518,8 @@
   <div class="pv-sec" id="audio-sound-head" data-t="adv.sound">Sound</div>
   <div class="prot-table" id="audio-settings" data-reload="loadAudio"></div>
 
-  <div class="pv-sec adv-sec" data-t="audio.pathTitle">What reaches the receiver</div>
+  <details class="pv-d audio-more" id="audio-more">
+  <summary><span class="audio-fold"><span data-t="audio.pathTitle">Soundbar and receiver</span><span class="pv-sub" data-t="audio.pathDesc">Whether a soundbar or receiver is connected over HDMI ARC or eARC, and which audio formats the TV and the receiver say they support. Useful when Dolby Atmos or DTS doesn’t come through.</span></span></summary>
   <div class="audio-head">
     <div><div class="prot-title" id="audio-summary" role="status"><span data-t="audio.loading">Reading audio capabilities…</span></div><div class="prot-desc" id="audio-identity"></div></div>
     <button type="button" class="pill idle" id="audio-refresh" onclick="loadAudio()" data-t="audio.refresh">Refresh</button>
@@ -528,7 +529,7 @@
     <ol class="audio-path" id="audio-path"></ol>
     <div class="audio-formats-wrap">
       <table class="audio-formats">
-        <caption class="sub" data-t="audio.tableCaption">HDMI and receiver declarations</caption>
+        <caption class="sub" data-t="audio.tableCaption">Supported formats</caption>
         <thead><tr><th scope="col" data-t="audio.format">Format</th><th scope="col" data-t="audio.tvAdvertises">TV advertises</th><th scope="col" data-t="audio.receiverAdvertises">Receiver advertises</th></tr></thead>
         <tbody id="audio-formats"></tbody>
       </table>
@@ -538,6 +539,7 @@
 
     <details class="pv-d"><summary data-t="audio.playbackTitle">TV playback declarations</summary><p class="pv-sub" data-t="audio.playbackDesc">Formats listed by LG’s media configuration, with their declared channel limits. These describe playback resources, not what reaches an amp.</p><div class="audio-playback" id="audio-playback"></div></details>
   </div>
+  </details>
 </section>
 
 <section class="priv panel" id="advpane" role="tabpanel" hidden>
