@@ -1,6 +1,6 @@
 # Remote Button Events
 
-Capture presses of the four colored buttons (**Red**, **Green**, **Yellow**, and **Blue**) on your LG Magic Remote or IR remote to trigger automations in Home Assistant.
+Capture presses of the four colored buttons (**Red**, **Green**, **Yellow**, and **Blue**) and the streaming buttons (**Netflix**, **Prime Video**, **Disney+**, **LG Channels**, **Rakuten TV** and **Alexa**) on an LG Magic Remote or IR remote to trigger automations in Home Assistant.
 
 ---
 
@@ -9,6 +9,8 @@ Capture presses of the four colored buttons (**Red**, **Green**, **Yellow**, and
 Most LG remotes include dedicated colored buttons (traditionally used for teletext or HbbTV interactive services). This feature listens directly to input events from the remote control on webOS and publishes each press to Home Assistant as an [Event entity](https://www.home-assistant.io/integrations/event/).
 
 Because it is exposed as an `event` entity rather than a `sensor`, every press fires an event in Home Assistant—even if you press the same button multiple times in succession.
+
+A streaming button still opens its app as LG set it. To use one for an automation only, set it to **None** under [Remote keys](dashboard/apps.md#remote-keys) on the Apps tab: the press then opens nothing on the TV and still reaches Home Assistant. Which streaming buttons a remote has depends on the model and region. They have been tried on a C4 with webOS 10.3.1; the Google Assistant button is not reported.
 
 <div style="text-align: center; margin: 1.5rem 0;">
   <iframe width="315" height="560" src="https://www.youtube.com/embed/G1o166aweb0" title="Remote button events demonstration" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen style="max-width: 100%; border-radius: 8px;"></iframe>
@@ -26,7 +28,7 @@ Because it is exposed as an `event` entity rather than a `sensor`, every press f
 
 | Entity | Type | Event Types | Topic |
 |---|---|---|---|
-| `event.lg_tv_remote_button` | `event` | `red`, `green`, `yellow`, `blue` | `lgtv/events/button` |
+| `event.lg_tv_remote_button` | `event` | `red`, `green`, `yellow`, `blue`, `netflix`, `amazon` (Prime Video), `disneyplus`, `lgchannels`, `rakutentv`, `alexa` | `lgtv/events/button` |
 
 When a button is pressed, the server publishes a JSON payload to the event topic:
 
@@ -44,10 +46,11 @@ When a button is pressed, the server publishes a JSON payload to the event topic
 ### Using the Home Assistant Automation UI
 
 1. Go to **Settings** → **Automations & Scenes** → **Create Automation**.
-2. Under **When** (Triggers), choose **Entity** → **State**.
-3. Select entity **Remote Button** (`event.lg_tv_remote_button`).
-4. In the **Event type** field, enter the color: `red`, `green`, `yellow`, or `blue`.
-5. Under **Then do** (Actions), add any action you want (e.g. toggle lights, run a script, set a scene).
+2. Under **When** (Triggers), choose **Entity** → **State**, select entity **Remote Button** (`event.lg_tv_remote_button`), and leave the attribute and the from and to states empty, so every press triggers it.
+3. Under **And if** (Conditions), add **Template** with `{{ trigger.to_state.attributes.event_type == 'red' }}`, using the button wanted: a color (`red`, `green`, `yellow`, `blue`) or a streaming button (`netflix`, `amazon`, `disneyplus`, `lgchannels`, `rakutentv`, `alexa`).
+4. Under **Then do** (Actions), add any action you want (e.g. toggle lights, run a script, set a scene).
+
+The button is checked in a condition rather than in the trigger's **Attribute** and **To** fields: a trigger on the attribute fires only when it changes, so pressing the same button twice in a row would run the automation once.
 
 ---
 
@@ -67,8 +70,9 @@ trigger:
     not_to:
       - unknown
       - unavailable
-    attribute: event_type
-    to: "red"
+condition:
+  - condition: template
+    value_template: "{{ trigger.to_state.attributes.event_type == 'red' }}"
 action:
   - action: light.toggle
     target:
@@ -90,8 +94,9 @@ trigger:
     not_to:
       - unknown
       - unavailable
-    attribute: event_type
-    to: "blue"
+condition:
+  - condition: template
+    value_template: "{{ trigger.to_state.attributes.event_type == 'blue' }}"
 action:
   - action: scene.turn_on
     target:
@@ -180,7 +185,20 @@ trigger:
       - unavailable
 ```
 
-### 2. Improving Responsiveness (`mode: restart`)
+### 2. Every Button Fires the Same Entity
+
+The colored buttons and the streaming buttons (Netflix, Prime Video and the rest) all fire `event.lg_tv_remote_button`. An automation triggered by every press, such as one that sets a light to the color pressed, also runs for a streaming button, so it needs a condition naming the buttons it is for:
+
+```yaml
+condition:
+  - condition: template
+    value_template: >-
+      {{ trigger.to_state.attributes.event_type in ['red', 'green', 'yellow', 'blue'] }}
+```
+
+The examples above each name their button, so they are not affected.
+
+### 3. Improving Responsiveness (`mode: restart`)
 Home Assistant automations default to `mode: single`. If you press Red and then quickly press Green while the network call for Red is still in flight (e.g. communicating with smart bulbs over Wi-Fi), Home Assistant silently drops the Green button press.
 
 Always set **`mode: restart`** at the bottom of remote button automations so that subsequent button presses immediately interrupt any in-flight actions and execute the new command:
@@ -191,7 +209,7 @@ mode: restart
 
 For smart lights (such as LIFX or Philips Hue), also specify `transition: 0` in the `light.turn_on` action data so colors and brightness snap instantly rather than slowly fading.
 
-### 3. Controlling from Multiple LG TVs
+### 4. Controlling from Multiple LG TVs
 If you have multiple LG TVs running Glasshouse (e.g. an OLED B8 and an OLED C2), you can list all their remote event entities under a single trigger:
 
 ```yaml

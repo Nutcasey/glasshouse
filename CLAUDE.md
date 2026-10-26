@@ -49,7 +49,8 @@ use modern JavaScript.
   (Glasshouse Home, a home screen in place of LG's), `lgsettings` (LG's own settings as
   rows), `game`, `apps` (tiles, uninstall, saved pages), `installer` and
   `repo` (installing .ipk packages, the Homebrew Channel catalog),
-  `services` (background services), `screensavers`, `updater` and `fetch`
+  `services` (background services), `screensavers`, `idlesaver` (lifting
+  panel care's hold on LG's idle screen saver), `updater` and `fetch`
   (self-update over curl or wget), `piccap`, `say` (server-side strings),
   `names` (raw TV values as display strings and Prometheus labels),
   `util` (small shared helpers).
@@ -59,7 +60,9 @@ use modern JavaScript.
   the TV app shows. `server/assets/dashboard-app/` is the TV app itself.
   `server/assets/home.html` and `server/assets/home-app/` are Glasshouse
   Home's view and its app.
-- `server/assets/i18n/` - translations. `server/assets/screensavers/` - QML.
+- `server/assets/i18n/` - translations. `server/assets/screensavers/` - the
+  screen savers, a folder each with a `saver.json`. `server/screensavers/` is
+  installed into the TV's folder for added ones, as an example of one.
 - `server/tvwebctl`, `server/50-tvweb.sh` - start, stop and watchdog on the TV,
   and the boot hook. `server/deploy.sh` installs over ssh; its `FILES` list
   must name every file the server needs.

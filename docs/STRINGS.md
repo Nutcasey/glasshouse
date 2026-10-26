@@ -23,8 +23,9 @@ An attribute takes `data-t-` and its name, with the English in the attribute:
 
 `title`, `aria-label` and `placeholder` are covered.
 
-In the page's script, call `t()` with a literal key and literal English. Values
-go in through named placeholders:
+In the page's script, call `t()` with a literal key and literal English, one
+literal however long rather than pieces joined with `+`. Values go in through
+named placeholders:
 
 ```js
 t('server.install', 'Install v{version}', { version: v })
@@ -66,6 +67,9 @@ error: msg('srv.update.busy', 'an update is already running')
 error: msg('srv.saver.stageFailed', 'could not stage the screen saver: {error}', { error: e.message })
 ```
 
+The key and the English follow the rules for `t()`: both literal, the English
+one literal rather than pieces joined with `+`.
+
 `msg()` returns the English, so the server, Home Assistant, MQTT and the log
 all carry on in English. When a page is in another language it says so on its
 requests, and the server swaps the messages in its answer for their
@@ -90,8 +94,16 @@ the check.
    writes every key with its English as `from` and an empty `text`.
 2. Fill in `text`, keeping each `{placeholder}` as it is. An entry left out, or
    left empty, shows in English.
-3. Add the two-letter code to `LANGS` in `server/assets/i18n.js`, and the file
-   to `FILES` in `server/deploy.sh`.
+3. Add the two-letter code to `LANGS` in `server/assets/i18n.js`, the
+   language's name in its own words to `NAMES` there, and the file to `FILES`
+   in `server/deploy.sh`. The Language list in the sidebar's Preferences is
+   built from `LANGS` and `NAMES`.
+4. A language translated only in part goes in `PARTIAL` there too, with the
+   pages it covers in full: `web` (the dashboard), `tv` (the TV app) and
+   `home` (Glasshouse Home). Following the browser's language, it is used only
+   on those pages, so none mixes it with English; elsewhere only once chosen,
+   and the list marks it as partial. A language that covers every page leaves
+   `PARTIAL`.
 
 The page follows the browser's language. `?lang=es` picks one for testing.
 
