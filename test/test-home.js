@@ -1121,7 +1121,13 @@ step('last watched, the app count and CEC addresses show until switched off, one
       assert.deepEqual([r2.layout.showLastOn, r2.layout.showAppCount, r2.layout.showCec], [false, true, false]);
       var saved = home.normalise(JSON.parse(fs.readFileSync(path.join(dir, 'home.json'), 'utf8')));
       assert.deepEqual([saved.showLastOn, saved.showAppCount, saved.showCec], [false, true, false]);
-      done();
+      home.setLayout({ showAppCount: false }, function (r3) {
+        assert.deepEqual([r3.layout.showLastOn, r3.layout.showAppCount, r3.layout.showCec], [false, false, false]);
+        home.setLayout({ showLastOn: true, showAppCount: true, showCec: true }, function (r4) {
+          assert.deepEqual([r4.layout.showLastOn, r4.layout.showAppCount, r4.layout.showCec], [true, true, true]);
+          done();
+        });
+      });
     });
   });
 });

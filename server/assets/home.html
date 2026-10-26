@@ -483,8 +483,8 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
     $('clock').textContent = hm(d);
     $('date').textContent = dateText(d);
     var kind = '', title = '', via = '';
-    if (layout && layout.showLastOn === false) {
-      // Left empty rather than removed, so the clock keeps its place.
+    if (!layout || layout.showLastOn === false) {
+      // The source can arrive before its saved visibility. Keep the clock's space.
     } else if (lastOn.kind === 'input') {
       kind = t('home.now.lastWatched', 'Last watched');
       title = lastOn.title || t('home.dev.port', 'HDMI {port}', { port: lastOn.port });
@@ -1101,6 +1101,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
       var firstLoad = !data;
       data = r;
       layout = r.layout;
+      renderNow();
       applyColours(layout.colours);
       if (r.layoutVersion) layoutVersion = r.layoutVersion;
       refreshPicture();

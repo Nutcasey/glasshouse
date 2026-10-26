@@ -194,8 +194,10 @@ async function visitHomePicture(browser, base, problems) {
   }
   try {
     await page.clock.install();
+    const firstNow = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/now');
     await page.goto(base + '/assets/home.html');
-    await page.waitForFunction(() => document.getElementById('srcTitle').textContent === 'HDMI 4');
+    await firstNow;
+    await page.waitForTimeout(50);
     if (pictureReads) problems.push('Home picture: fetched a plate before the layout was known');
     await releaseCatalogue();
     await page.waitForSelector('.tile');
@@ -232,6 +234,74 @@ async function visitHomePicture(browser, base, problems) {
     await latePicture();
     await page.waitForTimeout(100);
     if (await page.locator('#plate').isVisible()) problems.push('Home picture: a late reply restored a disabled plate');
+  } finally { await page.close(); }
+}
+
+async function visitHomeVisibility(browser, base, problems) {
+  const page = await browser.newPage();
+  page.on('pageerror', e => problems.push('Home visibility: ' + e.message));
+  const layout = { rows: ['app', 'dev', 'ch'], order: { app: [], dev: [], ch: [] },
+    hidden: { app: [], dev: [], ch: [] }, channels: [], hintSeen: true,
+    showLastOn: false, showAppCount: false, showCec: false };
+  let version = 1, releaseCatalogue = null;
+  const reply = (route, body) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
+  await page.route('**/api/home/**', route => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname === '/api/home/now') return reply(route, { kind: 'input', port: 1, title: 'Player' });
+    if (pathname === '/api/home/catalogue') {
+      const body = { ok: true, layout, layoutVersion: String(version), apps: [],
+        devices: [{ id: 'player', name: 'Player', port: 1, address: '1.0.0.0' }], channels: [],
+        sources: { channels: 0 }, order: { app: ['lg-home'], dev: ['player'], ch: [] } };
+      const snapshot = JSON.parse(JSON.stringify(body));
+      releaseCatalogue = () => reply(route, snapshot);
+      return;
+    }
+    return reply(route, { ok: true, build: 'one', layoutVersion: String(version) });
+  });
+  async function check(shown) {
+    const actual = await page.evaluate(() => ({
+      source: document.getElementById('srcTitle').textContent.trim(),
+      last: !!document.querySelector('.tile.dev.last'),
+      count: !!document.querySelector('[data-key="app"] h2 span'),
+      cec: document.querySelector('.tile.dev .st span').textContent.trim(),
+      clock: document.getElementById('clock').getBoundingClientRect().left
+    }));
+    if (actual.source !== (shown ? 'Player' : '') || actual.last !== shown || actual.count !== shown ||
+        actual.cec !== (shown ? 'CEC 1.0.0.0' : '')) {
+      problems.push('Home visibility: details did not follow the loaded switches: ' + JSON.stringify(actual));
+    }
+    return actual.clock;
+  }
+  async function release() {
+    for (let n = 0; !releaseCatalogue && n < 100; n++) await page.waitForTimeout(20);
+    if (!releaseCatalogue) throw new Error('Home visibility: no catalogue request');
+    const received = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/catalogue');
+    await releaseCatalogue();
+    releaseCatalogue = null;
+    await received;
+    await page.waitForTimeout(50);
+  }
+  try {
+    await page.clock.install();
+    const firstNow = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/now');
+    await page.goto(base + '/assets/home.html');
+    await firstNow;
+    await page.waitForTimeout(50);
+    if ((await page.locator('#srcTitle').textContent()).trim()) problems.push('Home visibility: last watched appeared before the layout loaded');
+    await release();
+    await page.waitForSelector('.tile');
+    const clock = await check(false);
+    // Layouts saved before these switches existed retain all three details.
+    delete layout.showLastOn; delete layout.showAppCount; delete layout.showCec;
+    version++;
+    await page.clock.fastForward(5000);
+    await release();
+    if (await check(true) !== clock) problems.push('Home visibility: the clock moved when last watched appeared');
+    layout.showLastOn = layout.showAppCount = layout.showCec = false;
+    version++;
+    await page.clock.fastForward(5000);
+    await release();
+    if (await check(false) !== clock) problems.push('Home visibility: the clock moved when last watched was hidden');
   } finally { await page.close(); }
 }
 
@@ -905,6 +975,7 @@ async function visitTvNonOled(browser, base, problems) {
   await visitTvNonOled(browser, base, problems);
   await visitHomeArrangement(browser, base, problems);
   await visitHomePicture(browser, base, problems);
+  await visitHomeVisibility(browser, base, problems);
   await visitHomeColours(browser, base, problems);
   await visitHomeEditor(browser, base, problems);
   await visitHomeOrder(browser, base, problems);
@@ -915,6 +986,6 @@ async function visitTvNonOled(browser, base, problems) {
   await browser.close();
   for (const p of problems) console.log(p);
   console.log((web.length + tv.length) + ' tabs opened (' + web.length + ' web, ' + tv.length + ' TV app), ' +
-              'TV navigation and LCD profile, Home arranging, picture, colours, update, editing, order, uploads, readiness, availability and recents checked, ' + problems.length + ' problem' + (problems.length === 1 ? '' : 's'));
+              'TV navigation and LCD profile, Home arranging, picture, visibility, colours, update, editing, order, uploads, readiness, availability and recents checked, ' + problems.length + ' problem' + (problems.length === 1 ? '' : 's'));
   process.exit(problems.length ? 1 : 0);
 })().catch(e => { console.error(e.message); process.exit(1); });

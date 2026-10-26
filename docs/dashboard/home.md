@@ -47,6 +47,8 @@ Glasshouse Home displays a clock and date, the last active source or app, and up
 
     **Last watched** (the top strip and the marker on that input's tile), **App count** (the "4 of 18 shown" beside Apps) and **CEC addresses** (on each input tile) are on by default, and each can be switched off from either dashboard's Home tab.
 
+    The top strip stays empty until the saved layout loads. Switching **Last watched** off leaves the clock in place.
+
 -   **Colours & themes**
 
     ---
