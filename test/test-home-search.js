@@ -223,6 +223,64 @@ var tests = [
     });
   },
 
+  function retriesTheHostOfAnUnansweredService(done) {
+    var realNow = Date.now, now = realNow(), detailReads = 0;
+    Date.now = function () { return now; };
+    try {
+      search.init({
+        luna: function (uri, payload, cb) {
+          if (payload.serviceName === 'sdp_nlp') return cb({ HOST: 'search.example.com' });
+          detailReads++;
+          cb(detailReads === 1 ? null : { HOST: 'detail.example.com' });
+        },
+        blockedBy: function (host) { return host === 'detail.example.com' ? 'list' : null; }
+      });
+      assert.equal(search.blocked(), null, 'the known search host is reachable');
+      now += 60001;
+      assert.deepEqual(search.blocked(), { host: 'detail.example.com', by: 'list' },
+        'a failed item-detail host lookup is retried even when search discovery succeeded');
+    } finally { Date.now = realNow; }
+    done();
+  },
+
+  function pendingSeriesLaunchFollowsChangesToSearchPermissions(done) {
+    var cases = ['off', 'blocked'];
+    function next() {
+      if (!cases.length) return done();
+      var change = cases.shift(), enabled = true, blocking = false, pendingDetail, outbound = 0;
+      search.init({
+        enabled: function () { return enabled; },
+        blockedBy: function () { return blocking ? 'list' : null; },
+        luna: function (uri, payload, cb) {
+          if (uri === 'com.webos.service.sdx/getHttpHeaderForServiceRequest') return cb({ HOST: searchHost });
+          outbound++;
+          if (uri === 'com.webos.service.sdx/send') pendingDetail = cb;
+          else cb({ returnValue: true });
+        },
+        Subscription: FakeSubscription,
+        apps: function (cb) { cb([{ id: 'com.disney.disneyplus-prod', title: 'Disney+' }]); }
+      });
+      calls = [];
+      calls.stopped = 0;
+      calls.reply = series.search;
+      search.find('The Bear', function (r) {
+        search.open({ id: r.results[0].id, app: 'com.disney.disneyplus-prod' }, function (opened) {
+          assert.ok(!opened.ok, 'the pending launch is refused after ' + change);
+          if (blocking) assert.ok(opened.blocked);
+          assert.equal(outbound, 1, 'neither further detail reads nor a launch are sent');
+          next();
+        });
+        assert.ok(pendingDetail, 'permission changes while the first detail read is pending');
+        enabled = change !== 'off';
+        blocking = change === 'blocked';
+        var bear = series.detail['advanced MasterSet_GB|DISNEY_page=browse&id=entity-a1abfb99-40b6-4141-82b1-2a04a8b50890&seasonSequenceNumber=5&distributionPartner=lg'];
+        pendingDetail({ serverResponse: { response: JSON.stringify({ item: { item_detail: bear } }) } });
+        assert.equal(outbound, 1, 'permission changes prevent the next detail request');
+      });
+    }
+    next();
+  },
+
   function anUnknownHostDoesNotHideSearch(done) {
     searchHost = '';
     setUp(answer, false, function () { return 'level'; });

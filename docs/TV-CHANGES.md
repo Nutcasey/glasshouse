@@ -95,7 +95,9 @@ off, saves the choice in `/var/lib/tvweb/home.json`, and refuses new searches
 and search launches before asking LG. It reads the host of LG's search from
 `sdx/getHttpHeaderForServiceRequest`, keeping only the host, and while the
 ad blocker's table blocks that host the view hides search and both routes
-refuse without asking LG. Results and launch targets stay in memory.
+refuse without asking LG. Pending title lookups recheck before each further
+detail read and before launching, so switching Search off or blocking its host
+stops them too. Results and launch targets stay in memory.
 
 ## Home-screen app port
 

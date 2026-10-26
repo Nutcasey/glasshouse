@@ -42,7 +42,7 @@ var openedFn = null;
 var enabledFn = null;
 var blockedByFn = null;
 // LG's hosts for search, lower case, once sdx has named them.
-var hosts = null;
+var hosts = {};
 var hostsAsked = 0;
 var current = null;
 var generation = 0;
@@ -58,7 +58,7 @@ function init(opts) {
   enabledFn = opts.enabled || function () { return true; };
   blockedByFn = opts.blockedBy || function () { return null; };
   listed = {};
-  hosts = null;
+  hosts = {};
   hostsAsked = 0;
   readHosts();
 }
@@ -70,14 +70,13 @@ function init(opts) {
  * TV's LG service country.
  */
 function readHosts() {
-  if (hosts || !lunaFn || Date.now() - hostsAsked < HOST_RETRY_MS) return;
+  if (!lunaFn || Date.now() - hostsAsked < HOST_RETRY_MS) return;
   hostsAsked = Date.now();
-  var found = [], left = HOST_SERVICES.length;
   HOST_SERVICES.forEach(function (name) {
+    if (hosts[name]) return;
     luna('com.webos.service.sdx/getHttpHeaderForServiceRequest', { serviceName: name }, function (r) {
       var host = r && typeof r.HOST === 'string' ? r.HOST.toLowerCase() : '';
-      if (/^[a-z0-9.-]+$/.test(host) && found.indexOf(host) === -1) found.push(host);
-      if (--left === 0 && found.length) hosts = found;
+      if (/^[a-z0-9.-]+$/.test(host)) hosts[name] = host;
     });
   });
 }
@@ -90,7 +89,8 @@ function readHosts() {
 function blocked() {
   readHosts();
   var hit = null;
-  (hosts || []).forEach(function (host) {
+  Object.keys(hosts).forEach(function (name) {
+    var host = hosts[name];
     var by = hit ? null : blockedByFn(host);
     if (by) hit = { host: host, by: by };
   });
@@ -293,6 +293,8 @@ function answer(query, reply, mine, cb) {
 }
 
 function detail(itemId, type, cb) {
+  // A series can need several reads; settings may change between replies.
+  if (refusal()) return cb(null);
   var body = 'item_id=' + encodeURIComponent(itemId) + '&item_type=CONTS&item_detail_type=' + type + '&app_id=WTV_NLP';
   luna(DETAIL, { serviceName: 'sdp_onnow', url: 'content_discovery/item-detail', methodType: 'REQ_SSL_POST_METHOD', bodyData: body }, function (r) {
     /** @type {any} */
@@ -389,6 +391,8 @@ function open(body, cb) {
   var title = listed.hasOwnProperty(id) ? listed[id] : null;
   if (!title || !title.apps.hasOwnProperty(app)) return cb({ ok: false, error: msg('srv.home.searchGone', 'that is no longer in the results') });
   target(title.kind, app, title.apps[app], function (to) {
+    var no = refusal();
+    if (no) return cb(no);
     console.log('home: search opens ' + app + ' at ' + to.at + (to.value ? ': ' + to.value : ''));
     var launch = { id: app };
     if (to.value) launch.replaceParams = { deeplinkingParams: { target: '$CONTENTID', value: to.value } };

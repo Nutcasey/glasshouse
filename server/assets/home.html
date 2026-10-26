@@ -935,6 +935,13 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
 
   function queryChanged() {
     clearTimeout(finder.timer);
+    // The debounce delays the request, not invalidation of the old selection.
+    finder.revision++;
+    finder.query = null;
+    finder.results = [];
+    finder.loading = false;
+    finder.commit = false;
+    showHits();
     finder.timer = setTimeout(runSearch, SEARCH_DELAY_MS);
   }
 

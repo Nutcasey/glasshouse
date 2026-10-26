@@ -801,8 +801,14 @@ async function visitHomeSearch(browser, base, problems) {
     await query('dune');
     await answer(result('Dune'));
     await page.waitForSelector('.hit');
-    await query('alien');
+    pending = null;
+    await page.locator('#query').fill('alien');
+    await page.keyboard.press('ArrowDown');
     await page.keyboard.press('Enter');
+    await page.waitForTimeout(100);
+    if (launches) throw new Error('Home search: a previous title opened during the typing delay');
+    await page.waitForFunction(() => document.getElementById('status').textContent.includes('Looking for'));
+    if (!pending) throw new Error('Home search: the changed query was not sent');
     if (await page.locator('.hit').count()) problems.push('Home search: previous titles remain selectable during a newer query');
     await answer(result('Alien'));
     await page.waitForSelector('.hit.on');

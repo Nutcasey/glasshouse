@@ -1430,7 +1430,8 @@ dash; Trailer Park Boys and Trailer War stay. `search` in `home.json`, on by
 default, switches search off: no rail, and both routes refuse before asking
 LG. Only a title and app from the last search can be opened. Both calls go to
 the host sdx names in its request headers for `sdp_nlp` and `sdp_onnow`
-(`GB.nextlgsdp.com` on a G3 in the UK). `privacy.blockedBy` checks that host
+(`GB.nextlgsdp.com` on a G3 in the UK). Each unresolved service host is
+retried each minute, even when the other service has answered. `privacy.blockedBy` checks that host
 against the names the ad blocker's table holds, not the tier: the SDP clock
 wait leaves it reachable on Everything, and an uploaded list can block it on
 Ads & telemetry. While it is blocked the layout carries `searchBlocked`
@@ -1447,10 +1448,12 @@ server started, has changed.
 
 Only the current search may replace the launch list, including while its app
 list is still loading; an empty answer clears the previous targets. The view
-clears previous titles when a new query starts and waits for that reply before
+clears previous titles as soon as the text changes, before the typing delay, and waits for the new reply before
 Enter focuses its results. A failed query can be retried with Enter. An app
 launch holds further selections until it answers, and its late reply is
-discarded if the panel has closed. Search requests allow 12 seconds for the
+discarded if the panel has closed. Each detail read and the final launch recheck
+the Search setting and blocker, so a pending lookup stops when either refuses.
+Search requests allow 12 seconds for the
 server's 10-second limit; launches allow 20 seconds for sequential detail reads.
 
 ## Apps kept ready in the background
