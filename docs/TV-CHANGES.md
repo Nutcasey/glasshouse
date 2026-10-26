@@ -1,19 +1,11 @@
 # What the dashboard changes on the TV
 
-## Audio capabilities and DTS forwarding
+## Audio capabilities
 
 The Audio tabs read LG's capability, settings and ARC services, the current
 HDMI EDID and audio driver status, and the media-resource declaration file. LG's DTS decoder is inspected on demand, at most once every five minutes.
 No audio setting changes during a snapshot. Native controls use LG's ordinary
 settings service.
-
-The experimental override invokes `control.sh enable` or `disable` on an
-already-installed, pinned lg-g5-dts helper, only on its exact supported target.
-Enable requires matching runtime-file hashes, kernel and firmware plus a
-DTS/DTS-HD-capable eARC receiver. The helper owns its enabled marker, service, kernel
-hooks, capability override and audio restoration. Glasshouse installs no
-decoder, firmware or kernel module. Unknown targets are refused; a matching
-verified helper can still be disabled after a firmware mismatch.
 
 Nothing on the read-only root filesystem is written. Everything below other
 than the server's own files happens only when the owner switches it on, and the

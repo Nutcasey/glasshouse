@@ -1133,63 +1133,28 @@ async function visitHomeAvailability(browser, base, problems) {
   }
 }
 
-async function visitAudioOverride(browser, base, problems) {
+async function visitAudio(browser, base, problems) {
   const page = await browser.newPage();
   page.on('pageerror', e => problems.push('Web audio: ' + e.message));
   try {
     const state = await page.request.get(base + '/api/audio?with=settings').then(r => r.json());
-    state.override = Object.assign({}, state.override, { available: true, verified: true, installed: true,
-      enabled: false, running: true, canDisable: true });
-    const writes = [];
-    let failed = false, holdRead = false, readHeld, releaseRead;
+    let failed = false;
     await page.route('**/api/audio*', route => {
-      if (route.request().method() === 'POST') {
-        const body = route.request().postDataJSON();
-        writes.push(body);
-        state.override.enabled = state.override.running = state.override.canDisable = body.enabled;
-        return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, status: state }) });
-      }
       if (failed) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'Audio service unavailable' }) });
-      if (holdRead) {
-        holdRead = false;
-        const snapshot = JSON.stringify(state);
-        releaseRead = () => route.fulfill({ contentType: 'application/json', body: snapshot });
-        readHeld();
-        return;
-      }
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify(state) });
     });
     await page.goto(base + '/?tab=audio');
-    await page.waitForFunction(() => audioState && audioState.override.running);
+    await page.waitForFunction(() => audioState !== null);
     if (!await page.locator('#audio-settings [data-lgs]').count()) problems.push('Audio tab: LG sound settings missing');
-    await page.locator('#audio-override').click();
-    await page.waitForFunction(() => !audioChanging);
-    if (JSON.stringify(writes) !== '[{"enabled":false}]')
-      problems.push('Audio override: a running helper without its startup marker did not offer immediate disable');
-    await page.waitForFunction(() => !document.querySelector('#audio-refresh').disabled);
-    const pendingRead = new Promise(resolve => { readHeld = resolve; });
-    holdRead = true;
-    const pendingLoad = page.evaluate(() => loadAudio(true));
-    await pendingRead;
-    await page.locator('#audio-override').click();
-    if (writes.length !== 1) problems.push('Web audio: enabled without a second press');
-    await page.locator('#audio-override').click();
-    await page.waitForFunction(() => audioState.override.enabled && !audioChanging);
-    await releaseRead();
-    await pendingLoad;
-    await page.waitForFunction(() => !document.querySelector('#audio-refresh').disabled);
-    if (await page.locator('#audio-override').getAttribute('aria-pressed') !== 'true')
-      problems.push('Web audio: a late read replaced a completed override change');
     failed = true;
     await page.locator('#audio-refresh').click();
     await page.waitForFunction(() => !document.querySelector('#audio-error').hidden);
-    if (!await page.locator('#audio-override').isDisabled() || await page.locator('#audio-readings').isVisible() ||
-        await page.locator('#audio-settings :enabled').count()) problems.push('Web audio: a failed read left stale controls usable');
+    if (await page.locator('#audio-readings').isVisible() || await page.locator('#audio-settings :enabled').count())
+      problems.push('Web audio: a failed read left stale controls usable');
     failed = false;
     await page.locator('#audio-refresh').click();
     await page.waitForFunction(() => document.querySelector('#audio-error').hidden);
-    if (!await page.locator('#audio-readings').isVisible() || await page.locator('#audio-override').isDisabled())
-      problems.push('Web audio: controls did not recover after a failed read');
+    if (!await page.locator('#audio-readings').isVisible()) problems.push('Web audio: readings did not recover after a failed read');
   } finally { await page.close(); }
 }
 
@@ -1521,57 +1486,24 @@ async function visitTvAudio(browser, base, problems) {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   page.on('pageerror', e => problems.push('TV audio: ' + e.message));
   const state = await page.request.get(base + '/api/audio?with=settings').then(r => r.json());
-  const posts = [];
   let failed = false;
-  await page.route('**/api/audio*', async route => {
-    if (route.request().method() === 'POST') {
-      const body = route.request().postDataJSON();
-      posts.push(body);
-      state.override.enabled = state.override.running = body.enabled;
-      state.override.canDisable = body.enabled;
-      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, status: state }) });
-    }
-    return route.fulfill({ status: failed ? 503 : 200, contentType: 'application/json',
-      body: JSON.stringify(failed ? { ok: false, error: 'Audio service unavailable' } : state) });
-  });
+  await page.route('**/api/audio*', route => route.fulfill({ status: failed ? 503 : 200, contentType: 'application/json',
+    body: JSON.stringify(failed ? { ok: false, error: 'Audio service unavailable' } : state) }));
   const selected = () => page.locator('#rows .row.sel .lbl').textContent();
-  const forwarding = () => page.locator('#rows .row').filter({ has: page.locator('.bdg') });
-  const forwardingSays = word => page.waitForFunction(w => document.querySelector('.bdg').parentNode.parentNode.textContent.indexOf(w) !== -1, word);
+  const readings = () => page.locator('#rows .row').filter({ hasText: 'Return channel' });
   async function open() {
     await page.goto(base + '/assets/dashboard.html?tab=audio');
-    await page.waitForSelector(failed ? '#rows .row:has-text("Audio readings unavailable")' : '#rows .bdg');
+    await page.waitForSelector(failed ? '#rows .row:has-text("Audio readings unavailable")' : '#rows .row:has-text("Return channel")');
   }
   try {
     await open();
     if (await selected() !== 'Sound output') problems.push('TV audio: did not open on the Sound settings');
-    await forwarding().click();
-    await page.keyboard.press('Enter');
-    if (posts.length) problems.push('TV audio: unsupported helper offered an override');
-    if (!/Experimental/.test(await forwarding().textContent())) problems.push('TV audio: missing experimental label');
-    state.override = { ...state.override, available: true, verified: true, enabled: false, running: false, canDisable: false };
-    await open();
-    await forwarding().click();
-    await page.keyboard.press('Enter');
-    if (posts.length) problems.push('TV audio: enabled without a second OK');
-    await page.keyboard.press('Enter');
-    await forwardingSays('On');
-    await page.keyboard.press('Enter');
-    await forwardingSays('Off');
-    if (JSON.stringify(posts) !== '[{"enabled":true},{"enabled":false}]') problems.push('TV audio: wrong enable/disable actions');
-    state.override.running = state.override.canDisable = true;
-    await open();
-    await forwarding().click(); await page.keyboard.press('Enter');
-    await forwardingSays('Off');
-    if (posts.length !== 3 || posts[2].enabled !== false) problems.push('TV audio: running helper without marker could not be stopped');
-    state.writable = false;
-    await open();
-    if (await forwarding().evaluate(el => el.classList.contains('doable'))) problems.push('TV audio: read-only override was actionable');
     failed = true;
     await open();
-    if (await forwarding().count()) problems.push('TV audio: a failed read left the override on screen');
+    if (await readings().count()) problems.push('TV audio: a failed read left stale readings on screen');
     failed = false;
     await page.keyboard.press('Enter');
-    await page.waitForSelector('#rows .bdg');
+    await page.waitForSelector('#rows .row:has-text("Return channel")');
     await page.goto(base + '/assets/dashboard.html?tab=options');
     await page.waitForSelector('#rows .row');
     if (await page.locator('#rows .row').filter({ hasText: /Audio capabilities|Sound output/ }).count()) problems.push('TV audio: sound still listed under System');
@@ -1617,7 +1549,7 @@ async function visitTvNonOled(browser, base, problems) {
   await visitHomeUploads(browser, base, problems);
   await visitHomeReadiness(browser, base, problems);
   await visitHomeAvailability(browser, base, problems);
-  await visitAudioOverride(browser, base, problems);
+  await visitAudio(browser, base, problems);
   await visitHomeRecents(browser, base, problems);
   await visitHomeScrolling(browser, base, problems);
   await visitHomeMotion(browser, base, problems);
