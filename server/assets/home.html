@@ -259,7 +259,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
   var BEAT_MS = 5000;
 
   var data = null;       // the catalogue: apps, devices, channels, order
-  var layout = null;     // rows, order, sort, hidden, channels, hintSeen, picture
+  var layout = null;     // rows, order, sort, hidden, channels, hintSeen, picture, show*
   var guideData = {};
   var lastOn = { kind: null };
   // last: the tile focused last, which the bar's Hide or show acts on.
@@ -365,7 +365,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
   }
 
   function rowNote(kind, list) {
-    if (kind === 'app') return t('home.row.appsNote', '{n} of {total} shown', { n: items('app').length, total: data.order.app.length });
+    if (kind === 'app') return layout.showAppCount === false ? '' : t('home.row.appsNote', '{n} of {total} shown', { n: items('app').length, total: data.order.app.length });
     if (kind === 'dev') {
       var ports = [];
       items('dev').forEach(function (d) { if (!d.unused && ports.indexOf(d.port) === -1) ports.push(d.port); });
@@ -387,7 +387,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
       list.forEach(function (it, i) { tiles += TILE[kind](it, i); });
       var note = esc(rowNote(kind, list));
       html += '<section class="row"' + (list.length ? '' : ' data-empty="1"') + ' data-row="' + ri + '" data-key="' + kind + '">' +
-        '<h2>' + esc(ROW_TITLES[kind]) + (list.length ? '<span>' + note + '</span>' : '') +
+        '<h2>' + esc(ROW_TITLES[kind]) + (list.length && note ? '<span>' + note + '</span>' : '') +
         '<em class="sort">' + esc(sortLabel(kind)) + '</em></h2>' +
         (list.length ? '<div class="wrap"><div class="track">' + tiles + '</div></div>' : '<div class="slot">' + note + '</div>') +
         '</section>';
@@ -406,14 +406,14 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
       return '<div class="' + cls + '" data-c="' + i + '">' + icon + '<div class="nm">' + esc(a.title) + '</div>' + hiddenLabel + '</div>';
     },
     dev: function (d, i) {
-      var last = lastOn.kind === 'input' && lastOn.port === d.port;
+      var last = layout.showLastOn !== false && lastOn.kind === 'input' && lastOn.port === d.port;
       var cls = 'tile dev' + (last ? ' last' : '') + (d.unused ? ' unused' : '') + (hidden('dev', d.id) ? ' hidden' : '');
       var path = d.unused ? '' : d.via ? t('home.dev.through', 'HDMI {port}, through {via}', { port: d.port, via: d.via })
                        : t('home.dev.port', 'HDMI {port}', { port: d.port });
       return '<div class="' + cls + '" data-c="' + i + '"><div><div class="nm">' + esc(d.name) + '</div>' +
         '<div class="path">' + esc(path) + '</div></div>' +
         '<div class="st"><em>' + esc(last ? t('home.dev.last', 'Last watched') : d.unused ? t('home.dev.unused', 'Nothing connected') : t('home.dev.connected', 'Connected')) + '</em>' +
-        '<span>' + (d.address ? esc(t('home.dev.cec', 'CEC {address}', { address: d.address })) : '') + '</span></div>' + hiddenLabel + '</div>';
+        '<span>' + (d.address && layout.showCec !== false ? esc(t('home.dev.cec', 'CEC {address}', { address: d.address })) : '') + '</span></div>' + hiddenLabel + '</div>';
     },
     ch: function (c, i) {
       var cls = 'tile ch' + (hidden('ch', c.id) ? ' hidden' : '');
@@ -483,7 +483,9 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
     $('clock').textContent = hm(d);
     $('date').textContent = dateText(d);
     var kind = '', title = '', via = '';
-    if (lastOn.kind === 'input') {
+    if (layout && layout.showLastOn === false) {
+      // Left empty rather than removed, so the clock keeps its place.
+    } else if (lastOn.kind === 'input') {
       kind = t('home.now.lastWatched', 'Last watched');
       title = lastOn.title || t('home.dev.port', 'HDMI {port}', { port: lastOn.port });
       via = t('home.dev.port', 'HDMI {port}', { port: lastOn.port });

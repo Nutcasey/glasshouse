@@ -43,6 +43,7 @@ var SETTINGS = 'com.webos.service.settings/';
 var ROWS = ['app', 'dev', 'ch'];
 // How a row is ordered: as arranged ('custom'), or the tile opened last first ('recent').
 var SORTS = ['custom', 'recent'];
+var SHOW_KEYS = ['showLastOn', 'showAppCount', 'showCec'];
 // An input opened from its tile is recorded as that device, not as the whole input.
 var TILE_OPEN_MS = 15000;
 /*
@@ -205,6 +206,12 @@ function defaults() {
     // The plate describing the picture of what was last on: detail many
     // won't want on a home screen, so it waits to be switched on.
     picture: false,
+    // What the view shows beyond the rows: the last source in the top strip
+    // and on its input's tile, the "n of total" beside Apps, and each CEC
+    // device's address. On unless switched off, as before they could be.
+    showLastOn: true,
+    showAppCount: true,
+    showCec: true,
     // { text, accent } as #rrggbb, or null for the view's own colours.
     colours: null,
     // null until chosen: the first start keeps an empty layout an earlier build left.
@@ -249,6 +256,7 @@ function normalise(raw) {
   d.restorePending = raw.restorePending === true;
   d.hintSeen = raw.hintSeen === true;
   d.picture = raw.picture === true;
+  SHOW_KEYS.forEach(function (k) { d[k] = raw[k] !== false; });
   d.colours = validColours(raw.colours);
   if (typeof raw.hideLgHomeAtStart === 'boolean') d.hideLgHomeAtStart = raw.hideLgHomeAtStart;
   if (typeof raw.lgAutoLaunch === 'string' && raw.lgAutoLaunch) d.lgAutoLaunch = raw.lgAutoLaunch;
@@ -353,6 +361,9 @@ function setLayout(body, cb) {
                       body.channels !== undefined ? stringList(body.channels, MAX_CHANNELS) : c.channels),
     hintSeen: body.hintSeen !== undefined ? body.hintSeen : c.hintSeen,
     picture: typeof body.picture === 'boolean' ? body.picture : c.picture,
+    showLastOn: typeof body.showLastOn === 'boolean' ? body.showLastOn : c.showLastOn,
+    showAppCount: typeof body.showAppCount === 'boolean' ? body.showAppCount : c.showAppCount,
+    showCec: typeof body.showCec === 'boolean' ? body.showCec : c.showCec,
     // null puts the view's own colours back.
     colours: body.colours !== undefined ? body.colours : c.colours
   });
@@ -376,7 +387,7 @@ function setLayout(body, cb) {
 
 function layoutOf(c) {
   return { rows: c.rows, order: c.order, sort: c.sort, hidden: c.hidden, channels: c.channels, hintSeen: c.hintSeen, picture: c.picture,
-    colours: c.colours };
+    showLastOn: c.showLastOn, showAppCount: c.showAppCount, showCec: c.showCec, colours: c.colours };
 }
 
 // ---------------------------------------------------------------- what it shows

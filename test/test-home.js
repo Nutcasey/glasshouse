@@ -1111,6 +1111,21 @@ step('the picture details stay off until switched on, and the server is told of 
   });
 });
 
+step('last watched, the app count and CEC addresses show until switched off, one at a time', function (done) {
+  start(null);
+  var l = home.layout();
+  assert.deepEqual([l.showLastOn, l.showAppCount, l.showCec], [true, true, true]);
+  home.setLayout({ showCec: false }, function (r) {
+    assert.deepEqual([r.layout.showLastOn, r.layout.showAppCount, r.layout.showCec], [true, true, false]);
+    home.setLayout({ showLastOn: false, showAppCount: 'no' }, function (r2) {
+      assert.deepEqual([r2.layout.showLastOn, r2.layout.showAppCount, r2.layout.showCec], [false, true, false]);
+      var saved = home.normalise(JSON.parse(fs.readFileSync(path.join(dir, 'home.json'), 'utf8')));
+      assert.deepEqual([saved.showLastOn, saved.showAppCount, saved.showCec], [false, true, false]);
+      done();
+    });
+  });
+});
+
 step('only #rrggbb colours are kept, since the view writes them into its stylesheet', function (done) {
   start(null);
   var invalid = [

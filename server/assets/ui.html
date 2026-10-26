@@ -994,6 +994,27 @@
       </div>
       <div class="prot-status"><button type="button" class="pill idle" id="home-picture" onclick="homePicture()">&mdash;</button></div>
     </div>
+    <div class="prot-row home-show-row" hidden>
+      <div class="prot-main">
+        <div class="prot-title" data-t="home.showLast">Last watched</div>
+        <div class="prot-desc" data-t="home.showLastDesc">At the top of Glasshouse Home and on the input it was on: what the TV last showed.</div>
+      </div>
+      <div class="prot-status"><button type="button" class="pill idle" id="home-show-last" onclick="homeShow('showLastOn')">&mdash;</button></div>
+    </div>
+    <div class="prot-row home-show-row" hidden>
+      <div class="prot-main">
+        <div class="prot-title" data-t="home.showAppCount">App count</div>
+        <div class="prot-desc" data-t="home.showAppCountDesc">Beside the Apps row: how many of the TV’s apps it shows.</div>
+      </div>
+      <div class="prot-status"><button type="button" class="pill idle" id="home-show-count" onclick="homeShow('showAppCount')">&mdash;</button></div>
+    </div>
+    <div class="prot-row home-show-row" hidden>
+      <div class="prot-main">
+        <div class="prot-title" data-t="home.showCec">CEC addresses</div>
+        <div class="prot-desc" data-t="home.showCecDesc">On each input’s tile: the HDMI-CEC address of the device behind it.</div>
+      </div>
+      <div class="prot-status"><button type="button" class="pill idle" id="home-show-cec" onclick="homeShow('showCec')">&mdash;</button></div>
+    </div>
   </div>
 
   <div id="home-more">

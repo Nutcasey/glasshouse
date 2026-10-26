@@ -875,6 +875,17 @@ function homeRows(d) {
              act: can ? 'homePicture' : null, on: picOn,
              press: picOn ? t('tv.press.switchOff', 'Press OK to switch off') : t('tv.press.switchOn', 'Press OK to switch on'),
              hint: t('home.pictureDesc', 'In the top right of Glasshouse Home: the resolution, refresh rate and HDR of what was last on, and the picture mode and brightness it gets.') });
+    var shows = [['showLastOn', t('home.showLast', 'Last watched'), t('home.showLastDesc', 'At the top of Glasshouse Home and on the input it was on: what the TV last showed.')],
+                 ['showAppCount', t('home.showAppCount', 'App count'), t('home.showAppCountDesc', 'Beside the Apps row: how many of the TV\u2019s apps it shows.')],
+                 ['showCec', t('home.showCec', 'CEC addresses'), t('home.showCecDesc', 'On each input\u2019s tile: the HDMI-CEC address of the device behind it.')]];
+    for (var si = 0; si < shows.length; si++) {
+      var showOn = d.layout[shows[si][0]] !== false;
+      r.push({ label: shows[si][1], key: shows[si][0],
+               value: showOn ? t('common.on', 'On') : t('common.off', 'Off'), cls: showOn ? 'on' : 'off',
+               act: can ? 'homeShow' : null, on: showOn,
+               press: showOn ? t('tv.press.switchOff', 'Press OK to switch off') : t('tv.press.switchOn', 'Press OK to switch on'),
+               hint: shows[si][2] });
+    }
     // OK steps through the presets; colours picked on the browser dashboard show as Custom.
     var presets = d.colourPresets || [], cur = d.layout.colours, at = cur ? -1 : 0;
     for (var pi = 0; pi < presets.length; pi++) if (cur && presets[pi].text === cur.text && presets[pi].accent === cur.accent) at = pi;
@@ -2455,6 +2466,10 @@ function activate() {
                       r.on ? t('tv.flash.switchedOff', 'Switched off') : t('tv.flash.switchedOn', 'Switched on'));
     case 'homePicture':
       return homeLayout({ picture: !r.on });
+    case 'homeShow':
+      var showChange = {};
+      showChange[r.key] = !r.on;
+      return homeLayout(showChange);
     case 'homeColours':
       // The first preset is the view's own colours, saved as none chosen.
       return homeLayout({ colours: r.key.id === homeData.colourPresets[0].id ? null : { text: r.key.text, accent: r.key.accent } });
