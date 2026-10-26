@@ -1131,20 +1131,24 @@ step('the picture details stay off until switched on, and the server is told of 
   });
 });
 
-step('fading and leaving out inputs with nothing plugged in stay off until switched on, are saved, and outlast a reset, beside hiding inputs one by one', function (done) {
+step('fading, search and leaving out inputs with nothing plugged in stay off until switched on, are saved, and outlast a reset, beside hiding inputs one by one', function (done) {
   start(null);
   assert.strictEqual(home.layout().fade, false);
+  assert.strictEqual(home.layout().search, false);
   assert.strictEqual(home.layout().hideUnused, false);
-  home.setLayout({ fade: true, hideUnused: true }, function (r) {
+  home.setLayout({ fade: true, search: true, hideUnused: true }, function (r) {
     assert.ok(r.ok, r.error);
     assert.strictEqual(r.layout.fade, true);
+    assert.strictEqual(r.layout.search, true);
     assert.strictEqual(r.layout.hideUnused, true);
     var saved = home.normalise(JSON.parse(fs.readFileSync(path.join(dir, 'home.json'), 'utf8')));
     assert.strictEqual(saved.fade, true);
+    assert.strictEqual(saved.search, true);
     assert.strictEqual(saved.hideUnused, true);
     // Only true switches them on.
-    assert.strictEqual(home.normalise({ fade: 'yes', hideUnused: 1 }).fade, false);
-    assert.strictEqual(home.normalise({ fade: 'yes', hideUnused: 1 }).hideUnused, false);
+    assert.strictEqual(home.normalise({ fade: 'yes', search: 'yes', hideUnused: 1 }).fade, false);
+    assert.strictEqual(home.normalise({ fade: 'yes', search: 'yes', hideUnused: 1 }).search, false);
+    assert.strictEqual(home.normalise({ fade: 'yes', search: 'yes', hideUnused: 1 }).hideUnused, false);
     // Inputs are still hidden one by one beside it: an earlier version's list stays, and a new one is kept.
     assert.deepEqual(home.normalise({ hidden: { dev: ['hdmi1'], app: ['netflix'] } }).hidden.dev, ['hdmi1']);
     home.setLayout({ hidden: { dev: ['hdmi2'] } }, function (rh) {

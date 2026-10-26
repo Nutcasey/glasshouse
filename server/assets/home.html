@@ -280,7 +280,7 @@ html.faded #stage{opacity:0}
 </style>
 </head>
 <body>
-<div id="stage">
+<div id="stage" class="no-search">
   <div id="wall"><div class="layer"></div><div class="layer"></div></div>
   <div id="scrim"></div>
 
@@ -1251,9 +1251,9 @@ html.faded #stage{opacity:0}
    * that in the heartbeat's sleeps); any other way in starts on the rows.
    */
   var SEARCH_DELAY_MS = 400;
-  // Switched off on the dashboards' Home tab, or LG's search host blocked by
-  // the ad blocker: no rail, and the server refuses.
-  function searchOn() { return !layout || (layout.search !== false && !layout.searchBlocked); }
+  // Switched on on the dashboards' Home tab, and LG's search host not blocked
+  // by the ad blocker: otherwise no rail, and the server refuses.
+  function searchOn() { return !!(layout && layout.search === true && !layout.searchBlocked); }
 
   // The server found the ad blocker blocking LG's search after the rail was drawn.
   function searchBlocked(b) {

@@ -91,8 +91,8 @@ Snapshot responses are private and must not be cached.
 Glasshouse Home's search sends typed queries to LG's catalogue through
 `com.webos.service.nlpmanager` and reads item details through
 `com.webos.service.sdx` before launching an installed app at the title. Search
-is on by default; **Search** on either dashboard's Home section switches it
-off, saves the choice in `/var/lib/tvweb/home.json`, and refuses new searches
+is off by default; **Search** on either dashboard's Home section switches it
+on and off, saves the choice in `/var/lib/tvweb/home.json`, and while off refuses new searches
 and search launches before asking LG. It reads the host of LG's search from
 `sdx/getHttpHeaderForServiceRequest`, keeping only the host, and while the
 ad blocker's table blocks that host the view hides search and both routes

@@ -209,8 +209,8 @@ function defaults() {
     // The plate describing the picture of what was last on: detail many
     // won't want on a home screen, so it waits to be switched on.
     picture: false,
-    // Search on the view (lib/home-search): off, nothing typed reaches LG.
-    search: true,
+    // Search on the view (lib/home-search): off by default, so nothing typed reaches LG unless switched on.
+    search: false,
     // The view fading in as it comes on screen, and out as a tile opens.
     fade: false,
     // Inputs with nothing plugged in left out of the Inputs row, rather than
@@ -261,7 +261,7 @@ function normalise(raw) {
   d.hintSeen = raw.hintSeen === true;
   d.searchHintSeen = raw.searchHintSeen === true;
   d.picture = raw.picture === true;
-  d.search = raw.search !== false;
+  d.search = raw.search === true;
   d.fade = raw.fade === true;
   d.hideUnused = raw.hideUnused === true;
   d.colours = validColours(raw.colours);

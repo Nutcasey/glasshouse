@@ -1434,8 +1434,8 @@ opened: LG marks none, and lists Prime Video's sneak peeks as films and its
 trailers as episodes, so a title or episode is taken for one by a promo word
 (trailer, teaser, sneak peek, preview, first look) with a running time of 15
 minutes or less, or, without one, ending the name or before its colon or
-dash; Trailer Park Boys and Trailer War stay. `search` in `home.json`, on by
-default, switches search off: no rail, and both routes refuse before asking
+dash; Trailer Park Boys and Trailer War stay. `search` in `home.json`, off by
+default, switches search on and off: while off, no rail is shown and both routes refuse before asking
 LG. Only a title and app from the last search can be opened. Both calls go to
 the host sdx names in its request headers for `sdp_nlp` and `sdp_onnow`
 (`GB.nextlgsdp.com` on a G3 in the UK). Each unresolved service host is

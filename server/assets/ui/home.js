@@ -106,7 +106,7 @@ function renderHome() {
   // Greyed while the ad blocker blocks LG's search; the setting itself is kept.
   const searchBlocked = st.layout && st.layout.searchBlocked;
   if (searchPill) {
-    const on = !st.layout || st.layout.search !== false;
+    const on = !!(st.layout && st.layout.search === true);
     updateToggle(searchPill, { cls: on && !searchBlocked ? 'good' : 'idle', label: on ? t('common.on', 'On') : t('common.off', 'Off') });
     searchPill.disabled = !homeWritable() || !!searchBlocked;
   }
@@ -377,7 +377,7 @@ function homePicture() {
 }
 
 function homeSearch() {
-  homeSaveLayout({ search: homeLayout.search === false });
+  homeSaveLayout({ search: homeLayout.search !== true });
 }
 
 function homeFade() {
