@@ -29,7 +29,14 @@ function FakeSubscription(uri, payload, appId, handlers) {
   this.stop = function () { calls.stopped++; };
 }
 
+// The host sdx names for search; '' for a TV whose sdx does not answer.
+var searchHost = 'GB.nextlgsdp.com';
+
 function luna(uri, payload, cb) {
+  // The host read is not a call to LG's servers, so it is not counted.
+  if (uri === 'com.webos.service.sdx/getHttpHeaderForServiceRequest') {
+    return process.nextTick(function () { cb(searchHost ? { returnValue: true, HOST: searchHost } : { returnValue: false }); });
+  }
   calls.push({ uri: uri, payload: payload });
   var r = { returnValue: true };
   if (uri === 'com.webos.service.sdx/send') {
@@ -42,12 +49,13 @@ function luna(uri, payload, cb) {
   process.nextTick(function () { cb(r); });
 }
 
-function setUp(reply, off) {
+function setUp(reply, off, blockedBy) {
   calls = [];
   calls.stopped = 0;
   calls.reply = reply;
   search.init({
     enabled: function () { return !off; },
+    blockedBy: blockedBy,
     luna: luna,
     Subscription: FakeSubscription,
     // Read from the TV, so it answers later than the search's end.
@@ -186,6 +194,45 @@ var tests = [
       assert.ok(!r.ok);
       assert.equal(calls.length, 0, 'no search and no detail went to LG');
       done();
+    });
+  },
+
+  function blockedByTheAdBlockerAsksLgNothing(done) {
+    var blocking = {};
+    setUp(answer, false, function (host) { return blocking[host] || null; });
+    // The host is read when search starts, so the first answer follows it.
+    setImmediate(function () {
+      find('Dune', function (r) {
+        assert.ok(r.ok, 'searches while the host is reachable');
+        var listedTitle = r.results[0];
+        blocking['gb.nextlgsdp.com'] = 'level';
+        var before = calls.length;
+        assert.deepEqual(search.blocked(), { host: 'gb.nextlgsdp.com', by: 'level' });
+        find('Dune', function (again) {
+          assert.ok(!again.ok);
+          assert.deepEqual(again.blocked, { host: 'gb.nextlgsdp.com', by: 'level' });
+          search.open({ id: listedTitle.id, app: 'amazon' }, function (opened) {
+            assert.ok(!opened.ok && opened.blocked, 'an earlier result does not open either');
+            assert.equal(calls.length, before, 'nothing went to LG');
+            blocking = {};
+            assert.equal(search.blocked(), null, 'search comes back with the host');
+            done();
+          });
+        });
+      });
+    });
+  },
+
+  function anUnknownHostDoesNotHideSearch(done) {
+    searchHost = '';
+    setUp(answer, false, function () { return 'level'; });
+    setImmediate(function () {
+      searchHost = 'GB.nextlgsdp.com';
+      assert.equal(search.blocked(), null);
+      find('Dune', function (r) {
+        assert.ok(r.ok, 'search asks LG, and says so if LG does not answer');
+        done();
+      });
     });
   },
 

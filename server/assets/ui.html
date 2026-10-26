@@ -997,7 +997,9 @@
     <div class="prot-row" id="home-search-row" hidden>
       <div class="prot-main">
         <div class="prot-title" data-t="home.search">Search</div>
-        <div class="prot-desc" data-t="home.searchDesc">Left of the rows on Glasshouse Home: films and series on this TV’s apps, opened in the app at the title. What is typed goes to LG’s search.</div>
+        <div class="prot-desc" data-t="home.searchDesc">Left of the rows on Glasshouse Home: films and series on this TV’s apps, opened in the app at the title.</div>
+        <div class="prot-desc" data-t="home.searchPrivacy">What is typed is sent to LG’s search, as with LG’s own Search, and to nowhere else. Switched off, the search mark goes and nothing typed leaves the TV.</div>
+        <div class="pv-note warn" id="home-search-blocked" hidden><span id="home-search-blocked-text"></span> <a href="?tab=privacy" onclick="event.preventDefault(); showTab('privacy'); const ad = q('pv-adv'); if (ad) { ad.open = true; ad.scrollIntoView({ block: 'start' }); }" data-t="home.searchBlockedLink">Open the ad blocker</a></div>
       </div>
       <div class="prot-status"><button type="button" class="pill idle" id="home-search" onclick="homeSearch()">&mdash;</button></div>
     </div>
@@ -1078,7 +1080,8 @@
         services stops working while the blocker is on, switch it off to check whether it is the cause.</div>
       <div class="pv-note warn"><b data-t="pv.adblock.full.warn">Everything also blocks LG's platform services, so
         the LG ThinQ app can no longer control the TV, and the app store, software updates and LG
-        Channels may stop working.</b> <span data-t="pv.adblock.full.updates">To stop only system updates, use Block TV software
+        Channels may stop working.</b> <span data-t="pv.adblock.full.search">Where it blocks LG's search, Glasshouse Home's
+        search is hidden until the blocker is back on Ads &amp; telemetry or off.</span> <span data-t="pv.adblock.full.updates">To stop only system updates, use Block TV software
         updates in the Advanced tab.</span></div>
     </div>
 

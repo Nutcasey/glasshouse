@@ -382,7 +382,8 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
     x.onload = function () {
       var j = null;
       try { j = JSON.parse(x.responseText); } catch (e) {}
-      cb(x.status >= 200 && x.status < 300 ? j : null, x.status);
+      // A refusal's body too, for the reason (search: { blocked }).
+      cb(x.status >= 200 && x.status < 300 ? j : null, x.status, j);
     };
     x.onerror = x.ontimeout = function () { cb(null, 0); };
     x.send(body === null ? null : JSON.stringify(body));
@@ -836,8 +837,20 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
    * that in the heartbeat's sleeps); any other way in starts on the rows.
    */
   var SEARCH_DELAY_MS = 400;
-  // Switched off on the dashboards' Home tab: no rail, and the server refuses.
-  function searchOn() { return !layout || layout.search !== false; }
+  // Switched off on the dashboards' Home tab, or LG's search host blocked by
+  // the ad blocker: no rail, and the server refuses.
+  function searchOn() { return !layout || (layout.search !== false && !layout.searchBlocked); }
+
+  // The server found the ad blocker blocking LG's search after the rail was drawn.
+  function searchBlocked(b) {
+    layout.searchBlocked = b;
+    closeSearch();
+    state.rail = false;
+    render();
+    toast(t('home.search.blockedTitle', 'Search is unavailable'), b.by === 'list'
+      ? t('home.search.blockedList', 'The ad blocker\u2019s hosts list blocks {host}, which LG\u2019s search needs. Take it out of the list on the dashboard\u2019s Privacy tab.', { host: b.host })
+      : t('home.search.blockedLevel', 'The ad blocker\u2019s Everything setting blocks LG\u2019s search. Set it to Ads & telemetry or off on the dashboard\u2019s Privacy tab.'));
+  }
   var KEEP_MS = 30 * 60000;
   var sleeps = null;
   // commit: Enter was pressed, so the titles take the focus once they come.
@@ -939,9 +952,10 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
     }
     finder.loading = true;
     setStatus(t('home.search.looking', 'Looking for \u201c{query}\u201d', { query: q }));
-    postJson('/api/home/search', { query: q }, function (r) {
+    postJson('/api/home/search', { query: q }, function (r, status, refused) {
       if (revision !== finder.revision || !finder.open) return;
       finder.loading = false;
+      if (refused && refused.blocked) return searchBlocked(refused.blocked);
       if (!r || !r.ok) {
         finder.query = null;
         finder.results = [];
@@ -1041,9 +1055,10 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
     // back for a return to the panel.
     finder.shown = $('status').textContent;
     setStatus(t('home.search.opening', 'Opening {title} on {app}', { title: hit.title, app: app.title }));
-    postJson('/api/home/search/open', { id: hit.id, app: app.id }, function (r) {
+    postJson('/api/home/search/open', { id: hit.id, app: app.id }, function (r, status, refused) {
       if (revision !== finder.revision || !finder.open) return;
       finder.opening = false;
+      if (refused && refused.blocked) return searchBlocked(refused.blocked);
       if (!r || !r.ok) {
         setStatus(finder.shown);
         return toast(t('home.openFailed', 'That did not open'), r && r.error);

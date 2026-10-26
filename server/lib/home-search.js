@@ -15,6 +15,12 @@
  * a title from the last search can be opened, so this is not a way to launch
  * anything at all.
  *
+ * Both services reach LG's catalogue on the host sdx names for them
+ * (GB.nextlgsdp.com on a G3 in the UK). Where the ad blocker's table holds it,
+ * search is unavailable: the view hides it and both routes refuse, rather
+ * than asking LG and failing. The saved Search setting is kept, so search
+ * comes back when the blocker changes.
+ *
  * Strict ES5: runs on node 0.12.
  */
 var msg = require('./say').msg;
@@ -25,12 +31,19 @@ var DETAIL = 'com.webos.service.sdx/send';
 var MAX_RESULTS = 24;
 var SEARCH_TIMEOUT_MS = 10000;
 var MAX_QUERY = 80;
+// The sdx services search and item detail use, whose host is looked up.
+var HOST_SERVICES = ['sdp_nlp', 'sdp_onnow'];
+var HOST_RETRY_MS = 60000;
 
 var lunaFn = null;
 var SubscriptionType = null;
 var appsFn = null;
 var openedFn = null;
 var enabledFn = null;
+var blockedByFn = null;
+// LG's hosts for search, lower case, once sdx has named them.
+var hosts = null;
+var hostsAsked = 0;
 var current = null;
 var generation = 0;
 // The last search's titles by id: { apps: { appId: itemId } }.
@@ -43,7 +56,52 @@ function init(opts) {
   appsFn = opts.apps || function (cb) { cb([]); };
   openedFn = opts.opened || function () {};
   enabledFn = opts.enabled || function () { return true; };
+  blockedByFn = opts.blockedBy || function () { return null; };
   listed = {};
+  hosts = null;
+  hostsAsked = 0;
+  readHosts();
+}
+
+/*
+ * sdx's request headers for a service name its host (HOST, beside
+ * credentials that are not kept). Asked again a minute
+ * after a failed or empty answer; once known it is kept, as it follows the
+ * TV's LG service country.
+ */
+function readHosts() {
+  if (hosts || !lunaFn || Date.now() - hostsAsked < HOST_RETRY_MS) return;
+  hostsAsked = Date.now();
+  var found = [], left = HOST_SERVICES.length;
+  HOST_SERVICES.forEach(function (name) {
+    luna('com.webos.service.sdx/getHttpHeaderForServiceRequest', { serviceName: name }, function (r) {
+      var host = r && typeof r.HOST === 'string' ? r.HOST.toLowerCase() : '';
+      if (/^[a-z0-9.-]+$/.test(host) && found.indexOf(host) === -1) found.push(host);
+      if (--left === 0 && found.length) hosts = found;
+    });
+  });
+}
+
+/*
+ * { host, by: 'level' | 'list' } where the ad blocker blocks a host search
+ * needs, or null. Null too while the hosts are not yet known: search then
+ * asks LG, and says so if LG does not answer.
+ */
+function blocked() {
+  readHosts();
+  var hit = null;
+  (hosts || []).forEach(function (host) {
+    var by = hit ? null : blockedByFn(host);
+    if (by) hit = { host: host, by: by };
+  });
+  return hit;
+}
+
+function refusal() {
+  if (!enabledFn()) return { ok: false, error: msg('srv.home.searchOff', 'search is switched off in Glasshouse Home\'s settings') };
+  var b = blocked();
+  if (b) return { ok: false, blocked: b, error: msg('srv.home.searchBlocked', 'the ad blocker blocks {host}, which LG\'s search needs', { host: b.host }) };
+  return null;
 }
 
 function luna(uri, payload, cb) {
@@ -168,7 +226,8 @@ function stopCurrent() {
 
 function find(query, cb) {
   query = String(query || '').replace(/\s+/g, ' ').replace(/^ | $/g, '').slice(0, MAX_QUERY);
-  if (!enabledFn()) return cb({ ok: false, error: msg('srv.home.searchOff', 'search is switched off in Glasshouse Home\'s settings') });
+  var no = refusal();
+  if (no) return cb(no);
   if (query.length < 2) return cb({ ok: false, error: msg('srv.home.searchShort', 'type two letters or more') });
   if (!SubscriptionType) return cb({ ok: false, error: msg('srv.home.searchUnavailable', 'this TV has no LG search to ask') });
   // A newer search answers the view; the older one is dropped unanswered.
@@ -325,7 +384,8 @@ function target(kind, app, itemId, cb) {
 function open(body, cb) {
   var id = body && typeof body.id === 'string' ? body.id : '';
   var app = body && typeof body.app === 'string' ? body.app : '';
-  if (!enabledFn()) return cb({ ok: false, error: msg('srv.home.searchOff', 'search is switched off in Glasshouse Home\'s settings') });
+  var no = refusal();
+  if (no) return cb(no);
   var title = listed.hasOwnProperty(id) ? listed[id] : null;
   if (!title || !title.apps.hasOwnProperty(app)) return cb({ ok: false, error: msg('srv.home.searchGone', 'that is no longer in the results') });
   target(title.kind, app, title.apps[app], function (to) {
@@ -343,5 +403,6 @@ function open(body, cb) {
 module.exports = {
   init: init,
   find: find,
-  open: open
+  open: open,
+  blocked: blocked
 };

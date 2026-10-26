@@ -313,8 +313,27 @@ G3 in the UK.
   iPlayer's programme id and a guessed `tv/episodes/` link failed or went to
   its home, its episode links played; Apple TV ignored its show id and a
   `tv.apple.com/gb/show/` link, cold or running.
-- **The servers are LG's SDP.** `sdx/getHttpHeaderForServiceRequest` gives
-  `HOST:GB.nextlgsdp.com`.
+- **The servers are LG's SDP.** `sdx/getHttpHeaderForServiceRequest` with
+  `serviceName` `sdp_nlp`, `sdp_search` or `sdp_onnow` answers a top-level
+  `HOST` (`GB.nextlgsdp.com`) beside device ids and LG account tokens, which
+  should not be logged.
+- **Only that host matters to search** (26 October 2026, firmware 23.25.55).
+  Everything blocked `gb.nextlgsdp.com` and search failed (`errorCode` 6003,
+  `Server response error`); Ads & telemetry plus an uploaded list holding only
+  that host failed the same way; Everything with every name but that host
+  searched normally.
+- **Apps opened from search** (26 October 2026, Ads & telemetry): Prime Video
+  at the Dune and Severance pages, Netflix at Dune: Part Two and Stranger
+  Things, Plex at its film pages, BBC iPlayer playing Doctor Who and All
+  Creatures Great and Small series 1 episode 1, Apple TV at Dune and
+  Severance's latest episode. Apple TV, Disney+ and HBO Max showed a profile
+  picker first when cold: Apple TV then went on to the title, HBO Max to its
+  home; opened again while running, HBO Max played Dune and Succession and
+  Disney+ played The Bear and Loki (protected video captures black, so the
+  episode was not seen). LG's catalogue offered no titles on ITVX, Channel 4,
+  5, YouTube, Paramount+ or Sky Store for 14 test queries.
+- **luna-send over SSH needs stdin closed** (`</dev/null`): without it, it
+  printed nothing and did nothing on the G3.
 - **The TV's keyboard.** A focused text field brings up LG's keyboard, which
   takes the arrows. Its Enter reaches the page as key 13; its Back closes it
   without reaching the page and leaves the field focused, and

@@ -875,12 +875,19 @@ function homeRows(d) {
              act: can ? 'homePicture' : null, on: picOn,
              press: picOn ? t('tv.press.switchOff', 'Press OK to switch off') : t('tv.press.switchOn', 'Press OK to switch on'),
              hint: t('home.pictureDesc', 'In the top right of Glasshouse Home: the resolution, refresh rate and HDR of what was last on, and the picture mode and brightness it gets.') });
-    var searchOn = d.layout.search !== false;
-    r.push({ label: t('home.search', 'Search'),
+    var searchOn = d.layout.search !== false, blocked = d.layout.searchBlocked;
+    var searchAbout = t('home.searchDesc', 'Left of the rows on Glasshouse Home: films and series on this TV\u2019s apps, opened in the app at the title.') + ' ' +
+      t('home.searchPrivacy', 'What is typed is sent to LG\u2019s search, as with LG\u2019s own Search, and to nowhere else. Switched off, the search mark goes and nothing typed leaves the TV.');
+    // Greyed while the ad blocker blocks LG's search; the setting itself is kept.
+    r.push(blocked ? { label: t('home.search', 'Search'), value: t('home.searchUnavailable', 'Unavailable'), cls: 'off',
+             hint: blocked.by === 'list'
+               ? t('tv.home.searchBlockedList', 'The ad blocker\u2019s hosts list blocks {host}, which LG\u2019s search needs. Take it out of the list on the web dashboard\u2019s Privacy tab to use search.', { host: blocked.host })
+               : t('tv.home.searchBlockedLevel', 'The ad blocker\u2019s Everything setting blocks {host}, which LG\u2019s search needs. Set Blocking to Ads & telemetry or off in Privacy to use search.', { host: blocked.host }) }
+      : { label: t('home.search', 'Search'),
              value: searchOn ? t('common.on', 'On') : t('common.off', 'Off'), cls: searchOn ? 'on' : 'off',
              act: can ? 'homeSearch' : null, on: searchOn,
              press: searchOn ? t('tv.press.switchOff', 'Press OK to switch off') : t('tv.press.switchOn', 'Press OK to switch on'),
-             hint: t('home.searchDesc', 'Left of the rows on Glasshouse Home: films and series on this TV\u2019s apps, opened in the app at the title. What is typed goes to LG\u2019s search.') });
+             hint: searchAbout });
     // OK steps through the presets; colours picked on the browser dashboard show as Custom.
     var presets = d.colourPresets || [], cur = d.layout.colours, at = cur ? -1 : 0;
     for (var pi = 0; pi < presets.length; pi++) if (cur && presets[pi].text === cur.text && presets[pi].accent === cur.accent) at = pi;
@@ -1252,6 +1259,7 @@ function privacyRows(d) {
                     t('tv.privacy.blocking.troubleshoot', 'If an app stops working, switch blocking off to check whether it is the cause.') },
       full: { label: t('pv.adblock.full', 'Everything'), next: 'off', press: t('tv.privacy.blocking.toOff', 'Press OK for Off'),
               hint: t('tv.privacy.everything.hint', 'Also blocks LG’s platform services. The LG ThinQ app can no longer control the TV, and the app store, software updates and LG Channels may stop working.') + ' ' +
+                    t('tv.privacy.everything.search', 'Where it blocks LG’s search, Glasshouse Home’s search is hidden.') + ' ' +
                     t('tv.privacy.blocking.troubleshoot', 'If an app stops working, switch blocking off to check whether it is the cause.') }
     };
     var cur = AB[abMode] || AB.off;

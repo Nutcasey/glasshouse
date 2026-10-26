@@ -103,10 +103,19 @@ function renderHome() {
   const searchRow = q('home-search-row');
   if (searchRow) searchRow.hidden = !st.supported.ok;
   const searchPill = q('home-search');
+  // Greyed while the ad blocker blocks LG's search; the setting itself is kept.
+  const searchBlocked = st.layout && st.layout.searchBlocked;
   if (searchPill) {
     const on = !st.layout || st.layout.search !== false;
-    updateToggle(searchPill, { cls: on ? 'good' : 'idle', label: on ? t('common.on', 'On') : t('common.off', 'Off') });
-    searchPill.disabled = !homeWritable();
+    updateToggle(searchPill, { cls: on && !searchBlocked ? 'good' : 'idle', label: on ? t('common.on', 'On') : t('common.off', 'Off') });
+    searchPill.disabled = !homeWritable() || !!searchBlocked;
+  }
+  const blockedNote = q('home-search-blocked');
+  if (blockedNote) {
+    blockedNote.hidden = !searchBlocked;
+    if (searchBlocked) q('home-search-blocked-text').textContent = searchBlocked.by === 'list'
+      ? t('home.searchBlockedList', 'Unavailable: the ad blocker\u2019s hosts list blocks {host}, which LG\u2019s search needs, so the search mark is hidden on Glasshouse Home. Take {host} out of the list to use it. This switch keeps its setting.', { host: searchBlocked.host })
+      : t('home.searchBlockedLevel', 'Unavailable: the ad blocker\u2019s Everything setting blocks {host}, which LG\u2019s search needs, so the search mark is hidden on Glasshouse Home. Set the ad blocker to Ads & telemetry or off to use it. This switch keeps its setting.', { host: searchBlocked.host });
   }
   const hide = q('home-hide-lg');
   if (hide) {

@@ -1429,8 +1429,15 @@ minutes or less, or, without one, ending the name or before its colon or
 dash; Trailer Park Boys and Trailer War stay. `search` in `home.json`, on by
 default, switches search off: no rail, and both routes refuse before asking
 LG. Only a title and app from the last search can be opened. Both calls go to
-LG's servers through `nextlgsdp.com`, which the ad blocker's Everything
-setting blocks, so search does not work there. The view searches 0.4 s after
+the host sdx names in its request headers for `sdp_nlp` and `sdp_onnow`
+(`GB.nextlgsdp.com` on a G3 in the UK). `privacy.blockedBy` checks that host
+against the names the ad blocker's table holds, not the tier: the SDP clock
+wait leaves it reachable on Everything, and an uploaded list can block it on
+Ads & telemetry. While it is blocked the layout carries `searchBlocked`
+(`{ host, by: 'level' | 'list' }`, not saved), the view hides the rail, both
+dashboards grey the switch with a note, and both routes refuse. The state is
+part of `layoutVersion`, so a view already showing reloads within a
+heartbeat when the blocker changes. The view searches 0.4 s after
 typing stops. Back on the TV's keyboard closes it without the page seeing the
 key; the `keyboardStateChange` event on the document says so, and the titles
 take the focus. A return from an app opened in the panel comes as both a

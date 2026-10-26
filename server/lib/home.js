@@ -307,9 +307,11 @@ function readConfig() {
  * an edit over SSH: the view reloads its layout when its heartbeat brings a
  * new one, so a change made elsewhere shows while it is on screen.
  */
+// The view reloads when this changes, so it also follows the ad blocker
+// blocking or freeing LG's search, which is not saved in the layout.
 function layoutVersion() {
   readConfig();
-  return String(configMtime);
+  return String(configMtime) + (search.blocked() ? '-search-blocked' : '');
 }
 
 function saveConfig() {
@@ -387,7 +389,9 @@ function setLayout(body, cb) {
 
 function layoutOf(c) {
   return { rows: c.rows, order: c.order, sort: c.sort, hidden: c.hidden, channels: c.channels, hintSeen: c.hintSeen,
-    searchHintSeen: c.searchHintSeen, picture: c.picture, search: c.search, colours: c.colours };
+    searchHintSeen: c.searchHintSeen, picture: c.picture, search: c.search, colours: c.colours,
+    // Not saved: { host, by } while the ad blocker blocks LG's search (lib/home-search).
+    searchBlocked: search.blocked() };
 }
 
 // ---------------------------------------------------------------- what it shows
@@ -1409,7 +1413,8 @@ function init(opts) {
   recent.init(stateDir, opts.now);
   recentApps.init({ luna: lunaFn });
   search.init({ luna: lunaFn, Subscription: opts.Subscription, apps: launchPoints,
-    opened: function (id) { noteOpened('app', id); }, enabled: function () { return readConfig().search; } });
+    opened: function (id) { noteOpened('app', id); }, enabled: function () { return readConfig().search; },
+    blockedBy: opts.blockedBy });
   takeover.init({
     luna: lunaFn,
     samrescan: opts.samrescan || null,
