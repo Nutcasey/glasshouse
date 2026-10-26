@@ -9,6 +9,7 @@ var crypto = require('crypto');
 var http = require('http');
 var say = require('./say');
 var localAddress4 = require('./util').localAddress4;
+var localAddress6 = require('./util').localAddress6;
 var listenDualStack = require('./util').listenDualStack;
 var hostPort = require('./util').hostPort;
 var sendIconFile = require('./iconserver').sendIconFile;
@@ -406,7 +407,8 @@ function setupState(isDemo) {
     network: open,
     token: !!config.token,
     address: localAddress4() ? hostPort(localAddress4(), config.port) : (isDemo ? hostPort('192.168.1.131', config.port || 8080) : null),
-    hostname: telemetryModule ? telemetryModule.localHostname(localAddress4()) : null,
+    address6: localAddress6(),
+    hostname: telemetryModule ? telemetryModule.localName(localAddress4(), localAddress6()) : null,
     homeAssistant: (isDemo && simulatedSetupState.homeAssistant) ? simulatedSetupState.homeAssistant : { configured: !!(m.enabled && m.host), state: mqttStat.state },
     handoff: HANDOFF.server ? handoffUrl() : (isDemo ? 'http://' + hostPort(localAddress4() || '192.168.1.131', config.port || 8080) + '/?c=demo' : null)
   };
