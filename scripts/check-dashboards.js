@@ -1150,6 +1150,8 @@ async function visitAudio(browser, base, problems) {
     await page.waitForFunction(() => audioState !== null);
     if (!await page.locator('#audio-settings [data-lgs]').count()) problems.push('Audio tab: LG sound settings missing');
     failed = true;
+    // The readings and their Refresh are folded below the settings.
+    await page.locator('#audio-more > summary').click();
     await page.locator('#audio-refresh').click();
     await page.waitForFunction(() => !document.querySelector('#audio-error').hidden);
     if (await page.locator('#audio-readings').isVisible() || await page.locator('#audio-settings :enabled').count())
