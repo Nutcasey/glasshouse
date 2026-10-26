@@ -1,6 +1,6 @@
 # Screen savers
 
-The **Screensaver** tab, `/?tab=screensaver`, provides thirteen alternatives to LG's default, and any added on the TV:
+The **Screensaver** tab, `/?tab=screensaver`, provides fourteen alternatives to LG's default, and any added on the TV:
 
 * Clock
 * Starfield
@@ -14,6 +14,7 @@ The **Screensaver** tab, `/?tab=screensaver`, provides thirteen alternatives to 
 * Vortex, whirlwinds of light spiraling up swaying funnels
 * Neo, columns of falling glyphs whose colors turn every minute
 * Harmonograph, pendulum ribbons of light weaving and fading on black
+* Tesseract, a four-dimensional cube turning through the fourth dimension, in fine lines of light that dim and turn violet with depth
 * Panel vitals, showing the TV's own panel hours and refresher countdown
 
 Each mode offers dim and bright variants, and visual elements continuously drift across the screen to prevent OLED burn-in or image retention.

@@ -17,6 +17,12 @@ Glasshouse Home displays a clock and date, the last active source or app, and up
 
     Every app from LG's launcher with its native icon. LG's promotional tiles (LG Channels, Sports, Always Ready, Alexa, Camera) start hidden, and apps hidden under [Hide home screen system apps](apps.md) stay hidden here. Includes **Notifications**, **Search**, and an always-present **LG Home** tile at the end.
 
+-   **Magic Remote & scrolling**
+
+    ---
+
+    With the Magic Remote's pointer, hovering a tile focuses it and clicking opens it. Resting the pointer near either end of a row glides the row that way — faster the further out it points, with a soft arrow at the edge where there is more off-screen — gathering speed smoothly and braking into the last tile. The scroll wheel steps the hovered row one tile per notch, arrow keys continue from the tiles currently in view, and returning from an app preserves the focused tile and every row's scroll position.
+
 -   **Inputs & HDMI-CEC devices**
 
     ---
@@ -62,9 +68,6 @@ Glasshouse Home displays a clock and date, the last active source or app, and up
 What is typed is sent to LG's search, the service LG's own Search app uses, and nowhere else; opening a title starts the app on the TV. Switched off, the mark goes and nothing typed leaves the TV.
 
 LG's search needs the TV online and LG's search server (`gb.nextlgsdp.com` on a TV in the UK) reachable. Where the ad blocker blocks that server, on **Everything** or through an uploaded hosts list, the mark is hidden on Glasshouse Home and the **Search** switch is greyed on both dashboards, with a note saying what blocks it. The switch keeps its setting, and search comes back when the blocker is set to **Ads & telemetry** or off.
-
-OK acts once when released. Back also cancels a panel still loading. A close
-that cannot be confirmed shows an error and keeps the cards for retry.
 
 ## Wallpapers
 
