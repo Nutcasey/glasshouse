@@ -1469,7 +1469,7 @@ button.tools-jump:active{background:var(--w80)}
 .audio-playback{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 24px;margin:10px 0}
 .audio-playback>div{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--w08);font-size:14px}
 .audio-playback>div>span:last-child{color:var(--w60)}
-.audio-error{padding:12px 0;color:var(--red);overflow-wrap:anywhere}
+.audio-error{margin:4px 0 18px}
 @media(max-width:600px){
   .audio-path{grid-template-columns:1fr;gap:18px}
   .audio-path>li,.audio-path>li+li{padding:0 0 0 18px}

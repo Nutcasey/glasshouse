@@ -1511,8 +1511,9 @@ function audioDeclaration(value) {
  */
 function audioRows(d) {
   if (!d) return [];
-  if (d.ok === false) return [{ label: t('tv.audio.readFailed', 'Audio readings unavailable'), value: t('tv.apps.install.retry', 'Retry'),
-    act: 'audioRefresh', hint: d.error || '', press: t('tv.apps.install.press.retry', 'Press OK to try again') }];
+  if (d.ok === false) return [{ label: t('tv.audio.readFailed', 'Audio readings unavailable'), value: t('tv.apps.install.retry', 'Retry'), cls: 'act',
+    act: 'audioRefresh', press: t('tv.apps.install.press.retry', 'Press OK to try again'),
+    hint: t('audio.readFailed', 'The TV’s sound settings and audio readings could not be read.') + (d.error ? ' ' + sentence(d.error) : '') }];
   var r = [], ls = d.lgSettings || [];
   r.push(head(t('adv.sound', 'Sound')));
   ls.forEach(function (g) { if (g.section === 'sound') r.push(lgRow(g)); });

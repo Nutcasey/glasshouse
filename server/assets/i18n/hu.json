@@ -2180,5 +2180,6 @@
  "tv.audio.playback": {"text": "TV-lejátszás", "from": "TV playback"},
  "tv.audio.playbackHint": {"text": "Az LG médiaerőforrás-nyilatkozata a TV alkalmazásaiban történő lejátszáshoz. Egy felsorolt dekóder vagy csatornaszám nem jelenti a bitstream áteresztését.", "from": "LG’s media-resource declaration for TV-app playback. A listed decoder or channel count does not establish bitstream pass-through."},
  "tv.audio.readFailed": {"text": "A hangadatok nem érhetők el", "from": "Audio readings unavailable"},
- "tv.audio.receiverFormat": {"text": "Erősítő: {format}", "from": "Receiver: {format}"}
+ "tv.audio.receiverFormat": {"text": "Erősítő: {format}", "from": "Receiver: {format}"},
+ "audio.readFailed": {"text": "A TV hangbeállításai és hangadatai nem olvashatók.", "from": "The TV’s sound settings and audio readings could not be read."}
 }

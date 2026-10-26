@@ -2104,5 +2104,6 @@
  "tv.audio.playback": {"text": "Reproducción en la TV", "from": "TV playback"},
  "tv.audio.playbackHint": {"text": "La declaración de recursos multimedia de LG para la reproducción en apps de la TV. Un decodificador o un número de canales listado no garantiza el paso del bitstream.", "from": "LG’s media-resource declaration for TV-app playback. A listed decoder or channel count does not establish bitstream pass-through."},
  "tv.audio.readFailed": {"text": "Lecturas de audio no disponibles", "from": "Audio readings unavailable"},
- "tv.audio.receiverFormat": {"text": "Receptor: {format}", "from": "Receiver: {format}"}
+ "tv.audio.receiverFormat": {"text": "Receptor: {format}", "from": "Receiver: {format}"},
+ "audio.readFailed": {"text": "No se pudieron leer los ajustes de sonido ni las lecturas de audio de la TV.", "from": "The TV’s sound settings and audio readings could not be read."}
 }
