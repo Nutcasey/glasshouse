@@ -172,20 +172,18 @@ unlisted apps and newer cards, and snapshots forbid caching. The browser
 check covers held OK acting once on release, close errors above the panel,
 and Back or a Home relaunch cancelling a delayed panel reply.
 
-`test-home-search.js` uses a JustWatch GB response captured on 26 October
-2026, trimmed to distinct offers. It checks title identity across remakes,
-installed digital offers, independent episode links and the Netflix edition
-check. Its local service stub permits only country reads and app launches.
-Country selection, regional cache separation, GraphQL errors, cancellation,
-late app lists and a country change during link resolution are checked at the
-search API boundary. `test-fetch.js` owns JSON POST delivery through curl and
-wget, separately from catalogue behaviour.
-
-Native app checks must inspect the title or episode after launch, including
-when the app was already running. A launch acknowledgement, foreground app ID,
-profile picker or privacy prompt is not proof of the destination. Test with
-Everything active and confirm original country, blocking and consent settings
-afterwards. US catalogue responses do not qualify US apps on a GB TV.
+`test-home-search.js` feeds a G3's real answer for "Dune" to Glasshouse
+Home's search: one film on three services is one title, only the TV's apps
+are listed, a listed title opens in its app at the id LG's item detail gives,
+anything not listed opens nothing, and LG's error is a failure. With a G3's
+details for Severance and The Bear, a series opens at Prime Video's first
+season and at Disney+'s first episode, and with no detail a title opens at
+its item id less LG's service tag. From the G3's answers for promo words,
+trailers, teasers and sneak peeks are never listed while Trailer Park Boys
+and Trailer War are, a series never opens at a trailer numbered as its first
+episode, and switched off the search asks LG nothing.
+Delayed app-list replies cannot replace a newer search's launch targets, and
+an empty answer removes the preceding search's targets.
 
 The browser check exercises search through the Home view: a new query clears
 the previous titles, Enter waits for its reply, failed queries can be retried,

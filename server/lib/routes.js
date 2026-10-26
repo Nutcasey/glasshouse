@@ -1051,7 +1051,6 @@ function getSettingsPayload() {
 function handleHomeRoute(req, res, u, pathname) {
   function reply(r) { send(res, r && r.ok === false ? 400 : 200, JSON.stringify(r)); }
   if (req.method === 'GET') {
-    if (pathname === '/api/home/search/countries') return homeModule.search.countries(reply);
     // ?with=catalogue,channels adds what the TV app's Home section lists, in one answer.
     if (pathname === '/api/home') {
       var wants = String((u.query && u.query['with']) || '').split(',');

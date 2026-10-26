@@ -1,215 +1,238 @@
-/* JustWatch's captured GB response, local country selection and title launches.
- * No LG catalogue mocks: only settings and applicationManager are permitted.
- * Fixture captured 26 October 2026; duplicate offers and unrelated providers trimmed. */
+/* Glasshouse Home's search: LG's answer as titles on the TV's own apps, and
+ * only a listed title opens, in its app, at the id the app knows it by.
+ * The answer is a real one from a G3 (webOS 9.2.2) in the UK, trimmed.
+ * Strict ES5: also runs on node 0.10. */
 var assert = require('assert');
 var search = require('../server/lib/home-search');
-var fixture = require('./fixtures/search-justwatch-gb.json');
-var installed = ['amazon', 'netflix', 'com.apple.appletv', 'com.disney.disneyplus-prod', 'bbc.iplayer.3.0', 'com.wbd.stream', 'com.bskyb.skystore', 'youtube.leanback.v4'];
-var tv;
-function copy(v) { return JSON.parse(JSON.stringify(v)); }
-function later(cb, a, b) { process.nextTick(function () { cb(a, b); }); }
-function setup(options) {
-  options = options || {};
-  tv = { country: 'GB', override: '', enabled: true, requests: [], launches: [], pages: [], apps: [], pending: [],
-    doc: copy(fixture), deferApps: false, deferSearch: false, deferPage: false, pageReply: null, error: null };
+var answer = require('./fixtures/search-g3-dune.json');
+// Severance on Prime Video and The Bear on Disney+, with LG's detail for each
+// series and its first season, from the same G3.
+var series = require('./fixtures/search-g3-series-detail.json');
+// What a G3 answered for "sneak peek", "dune trailer", "teaser" and "trailer":
+// promos LG lists as films and series, and real titles with the same words.
+var promos = require('./fixtures/search-g3-trailers.json');
+
+var INSTALLED = ['amazon', 'com.apple.appletv', 'com.wbd.stream', 'netflix', 'com.disney.disneyplus-prod', 'com.tubitv.ott.tubi'];
+var calls;
+
+function FakeSubscription(uri, payload, appId, handlers) {
+  this.start = function () {
+    calls.push({ uri: uri, payload: payload });
+    var reply = calls.reply;
+    // As a G3 sends them: the titles and the session's end together.
+    process.nextTick(function () {
+      handlers.message({ returnValue: true, subscribed: true });
+      handlers.message(reply);
+      handlers.message({ subscribed: true, event: 'sessionEnd' });
+    });
+  };
+  this.stop = function () { calls.stopped++; };
+}
+
+function luna(uri, payload, cb) {
+  calls.push({ uri: uri, payload: payload });
+  var r = { returnValue: true };
+  if (uri === 'com.webos.service.sdx/send') {
+    var body = payload.bodyData;
+    var item = decodeURIComponent(/item_id=([^&]*)/.exec(body)[1]), type = /item_detail_type=([^&]*)/.exec(body)[1];
+    var known = series.detail[type + ' ' + item];
+    var execs = [{ exec_app_id: 'netflix', exec_id: 'netflix-own-id' }];
+    r.serverResponse = { response: JSON.stringify({ item: { item_detail: known || { exec_list: { execs: execs } } } }) };
+  }
+  process.nextTick(function () { cb(r); });
+}
+
+function setUp(reply, off) {
+  calls = [];
+  calls.stopped = 0;
+  calls.reply = reply;
   search.init({
-    enabled: function () { return tv.enabled; },
-    country: function () { return tv.override; },
-    luna: function (uri, body, cb) {
-      if (uri === 'com.webos.service.settings/getSystemSettings') return later(cb, { returnValue: true, settings: { smartServiceCountryCode2: tv.country } });
-      assert.equal(uri, 'com.webos.applicationManager/launch', 'no LG catalogue calls');
-      tv.launches.push(body); later(cb, { returnValue: true });
-    },
-    fetch: {
-      postJson: function (url, body, cb) {
-        assert.equal(url, 'https://apis.justwatch.com/graphql');
-        if (/locales/.test(body.query)) {
-          later(cb, null, { data: { locales: ['GB', 'US', 'DE'].map(function (c) { return { country: c, countryName: c }; }) } });
-        } else {
-          tv.requests.push(body);
-          if (tv.deferSearch) tv.pending.push(cb); else later(cb, null, tv.error || copy(tv.doc));
-        }
-        return { cancel: function () {} };
-      },
-      getText: function (url, cb) {
-        tv.pages.push(url);
-        if (tv.deferPage) tv.pageReply = cb;
-        else later(cb, null, /80057281$/.test(url) && !options.rejectEdition ? '<h1>Stranger Things</h1>' : '<h1>Stranger Things: VHS Special Edition</h1><h1>Stranger Things</h1>');
-        return { cancel: function () {} };
-      }
-    },
+    enabled: function () { return !off; },
+    luna: luna,
+    Subscription: FakeSubscription,
+    // Read from the TV, so it answers later than the search's end.
     apps: function (cb) {
-      if (tv.deferApps) tv.apps.push(cb);
-      else later(cb, installed.map(function (id) { return { id: id, title: id }; }));
-    }
+      setTimeout(function () { cb(INSTALLED.map(function (id) { return { id: id, title: id, icon: 'x.png' }; })); }, 5);
+    },
+    opened: function (id) { calls.opened = id; }
   });
 }
-function title(result, name, year) { assert.ok(result.ok, result.error); return result.results.filter(function (r) { return r.title === name && r.year === year; })[0]; }
-function open(hit, app, cb) { assert.ok(hit); search.open({ id: hit.id, app: app }, cb); }
+
+function find(query, cb) {
+  search.find(query, function (r) { cb(r); });
+}
+
 var tests = [
-  function digitalTitlesAndIndependentLinks(done) {
-    setup();
-    search.find('Dune', function (r) {
-      var dune = title(r, 'Dune', 2021), original = title(r, 'Dune', 1984);
-      assert.ok(dune && original && dune.id !== original.id, 'remakes stay separate');
-      assert.ok(dune.apps.some(function (a) { return a.id === 'com.apple.appletv'; }), 'digital purchases remain eligible');
-      assert.ok(dune.apps.every(function (a) { return a.id !== 'com.wbd.stream' && a.id !== 'com.bskyb.skystore'; }));
-      assert.ok(dune.unavailableApps.indexOf('com.wbd.stream') !== -1, 'availability without a native title link is labelled');
-      assert.equal(r.country, 'GB');
-      assert.equal(dune.poster, 'https://images.justwatch.com/poster/249473713/s332/dune-2020.jpg');
-      assert.ok(dune.source.indexOf('https://www.justwatch.com/uk/') === 0);
-      assert.equal(tv.requests[0].variables.text, 'Dune');
-      assert.equal((tv.requests[0].query.match(/country: GB/g) || []).length, 3, 'discovery, content and offers use one country');
-      assert.ok(/platform: WEB\)/.test(tv.requests[0].query), 'availability is not limited to WEBOS offers');
-      open(dune, 'amazon', function (a) {
-        assert.ok(a.ok);
-        assert.equal(tv.launches[0].replaceParams.deeplinkingParams.value, 'amzn1.dv.gti.a8025548-3908-4562-8896-8fffd945cfb6');
-        search.open({ id: dune.id, app: 'com.example.arbitrary' }, function (b) {
-          assert.ok(!b.ok); assert.equal(tv.launches.length, 1); done();
+  function groupsTitlesAcrossTheTvsApps(done) {
+    setUp(answer);
+    find('Dune', function (r) {
+      assert.ok(r.ok);
+      assert.deepEqual(calls[0].payload.category_name, 'movie,tvshow');
+      var dune = r.results[0];
+      // One film on three services, dated 3 September to 21 October 2021 by them.
+      assert.equal(dune.title, 'Dune');
+      assert.equal(dune.kind, 'film');
+      assert.equal(dune.year, 2021);
+      assert.deepEqual(dune.apps.map(function (a) { return a.id; }), ['amazon', 'com.apple.appletv', 'com.wbd.stream']);
+      assert.ok(/^http:\/\/[^#]+$/.test(dune.poster), 'poster without LG\'s size hint');
+      var titles = r.results.map(function (x) { return x.title + ' ' + x.year; });
+      assert.deepEqual(titles.slice(0, 2), ['Dune 2021', 'Dune 1984']);
+      assert.ok(titles.indexOf('Dune: Part Two 2024') !== -1);
+      // Frank Herbert's Dune is on Prime Video; nothing is listed only for an app the TV lacks.
+      r.results.forEach(function (x) { x.apps.forEach(function (a) { assert.ok(INSTALLED.indexOf(a.id) !== -1); }); });
+      assert.equal(calls.stopped, 1);
+      done();
+    });
+  },
+
+  function opensAListedTitleAtTheAppsOwnId(done) {
+    setUp(answer);
+    find('Dune', function (r) {
+      var partTwo = r.results.filter(function (x) { return x.title === 'Dune: Part Two'; })[0];
+      search.open({ id: partTwo.id, app: 'netflix' }, function (o) {
+        assert.ok(o.ok);
+        var launch = calls[calls.length - 1];
+        assert.equal(launch.uri, 'com.webos.applicationManager/launch');
+        assert.deepEqual(launch.payload, { id: 'netflix',
+          replaceParams: { deeplinkingParams: { target: '$CONTENTID', value: 'netflix-own-id' } } });
+        assert.equal(calls.opened, 'netflix');
+        done();
+      });
+    });
+  },
+
+  function refusesWhatTheSearchDidNotList(done) {
+    setUp(answer);
+    find('Dune', function (r) {
+      var before = calls.length;
+      // Listed, but not on that app; then an app the search never named.
+      search.open({ id: r.results[1].id, app: 'netflix' }, function (a) {
+        search.open({ id: r.results[0].id, app: 'com.example.anything' }, function (b) {
+          assert.ok(!a.ok && !b.ok);
+          assert.equal(calls.length, before, 'nothing was launched');
+          done();
         });
       });
     });
   },
-  function youtubeUsesTheVideoQueryForAWarmApp(done) {
-    setup();
-    search.find('Dune', function (r) {
-      open(title(r, 'Dune', 1984), 'youtube.leanback.v4', function (a) {
-        assert.ok(a.ok);
-        assert.equal(tv.launches[0].replaceParams.deeplinkingParams.value, 'v=kzrcf5ph0EI'); done();
-      });
-    });
-  },
-  function rejectsPhysicalOffers(done) {
-    setup();
-    var dune = tv.doc.data.popularTitles.edges[0].node;
-    dune.offers.forEach(function (o) { o.presentationType = 'BLURAY'; });
-    search.find('Dune', function (r) {
-      assert.ok(!title(r, 'Dune', 2021), 'an installed app does not turn a disc offer into a launch');
-      assert.ok(title(r, 'Dune', 1984)); done();
-    });
-  },
-  function opensDisneyAndBbcAtIndependentEpisodeLinks(done) {
-    setup();
-    var bear = tv.doc.data.popularTitles.edges.filter(function (e) { return e.node.content.title === 'The Bear'; })[0].node;
-    // A non-play TVOS link must not hide the usable IOS episode identifier.
-    bear.offers[0].tvos = bear.offers[0].standardWebURL;
-    search.find('The Bear', function (r) {
-      open(title(r, 'The Bear', 2022), 'com.disney.disneyplus-prod', function (a) {
-        assert.ok(a.ok);
-        assert.deepEqual(tv.launches[0], { id: 'com.disney.disneyplus-prod', replaceParams: { deeplinkingParams: {
-          target: '$CONTENTID', value: 'page=play&id=60da223c-d2a0-411a-95c9-665a839371f9&distributionPartner=lg' } } });
-        open(title(r, 'Doctor Who', 2005), 'bbc.iplayer.3.0', function (b) {
-          assert.ok(b.ok);
-          assert.equal(tv.launches[1].replaceParams.deeplinkingParams.value, 'http://www.bbc.co.uk/iplayer/episode/b0074dlv'); done();
+
+  function opensASeriesAtItsStart(done) {
+    setUp(series.search);
+    find('Severance', function (r) {
+      var byApp = {};
+      r.results.forEach(function (x) { byApp[x.apps[0].id] = x; });
+      assert.equal(byApp.amazon.kind, 'series');
+      // LG's own link for both is the latest episode: Prime Video's series 2
+      // episode 16 (a bonus interview), Disney+'s series 5 episode 8.
+      search.open({ id: byApp.amazon.id, app: 'amazon' }, function () {
+        // Prime Video opens its first season's page.
+        assert.equal(calls[calls.length - 1].payload.replaceParams.deeplinkingParams.value,
+          'amzn1.dv.gti.078e982d-fd12-426a-8764-dfabcca6245c');
+        search.open({ id: byApp['com.disney.disneyplus-prod'].id, app: 'com.disney.disneyplus-prod' }, function () {
+          // Disney+'s season pages do not open, so its first episode plays.
+          assert.equal(calls[calls.length - 1].payload.replaceParams.deeplinkingParams.value,
+            'page=play&id=60da223c-d2a0-411a-95c9-665a839371f9&distributionPartner=lg');
+          done();
         });
       });
     });
   },
-  function filtersShortPromosWithoutHidingRealProgrammes(done) {
-    setup();
-    var node = tv.doc.data.popularTitles.edges[0].node;
-    tv.doc.data.popularTitles.edges = [
-      ['Dune: Trailer', 2], ['Dune: Sneak Peek', 5], ['Teaser: Dune', null],
-      ['Trailer Park Boys', 25], ['Trailer War', 113]
-    ].map(function (item) { var n = copy(node); n.content.title = item[0]; n.content.runtime = item[1]; return { node: n }; });
-    search.find('trailer', function (r) {
-      assert.deepEqual(r.results.map(function (n) { return n.title; }), ['Trailer Park Boys', 'Trailer War']); done();
+
+  function neverListsATrailer(done) {
+    setUp(promos);
+    find('trailer', function (r) {
+      assert.deepEqual(r.results.map(function (x) { return x.title; }).sort(), [
+        'Kung Fu Trailers of Fury', 'Mathematical Brain Teasers and Logic Puzzles', 'Thriller Teaser Series',
+        'Trailer Park Boys', 'Trailer War']);
+      done();
     });
   },
-  function verifiesTheNetflixEditionAndFailsClosed(done) {
-    setup();
-    search.find('Stranger Things', function (r) {
-      open(title(r, 'Stranger Things', 2016), 'netflix', function (a) {
-        assert.ok(a.ok);
-        assert.ok(/80057281/.test(tv.launches[0].replaceParams.deeplinkingParams.value));
-        setup({ rejectEdition: true }); tv.override = 'US';
-        search.find('Stranger Things', function (s) {
-          open(title(s, 'Stranger Things', 2016), 'netflix', function (b) {
-            assert.ok(!b.ok, 'a matching heading for related content must not validate a different first heading');
-            assert.equal(tv.launches.length, 0); done();
-          });
-        });
+
+  function neverOpensASeriesAtATrailer(done) {
+    // The Bear's first season on Disney+, with Prime Video's real "Teaser
+    // Trailer: Season 1" item, numbered episode 1, put first.
+    var bear = series.detail['advanced MasterSet_GB|DISNEY_page=browse&id=entity-f1b38ee5-310d-4be7-b8b3-6998d29d8e85&seasonSequenceNumber=1&distributionPartner=lg'];
+    var prime = series.detail['advanced MasterSet_GB|AMAZON_amzn1.dv.gti.078e982d-fd12-426a-8764-dfabcca6245c'];
+    var trailer = prime.tab_episode.items.filter(function (e) { return /Trailer/.test(e.conts_epsd_real_name); })[0];
+    var saved = bear.tab_episode.items;
+    bear.tab_episode.items = [trailer].concat(saved);
+    setUp(series.search);
+    find('The Bear', function (r) {
+      var title = r.results.filter(function (x) { return x.apps[0].id === 'com.disney.disneyplus-prod'; })[0];
+      search.open({ id: title.id, app: 'com.disney.disneyplus-prod' }, function () {
+        bear.tab_episode.items = saved;
+        assert.equal(calls[calls.length - 1].payload.replaceParams.deeplinkingParams.value,
+          'page=play&id=60da223c-d2a0-411a-95c9-665a839371f9&distributionPartner=lg');
+        done();
       });
     });
   },
-  function requiresAKnownCountryAndSeparatesRegionalCaches(done) {
-    setup(); tv.country = '';
-    search.find('Dune', function (unknown) {
-      assert.ok(!unknown.ok); assert.equal(tv.requests.length, 0, 'no silent US default');
-      tv.override = 'UK';
-      search.find('Dune', function (gb) {
-        assert.equal(gb.country, 'GB'); var old = gb.results[0]; tv.override = 'US';
-        open(old, old.apps[0].id, function (stale) {
-          assert.ok(!stale.ok); assert.equal(tv.launches.length, 0);
-          search.find('Dune', function (us) {
-            assert.equal(us.country, 'US'); assert.equal(tv.requests.length, 2, 'GB cache is not reused for US');
-            tv.override = 'XZ';
-            search.find('Dune', function (unsupported) {
-              assert.ok(!unsupported.ok); assert.equal(tv.requests.length, 2); done();
-            });
-          });
-        });
+
+  function opensAtTheItemsOwnIdWithoutDetail(done) {
+    setUp(answer);
+    find('Dune', function (r) {
+      // LG names no Prime Video id here: the item id, less LG's tag, is the app's.
+      search.open({ id: r.results[0].id, app: 'amazon' }, function () {
+        assert.equal(calls[calls.length - 1].payload.replaceParams.deeplinkingParams.value,
+          'amzn1.dv.gti.a8025548-3908-4562-8896-8fffd945cfb6');
+        done();
       });
     });
   },
-  function providerErrorsAndDisabledSearch(done) {
-    setup(); tv.error = { data: { popularTitles: { edges: [] } }, errors: [{ message: 'invalid country' }] };
-    search.find('Dune', function (r) {
-      assert.ok(!r.ok, 'GraphQL errors are failures even with HTTP 200 and data');
-      tv.error = null;
-      search.find('Dune', function (valid) {
-        tv.enabled = false;
-        search.find('Dune', function (disabled) {
-          assert.ok(!disabled.ok); assert.equal(tv.requests.length, 2);
-          open(title(valid, 'Dune', 2021), 'amazon', function (refused) {
-            assert.ok(!refused.ok && /switched off/.test(refused.error)); assert.equal(tv.launches.length, 0); done();
-          });
-        });
-      });
+
+  function switchedOffAsksLgNothing(done) {
+    setUp(answer, true);
+    find('Dune', function (r) {
+      assert.ok(!r.ok);
+      assert.equal(calls.length, 0, 'no search and no detail went to LG');
+      done();
     });
   },
-  function lateAppListsCannotReplaceCurrentLaunchTargets(done) {
-    setup(); tv.deferApps = true;
+
+  function reportsLgsErrorAsAFailure(done) {
+    setUp({ subscribed: true, event: 'error', errorCode: '6011', errorText: 'NLP invalid parameter' });
+    find('Dune', function (r) {
+      assert.ok(!r.ok);
+      assert.equal(r.detail, 'NLP invalid parameter');
+      done();
+    });
+  },
+
+  function onlyTheNewestSearchCanReplaceLaunchableResults(done) {
+    var subscriptions = [], appReplies = [], newest;
+    calls = [];
+    search.init({
+      luna: luna,
+      Subscription: function (uri, payload, appId, handlers) {
+        this.start = function () { subscriptions.push(handlers); };
+        this.stop = function () {};
+      },
+      apps: function (cb) { appReplies.push(cb); }
+    });
     search.find('du', function (r) { assert.ok(r.superseded); });
-    setImmediateCompat(function () {
-      search.find('dune', function (r) {
-        var hit = title(r, 'Dune', 2021);
-        tv.apps[0](installed.map(function (id) { return { id: id, title: id }; }));
-        open(hit, 'amazon', function (a) {
-          assert.ok(a.ok); tv.deferApps = false;
-          tv.doc.data.popularTitles.edges = [];
-          search.find('absent', function (empty) {
-            assert.ok(empty.ok && !empty.results.length);
-            open(hit, 'amazon', function (old) { assert.ok(!old.ok); assert.equal(tv.launches.length, 1); done(); });
-          });
+    subscriptions[0].message(answer);
+    search.find('dune', function (r) { newest = r.results[0]; });
+    subscriptions[1].message(answer);
+    var apps = [{ id: 'amazon', title: 'Prime Video' }];
+    appReplies[1](apps);
+    // The first search's app list arrives after the newer results are visible.
+    appReplies[0](apps);
+    search.open({ id: newest.id, app: 'amazon' }, function (r) {
+      assert.ok(r.ok, 'the newest displayed result remains launchable');
+      search.find('no matches', function (empty) {
+        assert.ok(empty.ok && !empty.results.length);
+        var before = calls.length;
+        search.open({ id: newest.id, app: 'amazon' }, function (old) {
+          assert.ok(!old.ok, 'an empty result replaces the previous launch list');
+          assert.equal(calls.length, before);
+          done();
         });
       });
-      setImmediateCompat(function () { tv.apps[1](installed.map(function (id) { return { id: id, title: id }; })); });
-    });
-  },
-  function pendingOpensAreCancelledAndCountryIsRechecked(done) {
-    setup(); tv.override = 'DE'; tv.deferPage = true;
-    search.find('Stranger Things', function (r) {
-      open(title(r, 'Stranger Things', 2016), 'netflix', function (a) { assert.ok(a.superseded); });
-      setImmediateCompat(function () {
-        var late = tv.pageReply;
-        search.find('Dune', function (s) {
-          late(null, '<h1>Stranger Things</h1>');
-          open(title(s, 'Dune', 2021), 'amazon', function (b) {
-            assert.ok(b.ok); assert.equal(tv.launches.length, 1); assert.equal(tv.launches[0].id, 'amazon');
-            search.find('Stranger Things', function (again) {
-              open(title(again, 'Stranger Things', 2016), 'netflix', function (changed) {
-                assert.ok(!changed.ok); assert.equal(tv.launches.length, 1, 'country changed during resolution: no further launch'); done();
-              });
-              setImmediateCompat(function () { tv.override = 'GB'; tv.pageReply(null, '<h1>Stranger Things</h1>'); });
-            });
-          });
-        });
-      });
+      subscriptions[2].message({ event: 'sessionEnd' });
     });
   }
 ];
-function setImmediateCompat(cb) { setTimeout(cb, 10); }
+
 (function next(i) {
   if (i === tests.length) return console.log('test-home-search: ' + tests.length + ' passed');
   tests[i](function () { next(i + 1); });

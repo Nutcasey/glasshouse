@@ -1401,37 +1401,36 @@ app is opened or closed only while it is on the list. Snapshot responses use
 `private, no-store` caching. Back cancels a pending panel load; returning Home
 discards replies from the previous visit. OK acts once on release.
 
-Left of any row's first tile is a search mark that opens film and series
-search. `lib/home-search.js` POSTs GraphQL to
-`https://apis.justwatch.com/graphql` through the TV's curl or wget. No LG cloud
-catalogue or item-detail endpoint is used, including when Everything blocks
-`nextlgsdp.com`. This public consumer API has no third-party stability contract.
-Discovery, content and offers use the same country. Availability is requested
-for `WEB`, since `WEBOS` omits real US providers such as standalone Max; native
-`WEBOS` links are requested separately. Disc and cinema offers are excluded.
-Global title nodes keep remakes separate. Posters and source credit come from
-JustWatch.
-
-`searchCountry` in `home.json` is empty for Automatic: each search and launch
-reads `option.smartServiceCountryCode2` from LG's local settings service. An
-explicit country is checked against JustWatch's locales. UK is normalised to
-GB; missing or unsupported countries fail without a US default. Country is
-part of the one-minute query cache and the current launch list. Changing the
-setting, starting another search or switching Search off invalidates pending
-work. A launch rechecks country after any provider-page lookup. Only a title
-and installed app from the current results can launch, for at most 30 minutes.
-
-`lib/home-search-links.js` copies only native content targets, or translates a
-verified provider episode identifier. applicationManager fills the installed
-app's `deeplinkingParams` template through `replaceParams`, preserving regional
-app details such as `handledBy`. Availability alone never produces an app-home
-fallback. Missing title links are labelled. Disney uses an independently
-supplied play UUID; catch-up adapters use exact episode URLs. Multiple Netflix
-targets can refer to different editions of one series: a bounded resolver
-checks the first heading on Netflix's public title page and refuses an
-unconfirmed edition. Cancellation prevents a late lookup launching an old title.
-
-The view searches 0.4 s after
+Left of any row's first tile is a search mark in the gutter, and OK there
+opens a panel to search films and series. `lib/home-search.js` asks `com.webos.service.nlpmanager/search`, the
+service LG's own Search (`com.webos.app.voice`) asks, as a subscription; a
+one-off call is refused with `NLP invalid parameter`. It answers from LG's
+catalogue in under a second on a G3, one result for each title on each
+service, with the service's app id and an item id. Results for apps the TV
+does not have are counted, not shown; the same title and kind within a year
+on several services is one title, since each service dates it differently.
+Opening one asks `com.webos.service.sdx/send` for the item's detail, whose
+`exec_id` is the id the app knows the title by, and launches the app with
+`replaceParams.deeplinkingParams`, which applicationManager puts into the
+app's own `deeplinkingParams` template in its `appinfo.json`
+([TV-RESEARCH](development/TV-RESEARCH.md#lgs-search-and-deep-links-g3-webos-922)).
+For a series, item detail names the latest episode, so
+the start is found instead: the `advanced` detail lists the seasons
+(`season_list`) and a season's lists its episodes (`tab_episode`). Prime
+Video and HBO Max open at the first season's page; other apps, whose season
+links do not open (Disney+) or which have only playback links (BBC iPlayer),
+play the first episode. Apple TV and Netflix list no seasons and keep LG's
+link. An LG item id less its first `|` and LG's service tag (`AMAZON_`) is the
+app's own id, used where the detail names none. Trailers are never listed or
+opened: LG marks none, and lists Prime Video's sneak peeks as films and its
+trailers as episodes, so a title or episode is taken for one by a promo word
+(trailer, teaser, sneak peek, preview, first look) with a running time of 15
+minutes or less, or, without one, ending the name or before its colon or
+dash; Trailer Park Boys and Trailer War stay. `search` in `home.json`, on by
+default, switches search off: no rail, and both routes refuse before asking
+LG. Only a title and app from the last search can be opened. Both calls go to
+LG's servers through `nextlgsdp.com`, which the ad blocker's Everything
+setting blocks, so search does not work there. The view searches 0.4 s after
 typing stops. Back on the TV's keyboard closes it without the page seeing the
 key; the `keyboardStateChange` event on the document says so, and the titles
 take the focus. A return from an app opened in the panel comes as both a

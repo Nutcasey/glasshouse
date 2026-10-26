@@ -210,9 +210,8 @@ function defaults() {
     // The plate describing the picture of what was last on: detail many
     // won't want on a home screen, so it waits to be switched on.
     picture: false,
-    // Search on the view: off, nothing typed reaches JustWatch.
+    // Search on the view (lib/home-search): off, nothing typed reaches LG.
     search: true,
-    searchCountry: '',
     // { text, accent } as #rrggbb, or null for the view's own colours.
     colours: null,
     // null until chosen: the first start keeps an empty layout an earlier build left.
@@ -259,7 +258,6 @@ function normalise(raw) {
   d.searchHintSeen = raw.searchHintSeen === true;
   d.picture = raw.picture === true;
   d.search = raw.search !== false;
-  d.searchCountry = typeof raw.searchCountry === 'string' && /^[a-z]{2}$/i.test(raw.searchCountry) ? raw.searchCountry.toUpperCase().replace(/^UK$/, 'GB') : '';
   d.colours = validColours(raw.colours);
   if (typeof raw.hideLgHomeAtStart === 'boolean') d.hideLgHomeAtStart = raw.hideLgHomeAtStart;
   if (typeof raw.lgAutoLaunch === 'string' && raw.lgAutoLaunch) d.lgAutoLaunch = raw.lgAutoLaunch;
@@ -346,22 +344,6 @@ function perRow(sent, kept) {
 
 // The layout the dashboard and the view's arrange mode send.
 function setLayout(body, cb) {
-  if (!body || typeof body !== 'object') return cb({ ok: false, error: 'layout expected' });
-  if (body.searchCountry === undefined || body.searchCountry === '') return applyLayout(body, cb);
-  if (typeof body.searchCountry !== 'string' || !/^[a-z]{2}$/i.test(body.searchCountry)) {
-    return cb({ ok: false, error: msg('srv.home.searchCountryInvalid', 'Choose a supported search country, or Automatic.') });
-  }
-  var code = body.searchCountry.toUpperCase().replace(/^UK$/, 'GB');
-  search.countries(function (r) {
-    if (!r.ok) return cb(r);
-    if (!r.countries.some(function (country) { return country.code === code; })) {
-      return cb({ ok: false, error: msg('srv.home.searchCountryUnsupported', 'JustWatch does not support the selected country ({country}).', { country: code }) });
-    }
-    applyLayout(body, cb);
-  });
-}
-
-function applyLayout(body, cb) {
   var c = readConfig();
   if (!body || typeof body !== 'object') return cb({ ok: false, error: 'layout expected' });
   var next = normalise({
@@ -382,7 +364,6 @@ function applyLayout(body, cb) {
     searchHintSeen: body.searchHintSeen !== undefined ? body.searchHintSeen : c.searchHintSeen,
     picture: typeof body.picture === 'boolean' ? body.picture : c.picture,
     search: typeof body.search === 'boolean' ? body.search : c.search,
-    searchCountry: typeof body.searchCountry === 'string' ? body.searchCountry : c.searchCountry,
     // null puts the view's own colours back.
     colours: body.colours !== undefined ? body.colours : c.colours
   });
@@ -399,7 +380,6 @@ function applyLayout(body, cb) {
     return cb({ ok: false, error: msg('srv.home.saveFailed', 'could not save the layout') });
   }
   if (c.picture !== config.picture) pictureDetailsFn(config.picture);
-  if (c.search !== config.search || c.searchCountry !== config.searchCountry) search.invalidate();
   // A row back in its own order keeps no record of what was opened.
   ROWS.forEach(function (r) { if (config.sort[r] !== 'recent') recent.forget(r); });
   cb({ ok: true, layout: layoutOf(config), layoutVersion: layoutVersion() });
@@ -407,7 +387,7 @@ function applyLayout(body, cb) {
 
 function layoutOf(c) {
   return { rows: c.rows, order: c.order, sort: c.sort, hidden: c.hidden, channels: c.channels, hintSeen: c.hintSeen,
-    searchHintSeen: c.searchHintSeen, picture: c.picture, search: c.search, searchCountry: c.searchCountry, colours: c.colours };
+    searchHintSeen: c.searchHintSeen, picture: c.picture, search: c.search, colours: c.colours };
 }
 
 // ---------------------------------------------------------------- what it shows
@@ -1428,9 +1408,8 @@ function init(opts) {
   wallpapers.init(stateDir);
   recent.init(stateDir, opts.now);
   recentApps.init({ luna: lunaFn });
-  search.init({ luna: lunaFn, fetch: opts.fetch, apps: launchPoints,
-    opened: function (id) { noteOpened('app', id); }, enabled: function () { return readConfig().search; },
-    country: function () { return readConfig().searchCountry; } });
+  search.init({ luna: lunaFn, Subscription: opts.Subscription, apps: launchPoints,
+    opened: function (id) { noteOpened('app', id); }, enabled: function () { return readConfig().search; } });
   takeover.init({
     luna: lunaFn,
     samrescan: opts.samrescan || null,
