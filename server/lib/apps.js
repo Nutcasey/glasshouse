@@ -1183,12 +1183,36 @@ var LAUNCHER_APP_IDS = ['com.tvweb.dashboard', 'io.github.rorygallagher2024.lg-w
 var LAUNCHER_APP_ROOT = '/media/developer/apps/usr/palm/applications';
 var LAUNCHER_PORT_LINE = /(var PORT = )\d+(;\s*\/\/ tvweb:port)/;
 
+/** Ensures installed launcher apps declare resolution 1920x1080 so 4K TVs scale the canvas. */
+function syncLauncherAppinfo(root) {
+  var changed = [];
+  root = root || LAUNCHER_APP_ROOT;
+  for (var i = 0; i < LAUNCHER_APP_IDS.length; i++) {
+    var file = path.join(root, LAUNCHER_APP_IDS[i], 'appinfo.json');
+    try {
+      if (!fs.existsSync(file)) continue;
+      var raw = fs.readFileSync(file, 'utf8');
+      var parsed = JSON.parse(raw);
+      if (parsed && parsed.resolution !== '1920x1080') {
+        parsed.resolution = '1920x1080';
+        fs.writeFileSync(file, JSON.stringify(parsed, null, 2) + '\n');
+        changed.push(LAUNCHER_APP_IDS[i]);
+        console.log('apps: ' + LAUNCHER_APP_IDS[i] + ' appinfo.json updated with resolution 1920x1080');
+      }
+    } catch (e) {
+      console.error('apps: could not set resolution in ' + file + ': ' + e.message);
+    }
+  }
+  return changed;
+}
+
 /** Returns the ids of the installed launcher pages whose port was changed. */
 function syncLauncherPort(port, root) {
+  root = root || LAUNCHER_APP_ROOT;
+  syncLauncherAppinfo(root);
   var changed = [];
   port = parseInt(port, 10);
   if (!(port >= 1 && port <= 65535)) return changed;
-  root = root || LAUNCHER_APP_ROOT;
   for (var i = 0; i < LAUNCHER_APP_IDS.length; i++) {
     var file = path.join(root, LAUNCHER_APP_IDS[i], 'index.html');
     try {
@@ -1209,6 +1233,7 @@ function syncLauncherPort(port, root) {
 module.exports = {
   init: init,
   syncLauncherPort: syncLauncherPort,
+  syncLauncherAppinfo: syncLauncherAppinfo,
   firstFileInside: firstFileInside,
   isProtected: isProtected,
   getApps: getApps,

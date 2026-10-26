@@ -183,7 +183,7 @@ step('offers Guide and the streaming buttons LG has switched on, with no filter 
     assert.ok(r.supported);
     assert.strictEqual(r.inChain, false);
     var keys = r.keys.map(function (k) { return k.key; });
-    assert.deepEqual(keys, ['netflix', 'amazon', 'disneyplus', 'hulu', 'alexa', 'apps', 'homehub', 'ai', 'multikey', 'multikeyhold', 'guide']);
+    assert.deepEqual(keys, ['netflix', 'amazon', 'disneyplus', 'movies', 'hulu', 'alexa', 'apps', 'homehub', 'ai', 'multikey', 'multikeyhold', 'guide']);
     assert.strictEqual(r.keys.filter(function (k) { return k.key === 'alexa'; })[0].blocksApp, true);
     assert.strictEqual(r.keys.filter(function (k) { return k.key === 'ai'; })[0].turnsOffVoice, true);
     var multi = r.keys.filter(function (k) { return k.key === 'multikey'; })[0];
@@ -293,6 +293,16 @@ step('LG\'s input switcher is a choice of its own, first, for any key', function
           });
         });
       });
+    });
+  });
+});
+
+step('media controls are not offered where LG\'s native filters only launch apps', function (next) {
+  rk.getRemoteKeys(function (r) {
+    assert.ok(!r.choices.some(function (c) { return c.kind === 'media'; }));
+    rk.setRemoteKey('netflix', 'open', 'media:play', function (s) {
+      assert.strictEqual(s.ok, false);
+      next();
     });
   });
 });

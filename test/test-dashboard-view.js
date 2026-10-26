@@ -184,4 +184,81 @@ vm.runInNewContext(scriptMatch[1] + '\n;' + testPagingSnippet, sandbox);
   console.log('  ✓ updateRows includes Server health row');
 })();
 
-console.log('ALL test-dashboard-view.js assertions passed!\n');
+// 6. Promise and fetch polyfills activate when missing (webOS 2 WebKit #746)
+(function testPromiseAndFetchPolyfill() {
+  var xhrs = [];
+  function FakeXHR() {
+    this.headers = {};
+    this.status = 200;
+    this.responseText = '{"ok":true,"test":123}';
+    xhrs.push(this);
+  }
+  FakeXHR.prototype.open = function (m, u) { this.method = m; this.url = u; };
+  FakeXHR.prototype.setRequestHeader = function (k, v) { this.headers[k] = v; };
+  FakeXHR.prototype.send = function (b) {
+    this.body = b;
+    if (this.onload) this.onload();
+  };
+
+  var webos2Sandbox = {
+    t: function (k, d) { return d; },
+    XMLHttpRequest: FakeXHR,
+    TypeError: TypeError,
+    Promise: undefined,
+    fetch: undefined,
+    document: {
+      getElementById: function () { return dummyEl; },
+      querySelectorAll: function () { return []; },
+      addEventListener: function () {}
+    },
+    location: { search: '' },
+    setInterval: function () {},
+    setTimeout: setTimeout,
+    clearTimeout: clearTimeout,
+    addEventListener: function () {}
+  };
+  webos2Sandbox.window = webos2Sandbox;
+
+  vm.runInNewContext(scriptMatch[1], webos2Sandbox);
+  assert.strictEqual(typeof webos2Sandbox.window.Promise, 'function', 'polyfilled window.Promise');
+  assert.strictEqual(typeof webos2Sandbox.window.fetch, 'function', 'polyfilled window.fetch');
+
+  // Verify Promise chaining and resolution
+  var pResolved = false;
+  var fetchResolved = false;
+  var safetyTimer = setTimeout(function () {
+    assert.strictEqual(pResolved, true, 'Promise chaining resolved before timeout');
+    assert.strictEqual(fetchResolved, true, 'Fetch over XHR resolved before timeout');
+  }, 3000);
+
+  function checkDone() {
+    if (pResolved && fetchResolved) {
+      clearTimeout(safetyTimer);
+      console.log('  ✓ Promise and fetch polyfills support webOS 2 WebKit without native ES6');
+      console.log('ALL test-dashboard-view.js assertions passed!\n');
+    }
+  }
+
+  webos2Sandbox.window.Promise.resolve('webos2')
+    .then(function (val) {
+      return webos2Sandbox.window.Promise.resolve(val + '-ok');
+    })
+    .then(function (val) {
+      assert.strictEqual(val, 'webos2-ok');
+      pResolved = true;
+      checkDone();
+    });
+
+  // Verify fetch over FakeXHR
+  webos2Sandbox.window.fetch('/api/test')
+    .then(function (res) {
+      assert.strictEqual(res.ok, true);
+      assert.strictEqual(res.status, 200);
+      return res.json();
+    })
+    .then(function (data) {
+      assert.deepEqual(data, { ok: true, test: 123 });
+      fetchResolved = true;
+      checkDone();
+    });
+})();

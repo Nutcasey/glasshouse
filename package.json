@@ -1,6 +1,6 @@
 {
   "name": "glasshouse",
-  "version": "0.117.0",
+  "version": "0.118.0",
   "private": true,
   "description": "Dashboard, remote control, OLED care, and Home Assistant MQTT bridge for LG webOS TVs",
   "devDependencies": {
@@ -9,6 +9,7 @@
   },
   "scripts": {
     "test": "node test/run-all.js",
-    "typecheck": "tsc"
+    "typecheck": "tsc",
+    "emulate": "node scripts/emulate-tv.js --open"
   }
 }

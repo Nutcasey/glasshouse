@@ -443,7 +443,8 @@ window.addEventListener('resize', () => {
 
 // What the remote's keys do (lib/remotekeys.js): a tile per key, grouped as
 // the remote groups them, each showing what it does now. Choosing a tile opens
-// a picker under its row with As LG has it, Nothing, the inputs and the apps.
+// a picker under its row with As LG has it, Nothing, the media controls, the
+// inputs and the apps.
 const RK_GROUPS = [
   { id: 'streaming', title: () => t('apps.remoteKeys.streaming', 'Streaming buttons'),
     keys: ['netflix', 'amazon', 'disneyplus', 'rakutentv', 'lgchannels', 'hulu', 'iplayer', 'freeviewplay', 'slingtv'] },
@@ -454,6 +455,8 @@ const RK_GROUPS = [
 ];
 // The colour keys' own colours, the one place colour is the key's name.
 const RK_COLOURS = { red: 'var(--red)', green: 'var(--green)', yellow: '#f2c230', blue: 'var(--blue)' };
+// The volume controls' own glyphs; the rest share the play/pause one.
+const RK_MEDIA_GLYPHS = { 'media:volumeUp': '🔊', 'media:volumeDown': '🔉', 'media:mute': '🔇' };
 let rkData = null;     // the last remoteKeys answer, for the picker
 let rkOpen = null;     // the key whose picker is open
 let rkCols = 0;        // the columns its grid had when it opened
@@ -469,6 +472,7 @@ function rkDoes(k, kindOf) {
   if (k.action === 'lg') return `<span class="rk-lg">${esc(t('apps.remoteKeys.lg', 'As LG has it'))}</span>`;
   if (k.action === 'nothing') return `<span class="rk-none" aria-hidden="true">⦸</span>${esc(t('apps.remoteKeys.doesNothing', 'Does nothing'))}`;
   if (kindOf(k.id) === 'switcher') return `<span class="rk-none" aria-hidden="true">⇄</span>${esc(t('apps.remoteKeys.inputSwitcher', 'Input switcher'))}`;
+  if (kindOf(k.id) === 'media') return `<span class="rk-none" aria-hidden="true">${RK_MEDIA_GLYPHS[k.id] || '⏯'}</span>${esc(k.opens)}`;
   const icon = kindOf(k.id) === 'app' ? rkIcon(k.id) : '';
   return `${icon}<span translate="no">${esc(k.opens)}</span>`;
 }
@@ -495,7 +499,8 @@ function renderRemoteKeys(d) {
   const kindOf = id => kinds[id] || 'app';
   const tile = k => {
     const dot = RK_COLOURS[k.key] ? `<i class="rk-dot" style="background:${RK_COLOURS[k.key]}"></i>` : '';
-    const label = k.action === 'open' ? t('apps.remoteKeys.opens', 'Opens {app}', { app: k.opens })
+    const label = k.action === 'open' && kindOf(k.id) === 'media' ? k.opens
+      : k.action === 'open' ? t('apps.remoteKeys.opens', 'Opens {app}', { app: k.opens })
       : k.action === 'nothing' ? t('apps.remoteKeys.doesNothing', 'Does nothing') : t('apps.remoteKeys.lg', 'As LG has it');
     return `<button type="button" class="rk-key${k.action !== 'lg' ? ' rk-changed' : ''}" data-key="${esc(k.key)}"
         aria-expanded="false" aria-label="${esc(t('apps.remoteKeys.keyLabel', '{key} key', { key: k.title }) + ': ' + label)}"
@@ -549,6 +554,7 @@ function toggleRemoteKey(tile) {
   const cur = k.action === 'open' ? k.id : k.action;
   const opt = (value, html, extra) => `<button type="button" class="rk-opt${value === cur ? ' on' : ''}${extra || ''}"
       data-value="${esc(value)}" aria-pressed="${value === cur}" onclick="chooseRemoteKey(this)">${html}</button>`;
+  const media = rkData.choices.filter(c => c.kind === 'media');
   const inputs = rkData.choices.filter(c => c.kind === 'input');
   const apps = rkData.choices.filter(c => c.kind === 'app');
   // LG's input switcher, beside As LG has it and Nothing.
@@ -566,6 +572,8 @@ function toggleRemoteKey(tile) {
     ${k.blocksApp ? `<div class="pv-note">${esc(t('apps.remoteKeys.blocksAlexa', 'Setting this key stops Alexa from opening until it is As LG has it again. Amazon still shows that Alexa is loading for a few seconds.'))}</div>` : ''}
     ${k.turnsOffVoice ? `<div class="pv-note">${esc(t('apps.remoteKeys.turnsOffVoice', 'Setting this key switches off LG\'s voice assistant, so voice search, the AI assistant and the microphone stop working until it is As LG has it again.'))}</div>` : ''}
     <div class="rk-opts">${opt('lg', esc(t('apps.remoteKeys.lg', 'As LG has it')))}${k.noNothing ? '' : opt('nothing', `<span aria-hidden="true">⦸</span> ${esc(t('apps.remoteKeys.nothing', 'Nothing'))}`)}${switchers}${gone}</div>
+    ${media.length ? `<div class="rk-sub">${esc(t('apps.remoteKeys.media', 'Media'))}</div>
+    <div class="rk-opts">${media.map(c => opt(c.id, esc(c.title))).join('')}</div>` : ''}
     ${inputs.length ? `<div class="rk-sub">${esc(t('apps.remoteKeys.inputs', 'Inputs'))}</div>
     <div class="rk-opts">${inputs.map(c => opt(c.id, `<span translate="no">${esc(c.title)}</span>`)).join('')}</div>` : ''}
     ${apps.length ? `<div class="rk-sub">${esc(t('apps.remoteKeys.apps', 'Apps'))}</div>

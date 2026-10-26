@@ -123,7 +123,53 @@ function renderHome() {
   renderHomeRows();
   renderHomeChannels();
   renderHomeWalls();
+  renderHomeColours();
   q('home-reset').disabled = !homeWritable();
+}
+
+const HOME_LOOK_NAMES = () => ({
+  warm: t('home.colours.warm', 'Warm'),
+  glasshouse: t('home.colours.glasshouse', 'Glasshouse'),
+  white: t('home.colours.white', 'White'),
+  ice: t('home.colours.ice', 'Ice'),
+  rose: t('home.colours.rose', 'Rose'),
+  lilac: t('home.colours.lilac', 'Lilac')
+});
+
+// The preset matching the chosen colours, the first (the view's own) when none are chosen, or null for custom ones.
+function homeLookNow() {
+  const presets = (homeStatus && homeStatus.colourPresets) || [];
+  const c = homeLayout && homeLayout.colours;
+  if (!c) return presets[0] || null;
+  return presets.find(p => p.text === c.text && p.accent === c.accent) || null;
+}
+
+// Each preset as a small Glasshouse Home: the clock in its text, a row's name in the quieter shade, the accent's mark.
+function renderHomeColours() {
+  const box = q('home-looks');
+  if (!box || !homeStatus) return;
+  const presets = homeStatus.colourPresets || [];
+  const names = HOME_LOOK_NAMES();
+  const now = homeLookNow();
+  const can = homeWritable() && !homeSaving;
+  // The first preset is the view's own colours, saved as none chosen.
+  box.innerHTML = presets.map((p, i) => `<button type="button" class="home-look${now && now.id === p.id ? ' picked' : ''}"
+      onclick="homeSaveLayout({ colours: ${i === 0 ? 'null' : `{ text: '${p.text}', accent: '${p.accent}' }`} })" ${can ? '' : 'disabled'}
+      aria-pressed="${now && now.id === p.id}" style="--look-text:${p.text};--look-accent:${p.accent}">
+      <span class="home-look-screen"><span class="home-look-clock">21:40</span><span class="home-look-row">${esc(t('home.row.apps', 'Apps'))}</span><i></i></span>
+      <span class="home-look-name">${esc(names[p.id] || p.id)}</span>
+    </button>`).join('');
+  const c = (homeLayout && homeLayout.colours) || presets[0] || { text: '#ece7df', accent: '#e9ad55' };
+  const text = q('home-col-text'), accent = q('home-col-accent');
+  if (text && document.activeElement !== text) text.value = c.text;
+  if (accent && document.activeElement !== accent) accent.value = c.accent;
+  [text, accent].forEach(el => { if (el) el.disabled = !can; });
+  const reset = q('home-col-reset');
+  if (reset) reset.disabled = !can || !(homeLayout && homeLayout.colours);
+}
+
+function homeCustomColours() {
+  homeSaveLayout({ colours: { text: q('home-col-text').value, accent: q('home-col-accent').value } });
 }
 
 function homeItem(kind, id) {

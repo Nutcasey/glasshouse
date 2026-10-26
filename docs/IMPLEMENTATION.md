@@ -584,7 +584,14 @@ before the server has started. The Apps tab's copy is kept in
 
 A key it names is consumed on press and release, the press opening what was
 chosen with `applicationManager.launch(id, "{}")` or nothing; every other key
-returns `NextPolicy`. LG's files are never written. configd has no way to
+returns `NextPolicy`. A key set to a media control holds `media:` and the
+control's name (`media:pause`) in place of an app id, and its press sends the
+control's Linux key code through `com.webos.service.networkinput/test/sendKeyCode`,
+the same codes as the dashboard's media buttons (play 207, pause 119, stop 128,
+rewind 168, fast forward 208, volume up 115, volume down 114, mute 113;
+volume repeats while the key is held). Those keys go through the chain again, and the
+filter names none of them, so they reach LG's filters and the app in front.
+LG's files are never written. configd has no way to
 delete a value, so **As LG has it** on every key leaves the filter in the
 chain, passing every key on, and `tvwebctl restore-keys` takes it out, deletes
 the file and leaves `glasshouse.remoteKeys` as an empty map.
@@ -1289,10 +1296,29 @@ LG's process is killed, or the web page is killed through WebAppMgr's
 instance was in front, sam's `last_input_handler` opens Home again about a
 second later, as the new app.
 
-The boot hook (`50-tvweb.sh`) mounts it again about 25 s into a cold start and
-stops LG's Home, which has started in the background by then; the server does
-the same at its start, for a hook that did not run. Until then anything that
-opens Home opens LG's. Where the owner chooses **Hide LG's Home while the TV
+The boot hook (`50-tvweb.sh`) mounts it again about 25 s into a cold start
+(31 to 36 s on a G5), before its other mounts, and stops LG's Home where it has
+started by then; the server does the same at its start, for a hook that did
+not run. Until then anything that opens Home opens LG's. With LG's
+`homeAutoLaunch` on, bootd opens LG's Home about 14 s into every power-on, so
+while Glasshouse Home is on the server switches it off, keeping the owner's
+value as `lgAutoLaunch` in `home.json` and putting it back on switching off.
+bootd then opens the last input instead. Where it was on, the hook launches
+Glasshouse Home once mounted, if the power-on reason is one bootd opens Home
+for and the app bootd logged as foreground (`/var/log/bootd.log`) is an input
+still in front; it then starts the server without its 5 s wait, as the page
+shows the Glasshouse mark until the server answers. Switched back on before
+it had powered off, the TV wakes from Active Standby without a boot, so the
+server opens Glasshouse Home instead, 1.5 s after the wake, while the first
+input is still in front. A source choice, standby, switch-off or server stop
+cancels that launch, including while the power-on reason is being read.
+Auto launch is held off only after a successful takeover; a refused takeover
+puts its saved value back. Switching off waits for any pending settings work
+before restoring it, and an already-off value needs no write or snapshot.
+With Quick Start+ on, a power-on resumes the TV with the mount in place, and bootd opens
+Glasshouse Home only while auto launch is on, so there the owner's value is
+put back; Quick Start+ is read at server start and at each switch on or off,
+and an unreadable value, as just after a wake, changes nothing. Where the owner chooses **Hide LG's Home while the TV
 starts** (`hideLgHomeAtStart` in `home.json`, off by default, since it outlives
 Glasshouse), LG's layout files in `/mnt/lg/cmn_data/manifest` hold an empty
 layout while Glasshouse Home has the place, which LG's Home reads when it
@@ -1359,6 +1385,21 @@ channel within it changes nothing in front, and when the catalogue is asked
 for while Live TV is still in front: on a G3 the view asks about 0.2 s before
 sam names it. The catalogue waits for that read. Only rows set to Last opened are
 recorded, and a row going back to its own order is forgotten.
+
+Back on the view opens its Recent apps panel. LG's own is a view inside LG's
+Home with no way in from outside, so `lib/home-recent-apps.js` reads the same
+list, `com.webos.service.recent/listRecents`. Removing a card stops its app on
+webOS 9.2 but not on webOS 10.3, so Glasshouse first stops the selected apps:
+`closeByAppId` for native apps, WebAppMgr's `killApp` for web apps. It checks
+that they have left `running` before removing their cards with `removeRecent`;
+a refused or unconfirmed stop keeps the cards for retry. Close all acts only
+on the offered list, leaving Home and any newer cards alone
+([TV-RESEARCH](development/TV-RESEARCH.md#lg-homes-recent-apps-g3-webos-922)).
+A card shows the app's snapshot, or its splash where the TV has none since it
+restarted. Pictures are served only from the paths the last list named, and an
+app is opened or closed only while it is on the list. Snapshot responses use
+`private, no-store` caching. Back cancels a pending panel load; returning Home
+discards replies from the previous visit. OK acts once on release.
 
 ## Apps kept ready in the background
 

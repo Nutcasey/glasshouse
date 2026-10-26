@@ -149,6 +149,36 @@ function testLauncherSync() {
   console.log('  ✓ installed launcher pages follow the port, idempotently, and absent or unmarked ones are skipped');
 }
 
+function testLauncherAppinfoSync() {
+  var root = path.join(os.tmpdir(), 'launcher-appinfo-' + process.pid + '-' + Date.now());
+  fs.mkdirSync(root);
+  var ids = ['com.tvweb.dashboard', 'io.github.rorygallagher2024.lg-webos-dashboard'];
+  ids.forEach(function (id) {
+    fs.mkdirSync(path.join(root, id));
+    fs.writeFileSync(path.join(root, id, 'appinfo.json'), JSON.stringify({ id: id, title: 'Glasshouse' }));
+  });
+
+  assert.deepEqual(apps.syncLauncherAppinfo(root), ids);
+  ids.forEach(function (id) {
+    var info = JSON.parse(fs.readFileSync(path.join(root, id, 'appinfo.json'), 'utf8'));
+    assert.strictEqual(info.resolution, '1920x1080', id + ' has resolution 1920x1080');
+    assert.strictEqual(info.title, 'Glasshouse', 'other fields preserved');
+  });
+
+  assert.deepEqual(apps.syncLauncherAppinfo(root), [], 'idempotent');
+
+  assert.deepEqual(apps.syncLauncherAppinfo(path.join(root, 'nonexistent')), []);
+  fs.writeFileSync(path.join(root, ids[0], 'appinfo.json'), '{invalid json');
+  assert.deepEqual(apps.syncLauncherAppinfo(root), []);
+
+  ids.forEach(function (id) {
+    fs.unlinkSync(path.join(root, id, 'appinfo.json'));
+    fs.rmdirSync(path.join(root, id));
+  });
+  fs.rmdirSync(root);
+  console.log('  ✓ launcher appinfo.json ensures resolution 1920x1080 for 4K canvas scaling');
+}
+
 function testShippedLaunchersCarryMarker() {
   ['../server/assets/dashboard-app/index.html', '../hbc/app/index.html'].forEach(function (rel) {
     var html = fs.readFileSync(path.join(__dirname, rel), 'utf8');
@@ -158,8 +188,18 @@ function testShippedLaunchersCarryMarker() {
   console.log('  ✓ both shipped launcher pages carry the marker and default to 8080');
 }
 
+function testShippedAppinfoResolutions() {
+  var dashboardAppinfo = JSON.parse(fs.readFileSync(path.join(__dirname, '../server/assets/dashboard-app/appinfo.json'), 'utf8'));
+  assert.strictEqual(dashboardAppinfo.resolution, '1920x1080', 'dashboard-app appinfo declares 1920x1080');
+  var homeAppinfo = JSON.parse(fs.readFileSync(path.join(__dirname, '../server/assets/home-app/appinfo.json'), 'utf8'));
+  assert.strictEqual(homeAppinfo.resolution, '1920x1080', 'home-app appinfo declares 1920x1080');
+  console.log('  ✓ shipped appinfo.json files declare resolution 1920x1080');
+}
+
 testLauncherSync();
+testLauncherAppinfoSync();
 testShippedLaunchersCarryMarker();
+testShippedAppinfoResolutions();
 testValidation(function () {
   testHomeOn(function () {
     testInUse(function () {

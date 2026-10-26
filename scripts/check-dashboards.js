@@ -71,6 +71,18 @@ async function startServer() {
   fs.writeFileSync(cfg, JSON.stringify({ port, host: '127.0.0.1' }));
   const fake = path.join(ROOT, 'test', 'mocks', 'fake-luna-send.js');
   fs.chmodSync(fake, 0o755);
+  // Each app the fake TV lists gets its folder, with an appinfo.json and an
+  // icon, so the dashboards' icons load as on a TV instead of answering 404.
+  const listed = JSON.parse(child.execFileSync(process.execPath,
+    [fake, '-n', '1', 'luna://com.webos.applicationManager/listApps', '{}'],
+    { encoding: 'utf8', env: Object.assign({}, process.env, { FAKE_LUNA_CHAOS: '' }) }));
+  for (const app of listed.apps || []) {
+    if (!app.folderPath) continue;
+    const dir = path.join(root, app.folderPath);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'appinfo.json'), JSON.stringify({ id: app.id, title: app.title, icon: 'icon.png' }));
+    fs.copyFileSync(path.join(ASSETS, 'dashboard-app/assets/icon80.png'), path.join(dir, 'icon.png'));
+  }
   let out = '';
   const srv = child.spawn(process.execPath, [path.join(ROOT, 'test', 'mocks', 'boot-server.js'), '--config', cfg], {
     env: Object.assign({}, process.env, { FAKE_ROOT: root, TVWEB_LUNA_SEND: fake })
@@ -98,12 +110,16 @@ async function visit(browser, url, label, problems) {
   page.on('pageerror', e => problems.push(label + ': ' + e.message));
   // A failed request is reported with its address, which Chrome's console
   // line leaves out. Chrome, unlike the bundled browser, asks for a favicon
-  // the server does not have.
+  // the server does not have. A 404 for an app's icon is the server saying the
+  // app has none, which the page hides; the fake TV's installed apps have no
+  // icon files, and the Apps tab asks for them only when its list arrives in
+  // time.
   page.on('console', m => {
     if (m.type() === 'error' && !/^Failed to load resource/.test(m.text())) problems.push(label + ': console: ' + m.text());
   });
   page.on('response', r => {
-    if (r.status() >= 400 && !/\/favicon\.ico$/.test(r.url())) problems.push(label + ': ' + r.status() + ' for ' + r.url());
+    const expected = /\/favicon\.ico$/.test(r.url()) || (r.status() === 404 && /\/api\/apps\/icon\?/.test(r.url()));
+    if (r.status() >= 400 && !expected) problems.push(label + ': ' + r.status() + ' for ' + r.url());
   });
   let open = 0, last = Date.now();
   page.on('request', () => { open++; last = Date.now(); });
@@ -219,6 +235,50 @@ async function visitHomePicture(browser, base, problems) {
   } finally { await page.close(); }
 }
 
+async function visitHomeColours(browser, base, problems) {
+  const page = await browser.newPage();
+  page.on('pageerror', e => problems.push('Home colours: ' + e.message));
+  const layout = { rows: ['app', 'dev', 'ch'], order: { app: [], dev: [], ch: [] },
+    hidden: { app: [], dev: [], ch: [] }, channels: [], hintSeen: true, colours: null };
+  let version = 1;
+  await page.route('**/api/home/**', route => {
+    const pathname = new URL(route.request().url()).pathname;
+    const body = pathname === '/api/home/catalogue'
+      ? { ok: true, layout, layoutVersion: String(version), apps: [], devices: [], channels: [],
+          sources: { channels: 0 }, order: { app: ['lg-home'], dev: [], ch: [] } }
+      : { ok: true, build: 'one', layoutVersion: String(version) };
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
+  });
+  const rgb = hex => 'rgb(' + hex.slice(1).match(/../g).map(v => parseInt(v, 16)).join(', ') + ')';
+  async function check(text, accent) {
+    const actual = await page.evaluate(() => ({
+      text: getComputedStyle(document.getElementById('clock')).color,
+      focus: getComputedStyle(document.querySelector('.tile.focus')).outlineColor
+    }));
+    if (actual.text !== rgb(text)) problems.push('Home colours: text ' + text + ' rendered as ' + actual.text);
+    if (actual.focus !== rgb(accent)) problems.push('Home colours: accent ' + accent + ' rendered as ' + actual.focus);
+  }
+  try {
+    await page.clock.install();
+    // Chosen colours can coincide with any original colour in the stylesheet.
+    for (const accent of ['#ece7df', '#a39d93', '#6b665e', '#e9ad55', '#231d12', '#30de61']) {
+      layout.colours = { text: '#d4e6f4', accent };
+      await page.goto(base + '/assets/home.html');
+      await page.waitForSelector('.tile.focus');
+      await check('#d4e6f4', accent);
+    }
+    // Changes made elsewhere, including reset, arrive through the heartbeat.
+    for (const colours of [{ text: '#f4dcdc', accent: '#30de61' }, null]) {
+      layout.colours = colours;
+      version++;
+      await page.clock.fastForward(5000);
+      const text = colours ? colours.text : '#ece7df';
+      await page.waitForFunction(expected => getComputedStyle(document.getElementById('clock')).color === expected, rgb(text));
+      await check(text, colours ? colours.accent : text);
+    }
+  } finally { await page.close(); }
+}
+
 async function visitHomeArrangement(browser, base, problems) {
   const page = await browser.newPage();
   page.on('pageerror', e => problems.push('Home arranging: ' + e.message));
@@ -265,7 +325,9 @@ async function visitHomeArrangement(browser, base, problems) {
     await page.keyboard.up('Enter');
   }
   async function back() {
-    await page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 461, bubbles: true })));
+    await page.evaluate(() => {
+      for (const type of ['keydown', 'keyup']) document.dispatchEvent(new KeyboardEvent(type, { keyCode: 461, bubbles: true }));
+    });
   }
   try {
     await page.clock.install();
@@ -391,7 +453,9 @@ async function visitHomeOrder(browser, base, problems) {
     await page.keyboard.press('ArrowRight');
     await page.keyboard.press('Enter');
     saved = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/layout');
-    await page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 461, bubbles: true })));
+    await page.evaluate(() => {
+      for (const type of ['keydown', 'keyup']) document.dispatchEvent(new KeyboardEvent(type, { keyCode: 461, bubbles: true }));
+    });
     await saved;
     const last = saves[saves.length - 1];
     if (last.sort.app !== 'custom' || JSON.stringify(last.order.app) !== JSON.stringify(['one', 'two', 'lg-home'])) {
@@ -620,6 +684,215 @@ async function visitHomeReadiness(browser, base, problems) {
   } finally { await page.close(); }
 }
 
+async function visitHomeRecents(browser, base, problems) {
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  page.on('pageerror', e => problems.push('Home recents: ' + e.message));
+  let apps = [{ id: 'first', title: 'First' }, { id: 'second', title: 'Second' }];
+  let posts = 0, fail = false, hold = false, release = null;
+  const reply = (route, body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+  await page.route('**/api/home/**', async route => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname === '/api/home/catalogue') return reply(route, {
+      ok: true, apps: [], devices: [], channels: [], sources: {}, order: { app: ['lg-home'], dev: [], ch: [] },
+      layout: { rows: ['app', 'dev', 'ch'], hidden: { app: [], dev: [], ch: [] }, channels: [], hintSeen: true }
+    });
+    if (pathname === '/api/home/recents') {
+      if (route.request().method() === 'POST') {
+        posts++;
+        if (fail) return reply(route, { ok: false }, 400);
+        const body = route.request().postDataJSON();
+        apps = apps.filter(a => a.id !== body.id);
+      } else if (hold) await new Promise(resolve => { release = resolve; });
+      return reply(route, { ok: true, apps });
+    }
+    return reply(route, { ok: true, kind: null, build: 'one' });
+  });
+  async function back() {
+    await page.evaluate(() => {
+      for (const type of ['keydown', 'keyup']) document.dispatchEvent(new KeyboardEvent(type, { keyCode: 461 }));
+    });
+  }
+  try {
+    await page.goto(base + '/assets/home.html');
+    await page.waitForSelector('#rows .tile');
+    await back();
+    await page.waitForSelector('#stage.recents');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.down('Enter');
+    await page.keyboard.down('Enter');
+    await page.waitForTimeout(150);
+    if (posts) problems.push('Home recents: held OK acted before release');
+    await page.keyboard.up('Enter');
+    await page.waitForFunction(() => document.querySelectorAll('#recentsTrack .rc').length === 1);
+    if (posts !== 1) problems.push('Home recents: held OK closed more than one card');
+    fail = true;
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('#toast.show');
+    const visibleError = await page.evaluate(() => {
+      const toast = document.getElementById('toast'), r = toast.getBoundingClientRect();
+      return toast.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
+    });
+    if (!visibleError) problems.push('Home recents: the panel covered its close error');
+    await back();
+    for (const cancel of ['back', 'relaunch']) {
+      hold = true; release = null;
+      await back();
+      const deadline = Date.now() + 3000;
+      while (!release && Date.now() < deadline) await page.waitForTimeout(20);
+      if (!release) throw new Error('Home recents: no panel request to delay');
+      if (cancel === 'back') await back();
+      else await page.evaluate(() => document.dispatchEvent(new Event('webOSRelaunch')));
+      const answered = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/recents');
+      hold = false; release();
+      await answered;
+      await page.waitForTimeout(100);
+      if (await page.locator('#stage').evaluate(el => el.classList.contains('recents'))) {
+        problems.push('Home recents: a late reply reopened the panel after ' + cancel);
+      }
+    }
+  } finally { await page.close(); }
+}
+
+async function visitTvDashboard(browser, base, problems) {
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  page.on('pageerror', e => problems.push('TV dashboard: ' + e.message));
+  page.on('console', m => {
+    if (m.type() === 'error' && !/^Failed to load resource/.test(m.text())) {
+      problems.push('TV dashboard: console: ' + m.text());
+    }
+  });
+
+  try {
+    await page.goto(base + '/assets/dashboard.html', { waitUntil: 'load' });
+    await page.waitForSelector('#rows .row');
+    await page.waitForTimeout(100);
+
+    // Two-column layout geometry check
+    const layout = await page.evaluate(() => {
+      const main = document.getElementById('main').getBoundingClientRect();
+      const list = document.getElementById('list').getBoundingClientRect();
+      const hint = document.getElementById('hint').getBoundingClientRect();
+      const sel = document.querySelector('.row.sel');
+      return {
+        main: { w: main.width, h: main.height },
+        list: { left: list.left, right: list.right, w: list.width, h: list.height },
+        hint: { left: hint.left, right: hint.right, w: hint.width, h: hint.height },
+        hasSel: !!sel,
+        selLabel: sel ? (sel.querySelector('.lbl') ? sel.querySelector('.lbl').textContent.trim() : '') : ''
+      };
+    });
+
+    if (layout.main.w <= 0 || layout.main.h <= 0) {
+      problems.push('TV dashboard: #main has 0 dimensions (' + layout.main.w + 'x' + layout.main.h + ')');
+    }
+    if (layout.list.w <= 0 || layout.list.h <= 0) {
+      problems.push('TV dashboard: #list column has 0 dimensions (' + layout.list.w + 'x' + layout.list.h + ')');
+    }
+    if (layout.hint.w <= 0 || layout.hint.h <= 0) {
+      problems.push('TV dashboard: #hint column has 0 dimensions (' + layout.hint.w + 'x' + layout.hint.h + ')');
+    }
+    if (layout.hint.left < layout.list.right - 1) {
+      problems.push('TV dashboard: #hint is not to the right of #list (hint left: ' + layout.hint.left + ', list right: ' + layout.list.right + ')');
+    }
+    if (!layout.hasSel) {
+      problems.push('TV dashboard: no row is selected initially');
+    }
+
+    // Remote D-pad navigation: ArrowDown / ArrowUp moves selection and updates hint
+    const initialTitle = await page.evaluate(() => document.getElementById('hintTitle').textContent.trim());
+    await page.keyboard.press('ArrowDown');
+    await page.waitForTimeout(50);
+    const secondTitle = await page.evaluate(() => document.getElementById('hintTitle').textContent.trim());
+    if (!secondTitle || secondTitle === initialTitle) {
+      problems.push('TV dashboard: ArrowDown did not update selected row hint title');
+    }
+
+    await page.keyboard.press('ArrowUp');
+    await page.waitForTimeout(50);
+    const restoredTitle = await page.evaluate(() => document.getElementById('hintTitle').textContent.trim());
+    if (restoredTitle !== initialTitle) {
+      problems.push('TV dashboard: ArrowUp did not restore initial row selection');
+    }
+
+    // PageDown / ChannelDown jumps multiple rows
+    await page.keyboard.press('PageDown');
+    await page.waitForTimeout(50);
+    const pagedTitle = await page.evaluate(() => document.getElementById('hintTitle').textContent.trim());
+    if (pagedTitle === initialTitle || pagedTitle === secondTitle) {
+      problems.push('TV dashboard: PageDown did not jump selection forward');
+    }
+
+    // Repeated ArrowDown triggers translateY scroll and illuminates moreUp
+    for (let i = 0; i < 15; i++) {
+      await page.keyboard.press('ArrowDown');
+      await page.waitForTimeout(20);
+    }
+    const scrollState = await page.evaluate(() => {
+      const rows = document.getElementById('rows');
+      const tr = rows.style.transform || rows.style.webkitTransform || '';
+      const moreUp = document.getElementById('moreUp').classList.contains('on');
+      return { transform: tr, moreUp };
+    });
+    if (!/translateY\(-/.test(scrollState.transform)) {
+      problems.push('TV dashboard: scrolling down list did not apply negative translateY: ' + scrollState.transform);
+    }
+    if (!scrollState.moreUp) {
+      problems.push('TV dashboard: scrolling down list did not illuminate moreUp arrow');
+    }
+
+    // Remote navigation: ArrowRight / ArrowLeft switches tabs
+    const initialTab = await page.evaluate(() => {
+      const on = document.querySelector('.tab.on');
+      return on ? on.textContent.trim() : '';
+    });
+    await page.keyboard.press('ArrowRight');
+    await page.waitForTimeout(100);
+    const nextTab = await page.evaluate(() => {
+      const on = document.querySelector('.tab.on');
+      return on ? on.textContent.trim() : '';
+    });
+    if (!nextTab || nextTab === initialTab) {
+      problems.push('TV dashboard: ArrowRight did not switch tabs (stayed on ' + initialTab + ')');
+    }
+
+    // Verify two columns still intact after tab switch
+    const newTabListHeight = await page.evaluate(() => document.getElementById('list').getBoundingClientRect().height);
+    if (newTabListHeight <= 0) {
+      problems.push('TV dashboard: #list collapsed to 0 height after switching tabs to ' + nextTab);
+    }
+
+    await page.keyboard.press('ArrowLeft');
+    await page.waitForTimeout(100);
+    const backTab = await page.evaluate(() => {
+      const on = document.querySelector('.tab.on');
+      return on ? on.textContent.trim() : '';
+    });
+    if (backTab !== initialTab) {
+      problems.push('TV dashboard: ArrowLeft did not return to ' + initialTab + ' (on ' + backTab + ')');
+    }
+  } finally {
+    await page.close();
+  }
+}
+
+async function visitTvNonOled(browser, base, problems) {
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  page.on('pageerror', e => problems.push('TV non-OLED: ' + e.message));
+  await page.route('**/api/oledcare', route => {
+    route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, isOled: false, available: false }) });
+  });
+  try {
+    await page.goto(base + '/assets/dashboard.html', { waitUntil: 'load' });
+    await page.waitForSelector('#rows .row');
+    const tabs = await page.evaluate(() => [...document.querySelectorAll('.tab')].map(t => t.textContent.trim().toLowerCase()));
+    if (tabs.indexOf('oled care') !== -1) {
+      problems.push('TV non-OLED: OLED Care tab was not omitted on an LCD TV');
+    }
+  } finally {
+    await page.close();
+  }
+}
+
 (async () => {
   const server = await startServer();
   const base = 'http://127.0.0.1:' + server.port;
@@ -628,16 +901,20 @@ async function visitHomeReadiness(browser, base, problems) {
   const web = webTabs(), tv = tvTabs();
   await visitAll(browser, web.map(t => ({ url: base + '/?tab=' + t, label: 'web ' + t }))
     .concat(tv.map(t => ({ url: base + '/assets/dashboard.html?tab=' + t, label: 'TV ' + t }))), problems);
+  await visitTvDashboard(browser, base, problems);
+  await visitTvNonOled(browser, base, problems);
   await visitHomeArrangement(browser, base, problems);
   await visitHomePicture(browser, base, problems);
+  await visitHomeColours(browser, base, problems);
   await visitHomeEditor(browser, base, problems);
   await visitHomeOrder(browser, base, problems);
   await visitHomeUploads(browser, base, problems);
   await visitHomeReadiness(browser, base, problems);
   await visitHomeAvailability(browser, base, problems);
+  await visitHomeRecents(browser, base, problems);
   await browser.close();
   for (const p of problems) console.log(p);
   console.log((web.length + tv.length) + ' tabs opened (' + web.length + ' web, ' + tv.length + ' TV app), ' +
-              'Home arranging, picture, update, editing, order, uploads, readiness and availability checked, ' + problems.length + ' problem' + (problems.length === 1 ? '' : 's'));
+              'TV navigation and LCD profile, Home arranging, picture, colours, update, editing, order, uploads, readiness, availability and recents checked, ' + problems.length + ' problem' + (problems.length === 1 ? '' : 's'));
   process.exit(problems.length ? 1 : 0);
 })().catch(e => { console.error(e.message); process.exit(1); });

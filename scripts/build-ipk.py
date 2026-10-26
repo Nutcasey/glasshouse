@@ -100,7 +100,8 @@ def stage(app, ver):
         'id': APP_ID, 'version': ver, 'vendor': 'lg-webos-dashboard', 'type': 'web',
         'main': 'index.html', 'title': TITLE, 'appDescription': DESCRIPTION,
         'icon': 'icon80.png', 'largeIcon': 'icon130.png',
-        'iconColor': '#000000', 'bgColor': '#000000', 'disableBackHistoryAPI': True,
+        'iconColor': '#000000', 'bgColor': '#000000', 'resolution': '1920x1080',
+        'disableBackHistoryAPI': True,
     }
     page = read(os.path.join(HBC, 'app', 'index.html')).decode('utf-8')
     if '@VERSION@' not in page:

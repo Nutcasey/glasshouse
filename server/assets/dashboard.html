@@ -17,11 +17,11 @@
 @font-face{font-family:'Manrope';src:url('/assets/fonts/Manrope-Regular.ttf') format('truetype');font-weight:400;font-display:swap}
 @font-face{font-family:'Manrope';src:url('/assets/fonts/Manrope-SemiBold.ttf') format('truetype');font-weight:600;font-display:swap}
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{height:100%;background:#000;overflow:hidden}
+html,body{width:100%;height:100%;background:#000;overflow:hidden}
 body{font-family:'Manrope',sans-serif;color:#fff;
   -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility}
 
-#stage{height:100vh;display:flex;flex-direction:column;padding:5vh 0 5vh 8vw}
+#stage{width:100%;height:100vh;display:flex;display:-webkit-flex;flex-direction:column;-webkit-flex-direction:column;padding:5vh 0 5vh 8vw}
 
 /* The clock on the left and the Glasshouse mark on the right, at the clock's
    height and full strength, level with the end of the tab bar. */
@@ -229,6 +229,128 @@ body.light #flash{color:rgba(0,0,0,.88)}
 <script src="/assets/qr.js"></script>
 <script src="/assets/i18n.js"></script>
 <script>
+/* webOS 2.x runs WebKit 538.2, which has neither fetch nor Promise (ES6): on a
+   55UH600V the page threw ReferenceError on new Promise, so the clock stuck at
+   --:-- and tabs never rendered (#746). Minimal ES5 Promise covering what this
+   page and the fetch polyfill below need. */
+if (!window.Promise) {
+  (function () {
+    function Promise(fn) {
+      var state = 'pending';
+      var val = undefined;
+      var handlers = [];
+
+      function resolve(v) {
+        if (state !== 'pending') return;
+        if (v && (typeof v === 'object' || typeof v === 'function')) {
+          var then;
+          try { then = v.then; } catch (e) { return reject(e); }
+          if (typeof then === 'function') {
+            var called = false;
+            try {
+              then.call(v, function (y) {
+                if (called) return;
+                called = true;
+                resolve(y);
+              }, function (r) {
+                if (called) return;
+                called = true;
+                reject(r);
+              });
+            } catch (e) {
+              if (!called) reject(e);
+            }
+            return;
+          }
+        }
+        state = 'fulfilled';
+        val = v;
+        run();
+      }
+
+      function reject(err) {
+        if (state !== 'pending') return;
+        state = 'rejected';
+        val = err;
+        run();
+      }
+
+      function run() {
+        if (state === 'pending') return;
+        setTimeout(function () {
+          while (handlers.length) {
+            var h = handlers.shift();
+            var cb = state === 'fulfilled' ? h.onFulfilled : h.onRejected;
+            if (!cb) {
+              if (state === 'fulfilled') h.resolve(val);
+              else h.reject(val);
+              continue;
+            }
+            try {
+              var res = cb(val);
+              h.resolve(res);
+            } catch (e) {
+              h.reject(e);
+            }
+          }
+        }, 0);
+      }
+
+      this.then = function (onFulfilled, onRejected) {
+        return new Promise(function (nextResolve, nextReject) {
+          handlers.push({
+            onFulfilled: typeof onFulfilled === 'function' ? onFulfilled : null,
+            onRejected: typeof onRejected === 'function' ? onRejected : null,
+            resolve: nextResolve,
+            reject: nextReject
+          });
+          run();
+        });
+      };
+
+      this['catch'] = function (onRejected) {
+        return this.then(null, onRejected);
+      };
+
+      try {
+        fn(resolve, reject);
+      } catch (e) {
+        reject(e);
+      }
+    }
+
+    Promise.resolve = function (v) {
+      return new Promise(function (res) { res(v); });
+    };
+
+    Promise.reject = function (err) {
+      return new Promise(function (res, rej) { rej(err); });
+    };
+
+    Promise.all = function (arr) {
+      return new Promise(function (resolve, reject) {
+        if (!arr || !arr.length) return resolve([]);
+        var results = new Array(arr.length);
+        var remaining = arr.length;
+        for (var i = 0; i < arr.length; i++) {
+          (function (idx) {
+            Promise.resolve(arr[idx]).then(function (res) {
+              results[idx] = res;
+              remaining--;
+              if (remaining === 0) resolve(results);
+            }, reject);
+          })(i);
+        }
+      });
+    };
+
+    window.Promise = Promise;
+    if (typeof Promise === 'undefined') {
+      try { Promise = window.Promise; } catch (e) {}
+    }
+  })();
+}
+
 /* webOS 3.x runs Chromium 38, which has Promise but not fetch (Chrome 42): on a
    58UH635V the page drew its header and loaded nothing. This covers what the
    page asks of fetch, over XMLHttpRequest, which i18n.js already tags with the
@@ -257,6 +379,9 @@ if (!window.fetch) {
       x.send(opts.body === undefined ? null : opts.body);
     });
   };
+  if (typeof fetch === 'undefined') {
+    try { fetch = window.fetch; } catch (e) {}
+  }
 }
 
 /* Every section reads an endpoint the server already serves to the browser
@@ -750,6 +875,20 @@ function homeRows(d) {
              act: can ? 'homePicture' : null, on: picOn,
              press: picOn ? t('tv.press.switchOff', 'Press OK to switch off') : t('tv.press.switchOn', 'Press OK to switch on'),
              hint: t('home.pictureDesc', 'In the top right of Glasshouse Home: the resolution, refresh rate and HDR of what was last on, and the picture mode and brightness it gets.') });
+    // OK steps through the presets; colours picked on the browser dashboard show as Custom.
+    var presets = d.colourPresets || [], cur = d.layout.colours, at = cur ? -1 : 0;
+    for (var pi = 0; pi < presets.length; pi++) if (cur && presets[pi].text === cur.text && presets[pi].accent === cur.accent) at = pi;
+    if (presets.length) {
+      var lookNames = { warm: t('home.colours.warm', 'Warm'), glasshouse: t('home.colours.glasshouse', 'Glasshouse'),
+                        white: t('home.colours.white', 'White'), ice: t('home.colours.ice', 'Ice'),
+                        rose: t('home.colours.rose', 'Rose'), lilac: t('home.colours.lilac', 'Lilac') };
+      var nextLook = presets[(at + 1) % presets.length];
+      r.push({ label: t('home.colours.title', 'Colours'),
+               value: at === -1 ? t('home.colours.custom', 'Custom') : lookNames[presets[at].id] || presets[at].id, cls: 'act',
+               act: can ? 'homeColours' : null, key: nextLook,
+               press: t('tv.home.colours.press', 'Press OK for {name}', { name: lookNames[nextLook.id] || nextLook.id }),
+               hint: t('home.colours.tvHint', 'The text and accent on Glasshouse Home. Any colour can be picked on the browser dashboard’s Home tab.') });
+    }
   }
   // Opening Home opens Glasshouse Home only while it has LG's Home's place.
   if (d.enabled && d.active) {
@@ -2316,6 +2455,9 @@ function activate() {
                       r.on ? t('tv.flash.switchedOff', 'Switched off') : t('tv.flash.switchedOn', 'Switched on'));
     case 'homePicture':
       return homeLayout({ picture: !r.on });
+    case 'homeColours':
+      // The first preset is the view's own colours, saved as none chosen.
+      return homeLayout({ colours: r.key.id === homeData.colourPresets[0].id ? null : { text: r.key.text, accent: r.key.accent } });
     case 'homeOpen':
       return send({ action: 'launchApp', value: 'com.webos.app.home' });
     case 'homeRowUp':
