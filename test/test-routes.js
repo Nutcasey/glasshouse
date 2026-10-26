@@ -85,7 +85,7 @@ function createMockRes(cb) {
   console.log('  ✓ parseUrl handles query strings and missing paths cleanly');
 })();
 
-// The setup state gives the IPv4 local address with the port, and its name.
+// The setup state gives the local addresses and the name, each with the port.
 (function testSetupStateAddress() {
   var origInterfaces = os.networkInterfaces;
   var named = [];
@@ -104,8 +104,8 @@ function createMockRes(cb) {
   try {
     var st = routes.setupState();
     assert.strictEqual(st.address, '192.0.2.17:8080');
-    assert.strictEqual(st.address6, 'fd12:3456:789a:1::17');
-    assert.strictEqual(st.hostname, 'tv.example.net');
+    assert.strictEqual(st.address6, '[fd12:3456:789a:1::17]:8080');
+    assert.strictEqual(st.hostname, 'tv.example.net:8080');
     assert.deepEqual(named, [['192.0.2.17', 'fd12:3456:789a:1::17']], 'named from both addresses');
     os.networkInterfaces = function () { return {}; };
     st = routes.setupState();

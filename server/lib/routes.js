@@ -400,17 +400,21 @@ function setupState(isDemo) {
   if (isDemo && simulatedSetupState.network !== null && simulatedSetupState.network !== undefined) {
     open = simulatedSetupState.network;
   }
+  var ip4 = localAddress4(), ip6 = localAddress6();
+  var name = telemetryModule ? telemetryModule.localName(ip4, ip6) : null;
+  // The TV app shows the address and the name each with the port, as a
+  // browser on a phone would open them.
   var st = {
     ok: true,
     needed: setupPending(),
     writable: config.allowControl,
     network: open,
     token: !!config.token,
-    address: localAddress4() ? hostPort(localAddress4(), config.port) : (isDemo ? hostPort('192.168.1.131', config.port || 8080) : null),
-    address6: localAddress6(),
-    hostname: telemetryModule ? telemetryModule.localName(localAddress4(), localAddress6()) : null,
+    address: ip4 ? hostPort(ip4, config.port) : (isDemo ? hostPort('192.168.1.131', config.port || 8080) : null),
+    address6: ip6 ? hostPort(ip6, config.port) : null,
+    hostname: name ? hostPort(name, config.port) : null,
     homeAssistant: (isDemo && simulatedSetupState.homeAssistant) ? simulatedSetupState.homeAssistant : { configured: !!(m.enabled && m.host), state: mqttStat.state },
-    handoff: HANDOFF.server ? handoffUrl() : (isDemo ? 'http://' + hostPort(localAddress4() || '192.168.1.131', config.port || 8080) + '/?c=demo' : null)
+    handoff: HANDOFF.server ? handoffUrl() : (isDemo ? 'http://' + hostPort(ip4 || '192.168.1.131', config.port || 8080) + '/?c=demo' : null)
   };
   if (isDemo) {
     st.demo = true;

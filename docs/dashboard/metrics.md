@@ -18,7 +18,7 @@ The **Metrics** tab (`/?tab=metrics`) exposes live hardware and software telemet
 
     ---
 
-    Wi-Fi signal strength (RSSI), live network throughput, IPv4 address (with reverse DNS hostname when available), eMMC flash wear (JEDEC health), and free app-partition storage.
+    Wi-Fi signal strength (RSSI), live network throughput, the TV's DNS name where the network's DNS has a reverse entry for it, then its IPv4 and IPv6 local addresses, eMMC flash wear (JEDEC health), and free app-partition storage.
 
 -   **HDMI port bay**
 
