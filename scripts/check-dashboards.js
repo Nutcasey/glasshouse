@@ -262,6 +262,21 @@ async function visitHomeScrolling(browser, base, problems) {
     const m = /translateX\((-?[\d.]+)px\)/.exec(document.querySelector(sel).style.transform || '');
     return m ? -parseFloat(m[1]) : 0;
   }, sel);
+  const settle = async (sel, from) => {
+    const deadline = Date.now() + 4000;
+    let last = await x(sel), stable = 0;
+    while (Date.now() < deadline) {
+      await page.waitForTimeout(50);
+      const cur = await x(sel);
+      if (cur === last && (from === undefined || cur !== from)) {
+        if (++stable >= 3) return cur;
+      } else {
+        last = cur;
+        stable = 0;
+      }
+    }
+    return last;
+  };
   const apps0 = '.row[data-key="app"] .track';
   try {
     await page.goto(base + '/assets/home.html');
@@ -286,18 +301,16 @@ async function visitHomeScrolling(browser, base, problems) {
     const last = opened[opened.length - 1];
     if (!last || 'App ' + last.id.slice(3) !== under) problems.push('Home scrolling: a click opened ' + (last && last.id) + ', not the tile under the pointer, ' + under);
     await page.mouse.move(900, rowY);
-    await page.waitForTimeout(700);
-    const stopped = await x(apps0);
+    const stopped = await settle(apps0);
     await page.waitForTimeout(300);
     if (await x(apps0) !== stopped) problems.push('Home scrolling: the glide went on after the pointer left the end');
     await page.mouse.wheel(0, 100);
-    await page.waitForTimeout(500);
-    if (Math.round(await x(apps0) - stopped) !== 176) problems.push('Home scrolling: a wheel notch did not move the row one tile');
+    const notched = await settle(apps0, stopped);
+    if (Math.round(notched - stopped) !== 176) problems.push('Home scrolling: a wheel notch did not move the row one tile');
     // Wheel steps move tiles under a still pointer: a click then opens the
     // tile now under it, and moving down a row leaves this row where it is.
     await page.mouse.wheel(0, 300);
-    await page.waitForTimeout(600);
-    const wheeled = await x(apps0);
+    const wheeled = await settle(apps0, notched);
     const underWheel = await page.evaluate(([px, py]) => { let t = document.elementFromPoint(px, py); while (t && !/\btile\b/.test(t.className)) t = t.parentNode; return t && t.querySelector('.nm').textContent; }, [900, rowY]);
     await page.mouse.down();
     await page.mouse.up();
@@ -400,7 +413,7 @@ async function visitHomeMotion(browser, base, problems) {
     await page.waitForTimeout(700);
     at = await mark();
     await page.mouse.move(900, rowY);
-    await page.waitForTimeout(800);
+    await page.waitForFunction(from => { const xs = window.xs, n = xs.length; return n > from + 10 && xs[n - 1] === xs[n - 6]; }, at, { timeout: 5000 });
     d = await steps(at);
     if (d.length < 6 || Math.abs(d[d.length - 1]) > 3) problems.push('Home motion: the glide stopped dead when the pointer left the end (' + show(d) + ')');
   } finally { await page.close(); }
