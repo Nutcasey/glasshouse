@@ -122,11 +122,15 @@ function validateUrl(url) {
  * ipFlag: '-4' or '-6' to pin curl to one address family (busybox wget has no
  * such flag).
  */
-function fetchArgs(bin, url, outFile, mode, ipFlag) {
+function fetchArgs(bin, url, outFile, mode, ipFlag, opts) {
   var ua = 'tvweb/' + currentVersion;
   mode = mode || (outFile ? 'file' : 'text');
   var wget = isWget(bin);
   var ip = !wget && ipFlag ? [ipFlag] : [];
+  var post = opts && opts.postData !== undefined;
+  var postArgs = !post ? [] : wget
+    ? ['--header=Content-Type: application/json', '--post-data=' + opts.postData]
+    : ['-H', 'Content-Type: application/json', '--data-binary', '@-'];
   if (mode === 'big') {
     // curl's speed limit measures the whole transfer; busybox wget's -T is per
     // read, which comes to the same thing for a stalled connection.
@@ -136,9 +140,9 @@ function fetchArgs(bin, url, outFile, mode, ipFlag) {
             '-A', ua, '-o', outFile, '--', url]);
   }
   var secs = mode === 'file' ? '30' : '10';
-  if (wget) return ['-q', '-T', secs, '-U', ua, '-O', outFile || '-', '--', url];
+  if (wget) return ['-q', '-T', secs, '-U', ua, '-O', outFile || '-'].concat(postArgs, ['--', url]);
   return ['-fsSL'].concat(ip, ['--proto', '=http,https', '--proto-redir', '=http,https',
-          '--connect-timeout', '5', '--max-time', secs, '-A', ua, '-o', outFile || '-', '--', url]);
+          '--connect-timeout', '5', '--max-time', secs, '-A', ua, '-o', outFile || '-'], postArgs, ['--', url]);
 }
 
 function clientList() {
@@ -214,7 +218,7 @@ function run(url, outFile, mode, opts, cb) {
 
   function attempt(bin, tries, t) {
     if (big) unlinkQuiet(outFile);
-    child = execFile(bin, fetchArgs(bin, url, outFile, mode, tries[t]),
+    child = execFile(bin, fetchArgs(bin, url, outFile, mode, tries[t], opts),
                      { timeout: big ? DOWNLOAD_CEILING_MS : (mode === 'file' ? 180000 : 15000),
                        maxBuffer: opts.maxBuffer || 1024 * 1024 },
                      function (err, stdout, stderr) {
@@ -259,6 +263,12 @@ function run(url, outFile, mode, opts, cb) {
       }
       finish(null, String(stdout || ''), bin);
     });
+    if (opts.postData !== undefined && !isWget(bin) && child.stdin) {
+      // Queries stay out of curl's process arguments. An early client exit is
+      // reported by execFile; its closed input must not crash the server.
+      child.stdin.on('error', function () {});
+      child.stdin.end(opts.postData);
+    }
   }
   next();
 
@@ -293,6 +303,26 @@ function download(url, outFile, opts, cb) {
 
 /* Small JSON document, https only; cb(err, parsed). */
 function getJson(url, cb) {
+  return jsonRequest(url, null, cb);
+}
+
+/* JSON POST through the same TLS-capable clients as catalogue GETs. */
+function postJson(url, payload, cb) {
+  return jsonRequest(url, payload, cb);
+}
+
+/* Public title pages can put their heading after several megabytes of data. */
+function getText(url, cb) {
+  var bad = validateUrl(url);
+  if (!bad && !/^https:\/\//i.test(url)) bad = msg('srv.fetch.needHttps', 'the address must start with https://');
+  if (bad) {
+    setTimeout(function () { cb(new Error(bad)); }, 0);
+    return;
+  }
+  return run(url, null, 'text', { maxBuffer: 8 * 1024 * 1024 }, cb);
+}
+
+function jsonRequest(url, payload, cb) {
   var bad = validateUrl(url);
   if (!bad && !/^https:\/\//i.test(url)) {
     bad = msg('srv.fetch.needHttps', 'the address must start with https://');
@@ -301,7 +331,9 @@ function getJson(url, cb) {
     setTimeout(function () { cb(new Error(bad)); }, 0);
     return;
   }
-  run(url, null, 'text', { maxBuffer: 8 * 1024 * 1024 }, function (err, body) {
+  var opts = { maxBuffer: 8 * 1024 * 1024 };
+  if (payload !== null) opts.postData = JSON.stringify(payload);
+  return run(url, null, 'text', opts, function (err, body) {
     if (err) return cb(err);
     var doc;
     try { doc = JSON.parse(body); } catch (e) {
@@ -318,6 +350,8 @@ module.exports = {
   probeFetch: probeFetch,
   download: download,
   getJson: getJson,
+  postJson: postJson,
+  getText: getText,
   validateUrl: validateUrl,
   execErr: execErr,
   hostOf: hostOf,

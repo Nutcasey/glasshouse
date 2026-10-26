@@ -220,6 +220,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
 #query::-webkit-input-placeholder{color:#3a3732}
 #query::placeholder{color:#3a3732}
 #status{font-size:23px;color:#a39d93;margin-top:18px;height:32px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#search-credit{position:absolute;right:72px;top:68px;font-size:18px;color:#a39d93;text-decoration:none}
 #results{position:absolute;left:112px;right:72px;top:300px;bottom:0;overflow:hidden}
 #hits{-webkit-transition:-webkit-transform .28s cubic-bezier(.2,.7,.2,1);transition:transform .28s cubic-bezier(.2,.7,.2,1)}
 .hit{display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center;height:200px;opacity:.5;
@@ -283,6 +284,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
   <main id="rows"></main>
   <div id="rail"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg><span class="word" data-t="home.search.rail">Search</span></div>
   <section id="finder">
+    <a id="search-credit" href="https://www.justwatch.com" target="_blank" rel="noopener" data-t="home.search.credit">Search provided by JustWatch</a>
     <div id="ask"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg><input id="query" type="text" autocomplete="off" spellcheck="false" maxlength="80" placeholder="Film or series" data-t-placeholder="home.search.placeholder"></div>
     <div id="status">&mdash;</div>
     <div id="results"><div id="hits"></div></div>
@@ -822,7 +824,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
   // ---------------------------------------------------------------- search
 
   /*
-   * OK on the rail opens the search panel: LG's catalogue answers with the
+   * OK on the rail opens the search panel: JustWatch answers with the
    * films and series on this TV's apps (lib/home-search), a moment after
    * typing stops. Up and down move between titles, left and right between
    * the apps that have one, and OK opens that app at the title. Up from the
@@ -851,7 +853,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
     finder.commit = false;
     finder.okDown = false;
     $('query').value = '';
-    setStatus(t('home.search.ready', 'Films and series on this TV\u2019s apps, from LG\u2019s search'));
+    setStatus(t('home.search.ready', 'Films and series on this TV\u2019s apps, from JustWatch'));
     showHits();
     applyFocus();
     startTyping();
@@ -932,7 +934,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
     finder.loading = false;
     showHits();
     if (q.length < 2) {
-      return setStatus(t('home.search.ready', 'Films and series on this TV\u2019s apps, from LG\u2019s search'));
+      return setStatus(t('home.search.ready', 'Films and series on this TV\u2019s apps, from JustWatch'));
     }
     finder.loading = true;
     setStatus(t('home.search.looking', 'Looking for \u201c{query}\u201d', { query: q }));
@@ -943,16 +945,18 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
         finder.query = null;
         finder.results = [];
         showHits();
-        return setStatus(t('home.search.failed', 'LG\u2019s search did not answer. It needs the TV online, and the ad blocker on Ads & telemetry or off.'));
+        return setStatus(r && r.error || t('home.search.failed', 'JustWatch did not answer. Check the TV is online and try again.'));
       }
       finder.results = r.results;
+      $('search-credit').textContent = t('home.search.creditCountry', 'JustWatch · {country}', { country: r.country || '' });
       finder.row = 0;
       finder.col = 0;
       showHits();
       committed();
       var n = r.results.length;
       if (!n) {
-        setStatus(r.elsewhere ? t('home.search.onlyElsewhere', 'Nothing for \u201c{query}\u201d on this TV\u2019s apps. {n} more on apps it does not have.', { query: q, n: r.elsewhere })
+        setStatus(r.unavailable ? t('home.search.noTitleLinks', 'No usable title links for \u201c{query}\u201d on this TV\u2019s apps.', { query: q })
+          : r.elsewhere ? t('home.search.onlyElsewhere', 'Nothing for \u201c{query}\u201d on this TV\u2019s apps. {n} more on apps it does not have.', { query: q, n: r.elsewhere })
           : t('home.search.none', 'Nothing for \u201c{query}\u201d', { query: q }));
       } else if (r.elsewhere) {
         setStatus(n === 1 ? t('home.search.foundOneMore', '1 title on this TV\u2019s apps, {more} more on apps it does not have', { more: r.elsewhere })
@@ -989,12 +993,14 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
         chips += '<span class="chip" data-c="' + c + '">' + (a.icon ? '<img src="' + esc(a.icon) + '" alt="">' : '<span class="mono">' + esc(String(a.title).charAt(0)) + '</span>') +
           '<span class="nm">' + esc(a.title) + '</span></span>';
       });
+      var missing = hit.unavailableApps && hit.unavailableApps.length ? '<div class="meta">' +
+        esc(t('home.search.missingLinks', 'No title link: {apps}', { apps: hit.unavailableApps.join(', ') })) + '</div>' : '';
       html += '<div class="hit" data-r="' + i + '"><div class="poster">' + (hit.poster ? '<img src="' + esc(hit.poster) + '" alt="">' : mono) + '</div>' +
         '<div class="info"><div class="ttl">' + esc(hit.title) + '</div><div class="meta">' + meta.map(function (m) { return m.yr ? '<span class="yr">' + esc(m.yr) + '</span>' : '<span>' + esc(m) + '</span>'; }).join('') + '</div>' +
-        '<div class="where">' + chips + '</div></div></div>';
+        '<div class="where">' + chips + '</div>' + missing + '</div></div>';
     });
     $('hits').innerHTML = html;
-    // A poster LG no longer serves, or one blocked, leaves the title's initial.
+    // A poster the catalogue no longer serves, or one blocked, leaves the title's initial.
     var imgs = $('hits').querySelectorAll('.poster img');
     for (var j = 0; j < imgs.length; j++) {
       imgs[j].onerror = function () {
@@ -1010,6 +1016,8 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
 
   // Keeps the focused title in view by moving the list, as the rows' tracks move.
   function focusHits(instant) {
+    var selected = finder.results[finder.row];
+    $('search-credit').href = selected && selected.source || 'https://www.justwatch.com';
     var hits = $('hits').querySelectorAll('.hit');
     finder.row = Math.max(0, Math.min(finder.row, hits.length - 1));
     for (var i = 0; i < hits.length; i++) {
@@ -1512,6 +1520,7 @@ body{font-family:'Manrope',sans-serif;color:#ece7df;-webkit-font-smoothing:antia
       // A reply sent before arranging or saving must not replace local edits.
       if (revision !== layoutRevision || ((layoutBusy || state.arranging) && !whileArranging)) return;
       var firstLoad = !data;
+      if (layout && layout.searchCountry !== r.layout.searchCountry) { closeSearch(); state.rail = false; }
       data = r;
       layout = r.layout;
       if (!searchOn()) { closeSearch(); state.rail = false; }

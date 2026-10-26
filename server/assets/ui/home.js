@@ -12,6 +12,8 @@ let homeWallTimer = null;
 let homeWallUploading = false;
 // null until the server says; false on a TV Glasshouse Home is not offered on.
 let homeAvailable = null;
+let homeSearchCountries = null;
+let homeSearchCountriesLoading = false;
 
 const HOME_ROWS = {
   app: () => t('home.row.apps', 'Apps'),
@@ -60,6 +62,31 @@ async function loadHome(afterSave) {
   setHomeAvailable(homeStatus);
   if (!homeAvailable && activeTab === 'home') return showTab('control');
   renderHome();
+  loadHomeSearchCountries();
+}
+
+async function loadHomeSearchCountries() {
+  if (homeSearchCountries || homeSearchCountriesLoading || !homeStatus || !homeStatus.supported.ok) return;
+  homeSearchCountriesLoading = true;
+  try {
+    const r = await homeGet('/api/home/search/countries');
+    homeSearchCountries = r.countries;
+    renderHomeSearchCountry();
+  } catch (e) { /* The existing automatic choice remains usable offline. */ }
+  homeSearchCountriesLoading = false;
+}
+
+function renderHomeSearchCountry() {
+  const row = q('home-search-country-row'), select = q('home-search-country');
+  if (!row || !select || !homeStatus || !homeLayout) return;
+  row.hidden = !homeStatus.supported.ok;
+  const chosen = homeLayout.searchCountry || '';
+  const options = (homeSearchCountries || []).slice().sort((a, b) => a.name.localeCompare(b.name));
+  if (chosen && !options.some(c => c.code === chosen)) options.push({ code: chosen, name: chosen });
+  select.innerHTML = `<option value="">${esc(t('home.searchCountryAuto', 'Automatic'))}</option>` +
+    options.map(c => `<option value="${esc(c.code)}">${esc(c.name)}</option>`).join('');
+  select.value = chosen;
+  select.disabled = !homeWritable() || !homeSearchCountries;
 }
 
 function homeWritable() { return !!(!homeSaving && homeStatus && (homeStatus.supported.ok || homeStatus.enabled || homeStatus.restorePending) && homeStatus.writable !== false); }
@@ -108,6 +135,7 @@ function renderHome() {
     updateToggle(searchPill, { cls: on ? 'good' : 'idle', label: on ? t('common.on', 'On') : t('common.off', 'Off') });
     searchPill.disabled = !homeWritable();
   }
+  renderHomeSearchCountry();
   const hide = q('home-hide-lg');
   if (hide) {
     const armed = homeArmed === 'hide';
@@ -345,6 +373,8 @@ function homePicture() {
 function homeSearch() {
   homeSaveLayout({ search: homeLayout.search === false });
 }
+
+function homeSearchCountry(value) { homeSaveLayout({ searchCountry: value }); }
 
 // Added channels are the Channels row; this finds more to add. Built once, then only its list redraws.
 function homeChannelPicker() {

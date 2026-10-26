@@ -87,12 +87,15 @@ for web apps, and confirm they have stopped before removing their cards with
 the cards for retry. Home and apps running without a card are left alone.
 Snapshot responses are private and must not be cached.
 
-Glasshouse Home's search sends typed queries to LG's catalogue through
-`com.webos.service.nlpmanager` and reads item details through
-`com.webos.service.sdx` before launching an installed app at the title. Search
-is on by default; **Search** on either dashboard's Home section switches it
-off, saves the choice in `/var/lib/tvweb/home.json`, and refuses new searches
-and search launches before asking LG. Results and launch targets stay in memory.
+Glasshouse Home's search sends typed queries and the selected country to
+`https://apis.justwatch.com/graphql`. Posters come from `images.justwatch.com`.
+It makes no LG cloud search or item-detail requests. Automatic country selection
+reads LG's local settings service; a search-country override is saved in
+`/var/lib/tvweb/home.json` without changing LG's region. The Search switch on
+either dashboard prevents new searches and title launches. Results and launch
+targets remain in memory. Ambiguous Netflix editions can additionally require a
+public Netflix title-page request. Opening a result uses the installed app's
+local deep-link template; account and provider privacy prompts belong to that app.
 
 ## Home-screen app port
 

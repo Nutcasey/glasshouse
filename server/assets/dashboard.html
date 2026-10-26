@@ -880,7 +880,10 @@ function homeRows(d) {
              value: searchOn ? t('common.on', 'On') : t('common.off', 'Off'), cls: searchOn ? 'on' : 'off',
              act: can ? 'homeSearch' : null, on: searchOn,
              press: searchOn ? t('tv.press.switchOff', 'Press OK to switch off') : t('tv.press.switchOn', 'Press OK to switch on'),
-             hint: t('home.searchDesc', 'Left of the rows on Glasshouse Home: films and series on this TV\u2019s apps, opened in the app at the title. What is typed goes to LG\u2019s search.') });
+             hint: t('home.searchDesc', 'Films and series on this TV\u2019s apps, opened at the title. Searches go to JustWatch and work with LG\u2019s servers blocked.') });
+    r.push({ label: t('home.searchCountry', 'Search country'),
+             value: d.layout.searchCountry || t('home.searchCountryAuto', 'Automatic'), web: '/?tab=home',
+             hint: t('home.searchCountryDesc', 'Automatic uses the TV\u2019s LG Apps country. Choosing another country changes search results, not the TV\u2019s region or subscriptions.') });
     // OK steps through the presets; colours picked on the browser dashboard show as Custom.
     var presets = d.colourPresets || [], cur = d.layout.colours, at = cur ? -1 : 0;
     for (var pi = 0; pi < presets.length; pi++) if (cur && presets[pi].text === cur.text && presets[pi].accent === cur.accent) at = pi;

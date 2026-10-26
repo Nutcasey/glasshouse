@@ -1,347 +1,195 @@
-/*
- * lib/home-search.js - films and series across the TV's apps, for Glasshouse
- * Home's search (lib/home)
- *
- * LG's own Search (com.webos.app.voice) asks com.webos.service.nlpmanager,
- * which answers from LG's catalogue: one result for each title on each
- * streaming service, with the service's id (the app's id) and an item id. A
- * title's item detail, from com.webos.service.sdx, names the id the app
- * itself knows it by, and applicationManager puts that into the app's own
- * deeplinkingParams template (its appinfo.json) when launched with
- * replaceParams, as LG's Search does. On a G3 (webOS 9.2.2) Prime Video,
- * Netflix and HBO Max opened at the title this way.
- *
- * Only apps this TV has are offered: the rest are counted, not shown. Only
- * a title from the last search can be opened, so this is not a way to launch
- * anything at all.
- *
- * Strict ES5: runs on node 0.12.
- */
+/* JustWatch title search and local webOS launches. Strict ES5 for node 0.10. */
 var msg = require('./say').msg;
-
-var SEARCH = 'com.webos.service.nlpmanager/search';
-var DETAIL = 'com.webos.service.sdx/send';
-// LG's Search asks for 24 a category; it took under a second on a G3.
-var MAX_RESULTS = 24;
-var SEARCH_TIMEOUT_MS = 10000;
-var MAX_QUERY = 80;
-
+var links = require('./home-search-links');
+var ENDPOINT = 'https://apis.justwatch.com/graphql';
+var SEARCH_TIMEOUT_MS = 10000, CACHE_MS = 60000, RESULT_MS = 30 * 60000;
 var lunaFn = null;
-var SubscriptionType = null;
-var appsFn = null;
-var openedFn = null;
-var enabledFn = null;
-var current = null;
-var generation = 0;
-// The last search's titles by id: { apps: { appId: itemId } }.
-var listed = {};
+/** @type {typeof import('./fetch')} */
+var fetchLib = null;
+var appsFn = null, enabledFn = null, countryFn = null, openedFn = null;
+var current = null, generation = 0, epoch = 0, opening = null;
+var listed = {}, cache = {}, localeCache = null, localeAt = 0, localeWaiters = null;
 
 function init(opts) {
   opts = opts || {};
+  invalidate();
   lunaFn = opts.luna || null;
-  SubscriptionType = opts.Subscription || null;
+  fetchLib = opts.fetch || null;
   appsFn = opts.apps || function (cb) { cb([]); };
-  openedFn = opts.opened || function () {};
   enabledFn = opts.enabled || function () { return true; };
-  listed = {};
+  countryFn = opts.country || function () { return ''; };
+  openedFn = opts.opened || function () {};
+  cache = {}; localeCache = null; localeAt = 0;
 }
+function luna(uri, body, cb) { if (!lunaFn) return cb(null); lunaFn(uri, body, function (r) { cb(r || null); }); }
+function failure(error) { return { ok: false, error: error && error.message || msg('srv.home.searchFailed', 'JustWatch did not answer. Check the TV is online and try again.') }; }
+function off() { return { ok: false, error: msg('srv.home.searchOff', 'Search is switched off in Glasshouse Home settings.') }; }
+function normalCountry(v) { v = String(v || '').trim().toUpperCase(); return v === 'UK' ? 'GB' : v; }
 
-function luna(uri, payload, cb) {
-  if (!lunaFn) return cb(null);
-  lunaFn(uri, payload, function (r) { cb(r || null); });
-}
-
-function words(s) {
-  return String(s || '').toLowerCase().replace(/[^a-z0-9À-￿]+/g, ' ').replace(/^ | $/g, '');
-}
-
-function yearOf(date) {
-  var m = /^(\d{4})/.exec(String(date || ''));
-  return m ? Number(m[1]) : null;
-}
-
-/*
- * The documents LG's answer lists, from searchResult. Each category is its own
- * result list, films then series, so LG's order is kept within each.
- */
-function documents(reply) {
-  var out = [];
-  var data = reply && reply.result && reply.result.ResponseData;
-  (data || []).forEach(function (d) {
-    var results = d && d.ActionData && d.ActionData.response && d.ActionData.response.results;
-    (results || []).forEach(function (res) {
-      (res && res.doc || []).forEach(function (doc) { out.push(doc); });
-    });
+function request(query, variables, cb) {
+  if (!fetchLib) { cb(new Error('no HTTP transport')); return null; }
+  return fetchLib.postJson(ENDPOINT, { query: query, variables: variables || {} }, function (err, doc) {
+    if (err) return cb(err);
+    if (!doc || (doc.errors && doc.errors.length) || !doc.data) return cb(new Error(msg('srv.home.searchProviderError', 'JustWatch could not answer this request. The selected country may not be supported.')));
+    cb(null, doc.data);
   });
-  return out;
 }
-
-/*
- * Trailers are never offered or opened. LG marks none: its catalogue lists
- * Prime Video's "Sneak Peek" films (5 to 10 minutes), "Dune: Part Two Extended
- * Preview" (10) and "First Look Teaser" (1) as films, and numbers "Teaser
- * Trailer: Season 1" as an episode. Titles with the words are real too
- * (Trailer Park Boys, Trailer War at 113 minutes), so a promo's word must
- * come with a short running time, or, where there is none, end the name or
- * stand before its colon or dash.
- */
-var PROMO = /\b(trailers?|teasers?|sneak peeks?|previews?|first look)\b/i;
-var PROMO_PLACED = /\b(trailers?|teasers?|sneak peeks?|previews?|first look)\s*\d*\s*(\)\s*)?($|[:\-\u2013\u2014])/i;
-var PROMO_MAX_MINUTES = 15;
-
-function isTrailer(name, minutes) {
-  name = String(name || '');
-  if (!PROMO.test(name)) return false;
-  if (typeof minutes === 'number' && minutes > 0) return minutes <= PROMO_MAX_MINUTES;
-  return PROMO_PLACED.test(name);
-}
-
-// A document as a title on one service, or null for what is not one.
-function entry(doc) {
-  if (!doc || (doc.type !== 'movie' && doc.type !== 'tvshow') || typeof doc.title !== 'string') return null;
-  var click = doc.action_on_click && doc.action_on_click.launch_parameter;
-  var cp = doc.cp_thumbnail && doc.cp_thumbnail[0] && doc.cp_thumbnail[0].cp_id;
-  if (!click || typeof click.itemId !== 'string' || typeof cp !== 'string') return null;
-  var info = doc.display_info || {};
-  if (isTrailer(doc.title, info.running_time)) return null;
-  // LG's poster address ends in a size hint for its own app (#ADDSIZE#...).
-  var poster = String(doc.thumbnail || '').split('#')[0];
-  return {
-    title: doc.title,
-    kind: doc.type === 'movie' ? 'film' : 'series',
-    year: yearOf(info.release_date),
-    minutes: typeof info.running_time === 'number' ? info.running_time : null,
-    genre: typeof doc.genre === 'string' ? doc.genre : '',
-    rating: typeof info.age_ratings === 'string' ? info.age_ratings : '',
-    poster: /^https?:\/\//.test(poster) ? poster : '',
-    app: cp,
-    itemId: click.itemId
-  };
-}
-
-/*
- * One title on several services is several documents, and each service gives
- * its own release date (Dune: 3 September to 6 December 2021 on a G3 in the
- * UK), so the same title and kind within a year is taken as the same title.
- */
-function group(entries) {
-  var titles = [];
-  entries.forEach(function (e) {
-    var key = words(e.title), hit = null;
-    titles.forEach(function (t) {
-      if (!hit && t.key === key && t.kind === e.kind && (t.year === null || e.year === null || Math.abs(t.year - e.year) <= 1)) hit = t;
+function countries(cb) {
+  if (localeCache && Date.now() - localeAt < 24 * 3600000) return cb({ ok: true, countries: localeCache });
+  if (localeWaiters) { localeWaiters.push(cb); return; }
+  localeWaiters = [cb];
+  var ended = false, handle = null;
+  var timer = setTimeout(function () { finish(new Error(msg('srv.home.searchFailed', 'JustWatch did not answer. Check the TV is online and try again.'))); }, SEARCH_TIMEOUT_MS);
+  function finish(err, data) {
+    if (ended) return;
+    ended = true; clearTimeout(timer);
+    if (handle && handle.cancel) handle.cancel();
+    var out = [], seen = {};
+    if (!err && data && Array.isArray(data.locales)) data.locales.forEach(function (row) {
+      if (!row || typeof row.country !== 'string') return;
+      var code = normalCountry(row.country);
+      if (!/^[A-Z]{2}$/.test(code) || seen[code]) return;
+      seen[code] = true; out.push({ code: code, name: String(row.countryName || code) });
     });
-    if (!hit) {
-      hit = { key: key, title: e.title, kind: e.kind, year: e.year, minutes: e.minutes, genre: e.genre, rating: e.rating,
-        poster: e.poster, posterApp: e.app, items: {}, order: titles.length };
-      titles.push(hit);
-    }
-    if (hit.year === null || (e.year !== null && e.year < hit.year)) hit.year = e.year;
-    if (!hit.minutes) hit.minutes = e.minutes;
-    if (!hit.genre) hit.genre = e.genre;
-    if (!hit.rating) hit.rating = e.rating;
-    if (!hit.items[e.app]) hit.items[e.app] = e.itemId;
-    if (!hit.poster && e.poster) { hit.poster = e.poster; hit.posterApp = e.app; }
+    if (!err && !out.length) err = new Error('empty country list');
+    if (!err) { localeCache = out; localeAt = Date.now(); }
+    var waiting = localeWaiters; localeWaiters = null;
+    waiting.forEach(function (done) { done(err ? failure(err) : { ok: true, countries: out }); });
+  }
+  handle = request('{ locales { country countryName(language: en) } }', null, finish);
+}
+function context(cb) {
+  var override = normalCountry(countryFn());
+  function validate(value) {
+    var country = normalCountry(value);
+    if (!/^[A-Z]{2}$/.test(country)) return cb(new Error(msg('srv.home.searchCountryUnknown', 'The TV did not report its LG Apps country. Choose a search country on the Home tab.')));
+    countries(function (r) {
+      if (!r.ok) return cb(new Error(r.error));
+      if (!r.countries.some(function (c) { return c.code === country; })) return cb(new Error(msg('srv.home.searchCountryUnsupported', 'JustWatch does not support the selected country ({country}).', { country: country })));
+      cb(null, { country: country, key: country + '|en', epoch: epoch });
+    });
+  }
+  if (override) return validate(override);
+  luna('com.webos.service.settings/getSystemSettings', { category: 'option', keys: ['smartServiceCountryCode2'] }, function (r) {
+    validate(r && r.returnValue !== false && r.settings && r.settings.smartServiceCountryCode2);
   });
-  return titles;
 }
-
-// Titles named as asked come first, then those starting with it, then LG's order.
-function rank(titles, query) {
-  var q = words(query);
-  function score(t) { return t.key === q ? 0 : t.key.indexOf(q) === 0 ? 1 : t.key.indexOf(q) !== -1 ? 2 : 3; }
-  return titles.slice().sort(function (a, b) { return score(a) - score(b) || a.order - b.order; });
-}
-
-function failure(reply) {
-  var text = reply && (reply.errorText || reply.errorCode);
-  return { ok: false, error: msg('srv.home.searchFailed', 'LG\'s search did not answer'), detail: text ? String(text) : undefined };
-}
-
 function stopCurrent() {
   if (!current) return;
-  var c = current;
-  current = null;
-  clearTimeout(c.timer);
-  c.sub.stop();
+  var mine = current; current = null; clearTimeout(mine.timer);
+  if (mine.handle && mine.handle.cancel) mine.handle.cancel();
 }
-
-function find(query, cb) {
-  query = String(query || '').replace(/\s+/g, ' ').replace(/^ | $/g, '').slice(0, MAX_QUERY);
-  if (!enabledFn()) return cb({ ok: false, error: msg('srv.home.searchOff', 'search is switched off in Glasshouse Home\'s settings') });
-  if (query.length < 2) return cb({ ok: false, error: msg('srv.home.searchShort', 'type two letters or more') });
-  if (!SubscriptionType) return cb({ ok: false, error: msg('srv.home.searchUnavailable', 'this TV has no LG search to ask') });
-  // A newer search answers the view; the older one is dropped unanswered.
-  if (current) {
-    var was = current.cb;
-    stopCurrent();
-    was({ ok: false, superseded: true });
-  }
-  // answered: the titles came, and are being matched to the TV's apps.
-  var mine = { cb: cb, timer: null, sub: null, answered: false };
-  function finish(r) {
-    if (current !== mine) return;
-    stopCurrent();
-    if (r.ok && !r.results.length) listed = {};
-    cb(r);
-  }
-  mine.sub = new SubscriptionType(SEARCH, {
-    subscribe: true, query: query, start_index: 1, max_results: MAX_RESULTS,
-    category_name: 'movie,tvshow', suggestion_keywords: false
-  }, null, {
-    message: function (r) {
-      if (r.returnValue === false || r.event === 'error' || r.event === 'exceptionResult') return finish(failure(r));
-      if (r.event === 'searchResult') {
-        if (mine.answered) return;
-        mine.answered = true;
-        return answer(query, r, mine, finish);
-      }
-      // LG ends the session straight after the titles, before the app list
-      // has been read where it is not cached.
-      if (r.event === 'sessionEnd' && !mine.answered) finish({ ok: true, query: query, results: [], elsewhere: 0 });
-    },
-    // luna-send ends without an answer where the service is missing (webOS before 9 is untried).
-    close: function () { if (!mine.answered) finish(failure(null)); }
-  });
+function invalidate() {
+  epoch++; listed = {};
+  if (current) { var cb = current.cb; stopCurrent(); cb({ ok: false, superseded: true }); }
+  if (opening) opening.cancel();
+}
+function words(v) { return String(v || '').toLowerCase().replace(/[^a-z0-9\u00c0-\uffff]+/g, ' ').trim(); }
+var PROMO = /\b(trailers?|teasers?|sneak peeks?|previews?|first look)\b/i;
+var PROMO_PLACED = /\b(trailers?|teasers?|sneak peeks?|previews?|first look)\s*\d*\s*(\)\s*)?($|[:\-\u2013\u2014])/i;
+function isTrailer(title, minutes) { return PROMO.test(title) && (typeof minutes === 'number' && minutes > 0 ? minutes <= 15 : PROMO_PLACED.test(title)); }
+function query(country) {
+  return 'query Search($text: String!) { popularTitles(country: ' + country + ', first: 24, filter: {searchQuery: $text}) { edges { node { id objectId objectType ' +
+    'content(country: ' + country + ', language: en) { title originalReleaseYear fullPath runtime posterUrl(profile: S332, format: JPG) genres { translation(language: en) } ageCertification } ' +
+    'offers(country: ' + country + ', platform: WEB) { standardWebURL webos: deeplinkURL(platform: WEBOS) android: deeplinkURL(platform: ANDROID_TV) ' +
+    'tvos: deeplinkURL(platform: TVOS) ios: deeplinkURL(platform: IOS) monetizationType presentationType package { clearName technicalName } } } } } }';
+}
+function find(value, cb) {
+  var text = String(value || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+  if (!enabledFn()) return cb(off());
+  if (text.length < 2) return cb({ ok: false, error: msg('srv.home.searchShort', 'Type two letters or more.') });
+  if (current) { var previous = current.cb; stopCurrent(); previous({ ok: false, superseded: true }); }
+  if (opening) opening.cancel();
+  listed = {};
+  var mine = { cb: cb, timer: null, handle: null, epoch: epoch }; current = mine;
+  function finish(result) { if (current !== mine) return; stopCurrent(); cb(enabledFn() ? result : off()); }
   mine.timer = setTimeout(function () { finish(failure(null)); }, SEARCH_TIMEOUT_MS);
-  current = mine;
-  mine.sub.start();
-}
-
-function answer(query, reply, mine, cb) {
-  appsFn(function (apps) {
-    // A superseded or timed-out search must not replace newer launch targets.
-    if (current !== mine) return;
-    var byId = {};
-    (apps || []).forEach(function (a) { byId[a.id] = a; });
-    var gen = ++generation, out = [], elsewhere = 0;
-    listed = {};
-    rank(group(documents(reply).map(entry).filter(Boolean)), query).forEach(function (t) {
-      var on = [], items = {};
-      for (var app in t.items) {
-        if (!byId[app]) continue;
-        items[app] = t.items[app];
-        on.push({ id: app, title: byId[app].title, icon: byId[app].icon ? '/api/home/icon?id=' + encodeURIComponent(app) : null });
-      }
-      if (!on.length) { elsewhere++; return; }
-      var id = gen + '.' + out.length;
-      listed[id] = { kind: t.kind, apps: items };
-      out.push({ id: id, title: t.title, kind: t.kind, year: t.year, minutes: t.minutes, genre: t.genre, rating: t.rating,
-        poster: t.poster, apps: on });
-    });
-    cb({ ok: true, query: query, results: out, elsewhere: elsewhere });
-  });
-}
-
-function detail(itemId, type, cb) {
-  var body = 'item_id=' + encodeURIComponent(itemId) + '&item_type=CONTS&item_detail_type=' + type + '&app_id=WTV_NLP';
-  luna(DETAIL, { serviceName: 'sdp_onnow', url: 'content_discovery/item-detail', methodType: 'REQ_SSL_POST_METHOD', bodyData: body }, function (r) {
-    /** @type {any} */
-    var answer = null;
-    try { answer = JSON.parse(r.serverResponse.response); } catch (e) {}
-    cb(answer && answer.item && answer.item.item_detail || null);
-  });
-}
-
-function items(d, key) {
-  var list = d && d[key] && d[key].items;
-  return Object.prototype.toString.call(list) === '[object Array]' ? list : [];
-}
-
-/*
- * The id an app knows an LG item by: what follows its first "|", less LG's
- * tag for the service ("AMAZON_", "DISNEY_", "BBC_"). Item detail gave the
- * same for every title tried on a G3, films, seasons and episodes.
- */
-function ownId(itemId) {
-  var rest = itemId.indexOf('|') !== -1 ? itemId.slice(itemId.indexOf('|') + 1) : itemId;
-  return rest.replace(/^[A-Z][A-Z0-9]*_/, '');
-}
-
-// The id the app knows the title by, from LG's item detail, and its name there.
-function execId(app, itemId, cb) {
-  detail(itemId, 'exec_full', function (d) {
-    /** @type {any} */
-    var hit = null;
-    ((d && d.exec_list && d.exec_list.execs) || []).forEach(function (x) {
-      if (!hit && x && x.exec_app_id === app && typeof x.exec_id === 'string') hit = x;
-    });
-    cb(hit ? hit.exec_id : ownId(itemId), hit ? hit.cp_conts_name : '');
-  });
-}
-
-/*
- * A series. For one, LG's item detail names its latest episode (Severance on
- * Prime Video: series 2's 16th, a bonus interview). Its advanced detail lists
- * the seasons, and a season's lists its episodes, so a series opens at its
- * start instead: Prime Video and HBO Max at the first season's page; apps
- * whose season links do not open (Disney+ showed a blank screen, BBC iPlayer
- * has only playback links) at the first episode. Apple TV and Netflix list
- * no seasons, and keep LG's own link: Apple TV's latest episode's page,
- * Netflix's series page. Checked on a G3 (webOS 9.2.2), October 2026.
- */
-var SEASON_PAGE_APPS = ['amazon', 'com.wbd.stream'];
-
-function lowest(list, numberOf) {
-  /** @type {any} */
-  var best = null;
-  // LG lists a season's episodes before its extras, which Prime Video numbers
-  // too (its Season 1 trailer is an episode 1): the first lowest is the
-  // episode, and a trailer is never taken whatever its number.
-  list.forEach(function (x) {
-    var n = parseInt(numberOf(x), 10);
-    if (isTrailer(x.conts_epsd_real_name || x.item_name_disp, null)) return;
-    if (n > 0 && (!best || n < best.n)) best = { n: n, item: x };
-  });
-  return best;
-}
-
-function seriesStart(app, itemId, cb) {
-  detail(itemId, 'advanced', function (d) {
-    var first = lowest(items(d, 'season_list'), function (s) { return s.conts_season_num; });
-    if (!first || typeof first.item.item_id !== 'string') return cb(null);
-    var season = first.item.item_id;
-    if (SEASON_PAGE_APPS.indexOf(app) !== -1) return cb({ value: ownId(season), at: 'season ' + first.n });
-    function episodes(s) {
-      var ep = lowest(items(s, 'tab_episode'), function (e) { return e.item_name; });
-      cb(ep && typeof ep.item.item_id === 'string' ? { value: ownId(ep.item.item_id), at: 'season ' + first.n + ' episode ' + ep.n } : null);
+  context(function (err, ctx) {
+    if (current !== mine || mine.epoch !== epoch) return;
+    if (err) return finish(failure(err));
+    var key = ctx.key + '|' + text.toLowerCase(), hit = cache[key];
+    function answer(doc) {
+      if (current !== mine) return;
+      appsFn(function (apps) { if (current === mine && mine.epoch === epoch) finish(results(text, doc, apps, ctx)); });
     }
-    if (season === itemId) return episodes(d);
-    detail(season, 'advanced', episodes);
-  });
-}
-
-function target(kind, app, itemId, cb) {
-  if (kind !== 'series') return execId(app, itemId, function (value) { cb({ value: value, at: 'title' }); });
-  seriesStart(app, itemId, function (start) {
-    if (start) return cb(start);
-    // LG's own episode, unless it is a trailer: then the app opens as it is.
-    execId(app, itemId, function (value, name) {
-      cb(isTrailer(name, null) ? { value: null, at: 'the app, LG naming a trailer' } : { value: value, at: 'LG\'s episode' });
+    if (hit && Date.now() - hit.at < CACHE_MS) return answer(hit.data);
+    mine.handle = request(query(ctx.country), { text: text }, function (error, data) {
+      if (current !== mine) return;
+      if (error) return finish(failure(error));
+      if (!data.popularTitles || !Array.isArray(data.popularTitles.edges)) return finish(failure(null));
+      if (Object.keys(cache).length >= 20) cache = {};
+      cache[key] = { at: Date.now(), data: data }; answer(data);
     });
   });
 }
-
+function results(text, doc, apps, ctx) {
+  var installed = {}, out = [], elsewhere = 0, unavailable = 0, gen = ++generation;
+  (apps || []).forEach(function (app) { installed[app.id] = app; }); listed = {};
+  doc.popularTitles.edges.forEach(function (edge) {
+    var node = edge && edge.node, content = node && node.content;
+    if (!node || !content || typeof content.title !== 'string' || ['MOVIE', 'SHOW'].indexOf(node.objectType) === -1 || isTrailer(content.title, content.runtime)) return;
+    var byApp = {}, missing = {};
+    (Array.isArray(node.offers) ? node.offers : []).forEach(function (offer) {
+      if (!offer || /BLURAY|DVD/i.test(offer.presentationType || '') || offer.monetizationType === 'CINEMA') return;
+      var target = links.candidate(offer, installed); if (!target) return;
+      if (target.unavailable) { missing[target.app.id] = target.app.title; return; }
+      if (!byApp[target.app.id]) byApp[target.app.id] = [];
+      byApp[target.app.id].push(target);
+    });
+    var appIds = Object.keys(byApp);
+    if (!appIds.length) { if (Object.keys(missing).length) unavailable++; else elsewhere++; return; }
+    var id = gen + '.' + out.length; listed[id] = { apps: byApp, title: content.title, context: ctx, at: Date.now() };
+    var fullPath = /^\/[a-z]{2}\//.test(content.fullPath || '') ? content.fullPath : '';
+    out.push({ id: id, title: content.title, kind: node.objectType === 'MOVIE' ? 'film' : 'series', year: content.originalReleaseYear || null,
+      minutes: content.runtime || null, genre: (Array.isArray(content.genres) ? content.genres : []).map(function (g) { return g && g.translation; }).filter(Boolean).join(', '),
+      rating: content.ageCertification || '', poster: /^\/poster\//.test(content.posterUrl || '') ? 'https://images.justwatch.com' + content.posterUrl : '',
+      source: fullPath ? 'https://www.justwatch.com' + fullPath : '',
+      unavailableApps: Object.keys(missing).filter(function (appId) { return !byApp[appId]; }).map(function (appId) { return missing[appId]; }),
+      apps: appIds.map(function (appId) { var app = installed[appId]; return { id: app.id, title: app.title, icon: app.icon ? '/api/home/icon?id=' + encodeURIComponent(app.id) : null }; }) });
+  });
+  var needle = words(text);
+  out.sort(function (a, b) { return (words(b.title) === needle ? 1 : 0) - (words(a.title) === needle ? 1 : 0); });
+  return { ok: true, query: text, country: ctx.country, results: out, elsewhere: elsewhere, unavailable: unavailable };
+}
 function open(body, cb) {
-  var id = body && typeof body.id === 'string' ? body.id : '';
-  var app = body && typeof body.app === 'string' ? body.app : '';
-  if (!enabledFn()) return cb({ ok: false, error: msg('srv.home.searchOff', 'search is switched off in Glasshouse Home\'s settings') });
-  var title = listed.hasOwnProperty(id) ? listed[id] : null;
-  if (!title || !title.apps.hasOwnProperty(app)) return cb({ ok: false, error: msg('srv.home.searchGone', 'that is no longer in the results') });
-  target(title.kind, app, title.apps[app], function (to) {
-    console.log('home: search opens ' + app + ' at ' + to.at + (to.value ? ': ' + to.value : ''));
-    var launch = { id: app };
-    if (to.value) launch.replaceParams = { deeplinkingParams: { target: '$CONTENTID', value: to.value } };
-    luna('com.webos.applicationManager/launch', launch, function (r) {
-      if (!r || !r.returnValue) return cb({ ok: false, error: msg('srv.home.launchRefused', 'the TV would not open it') });
-      openedFn(app);
-      cb({ ok: true });
+  var id = body && typeof body.id === 'string' ? body.id : '', appId = body && typeof body.app === 'string' ? body.app : '';
+  if (!enabledFn()) return cb(off());
+  var record = listed[id];
+  function stale() { return !enabledFn() || listed[id] !== record || record.context.epoch !== epoch || Date.now() - record.at > RESULT_MS; }
+  if (!record || !record.apps[appId] || stale()) return cb({ ok: false, error: msg('srv.home.searchGone', 'That title is no longer in the current results. Search again.') });
+  if (opening) return cb({ ok: false, error: msg('srv.home.searchOpening', 'A title is already opening.') });
+  var mine = { handle: null, timer: null, cancel: null }; opening = mine;
+  function done(result) {
+    if (opening !== mine) return;
+    opening = null; clearTimeout(mine.timer);
+    if (mine.handle && mine.handle.cancel) mine.handle.cancel();
+    cb(result);
+  }
+  mine.cancel = function () { done({ ok: false, superseded: true }); };
+  mine.timer = setTimeout(function () { done(failure(null)); }, 18000);
+  context(function (err, ctx) {
+    if (opening !== mine) return;
+    if (err) return done(failure(err));
+    if (stale() || ctx.key !== record.context.key) return changed();
+    mine.handle = links.resolve(record.apps[appId], record.title, ctx.country, fetchLib, function (error, target) {
+      if (opening !== mine) return;
+      if (error) return done(failure(error));
+      // The TV's service country may change while a provider page is checked.
+      context(function (countryError, latest) {
+        if (opening !== mine) return;
+        if (countryError) return done(failure(countryError));
+        if (stale() || latest.key !== record.context.key) return changed();
+        luna('com.webos.applicationManager/launch', links.launch(target), function (r) {
+          if (opening !== mine) return;
+          if (!r || r.returnValue !== true) return done({ ok: false, error: msg('srv.home.launchRefused', 'the TV would not open it') });
+          openedFn(appId); done({ ok: true });
+        });
+      });
     });
   });
+  function changed() {
+    epoch++; listed = {};
+    done({ ok: false, error: msg('srv.home.searchCountryChanged', 'The search country changed. Search again before opening a title.') });
+  }
 }
-
-module.exports = {
-  init: init,
-  find: find,
-  open: open
-};
+module.exports = { init: init, find: find, open: open, countries: countries, invalidate: invalidate };

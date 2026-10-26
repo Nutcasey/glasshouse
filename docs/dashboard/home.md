@@ -51,10 +51,13 @@ Glasshouse Home displays a clock and date, the last active source or app, and up
 
 ## Search
 
-**Search** is a mark in the left margin, beside the rows: **Left** from the first tile of any row reaches it, and **Right** goes back. **OK** opens a search panel over the left of Glasshouse Home for films and series, typed on the TV's keyboard. While the keyboard is up the titles are single lines, with the icons of the apps that have them; once it closes each shows its poster, year, running time and apps. Up and down move between titles, left and right between apps, and OK opens the app at that title. A series opens at its start where the app allows: Prime Video and HBO Max at its first season, Disney+ and BBC iPlayer playing its first episode, Netflix at the series; Apple TV opens its latest episode. Titles only on apps the TV does not have are counted, not listed, and trailers, teasers and sneak peeks are never shown or opened. Back closes the keyboard, then the panel. Coming back from an app opened there within 30 minutes, without the TV having been switched off, finds the panel as it was left. The results come from LG's own search, so they need the TV online and the ad blocker on Ads & telemetry or off. **Search**, on the tab or in the TV app's Home section, switches it off: the mark goes, and nothing typed reaches LG.
+**Search** is a mark in the left margin: **Left** from a row's first tile reaches it, **Right** goes back, and **OK** opens the film and series search panel. Up and down choose a title, left and right choose an app, and OK opens that title. Posters, year and running time appear when the keyboard closes. Back closes the keyboard, then the panel. Returning from an app within 30 minutes keeps the panel unless the TV has been switched off.
 
-OK acts once when released. Back also cancels a panel still loading. A close
-that cannot be confirmed shows an error and keeps the cards for retry.
+Search uses **JustWatch**, independently of LG's cloud catalogue, and works with the ad blocker set to **Everything**. Queries go to JustWatch; its availability data does not establish a subscription or guarantee playback. Only installed apps with usable title links have buttons. A missing link is labelled rather than opening the app's home screen. Apps may still require a profile, sign-in or their own privacy choices. Series links may open an episode directly.
+
+**Search country** on the web dashboard defaults to **Automatic**, which reads the TV's LG Apps service country. A country override changes the catalogue only; it does not change the TV's region or subscriptions. GB and US have separate availability. An unknown or unsupported country asks for a selection instead of silently using US results. Changing country requires a new search before an old result can open.
+
+**Search** on either dashboard switches the panel off and prevents new catalogue queries and title launches. JustWatch's public consumer endpoint is not a supported third-party API and may change.
 
 ## Wallpapers
 

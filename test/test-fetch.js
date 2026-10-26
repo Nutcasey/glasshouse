@@ -141,8 +141,30 @@ function retries(done) {
       assert.ok(err && err.offline);
       assert.strictEqual(calls().length, 1);
       console.log('  ✓ wget is not retried');
-      require('child_process').execFile('rm', ['-rf', dir], function () {});
-      done();
+      jsonPosts();
+    });
+  }
+
+  function jsonPosts() {
+    var payload = { query: 'A "quoted" title\nwith a new line', country: 'GB' };
+    // The fake clients consume their documented input channel and echo its
+    // bytes, so JSON escaping and delivery are checked across the process.
+    install('curl', 'data=; header=\nwhile [ $# -gt 0 ]; do\n' +
+      'case "$1" in --data-binary) data="$2"; shift;; -H) header="$2"; shift;; esac; shift\ndone\n' +
+      '[ "$data" = "@-" ] && [ "$header" = "Content-Type: application/json" ] || exit 2\ncat\n');
+    fs.unlinkSync(path.join(dir, 'wget'));
+    fetch.postJson('https://example.org/graphql', payload, function (err, doc) {
+      assert.ifError(err); assert.deepEqual(doc, payload);
+      fs.unlinkSync(path.join(dir, 'curl'));
+      install('wget', 'data=; header=\nfor arg in "$@"; do\n' +
+        'case "$arg" in --post-data=*) data="${arg#--post-data=}";; --header=*) header="${arg#--header=}";; esac\ndone\n' +
+        '[ "$header" = "Content-Type: application/json" ] || exit 2\nprintf "%s" "$data"\n');
+      fetch.postJson('https://example.org/graphql', payload, function (err2, doc2) {
+        assert.ifError(err2); assert.deepEqual(doc2, payload);
+        console.log('  ✓ curl and wget deliver JSON POST bodies without losing quotes or new lines');
+        require('child_process').execFile('rm', ['-rf', dir], function () {});
+        done();
+      });
     });
   }
 }
