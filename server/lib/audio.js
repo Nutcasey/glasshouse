@@ -1,16 +1,52 @@
-/* Audio declarations and the active return channel.
+/* Audio declarations, the active return channel, and a pinned DTS helper.
  * Strict ES5 for the TV's Node 0.10/0.12 runtime. */
+var fs = require('fs');
 var os = require('os');
+var crypto = require('crypto');
 var child = require('child_process');
 var children = require('./children');
 var util = require('./util');
 var names = require('./names');
+var msg = require('./say').msg;
 var luna = null;
 var cached = null;
+var clearCache = function () {};
 var receiverMap = null;
+var changing = false;
 var decoderCache = null;
 var decoderAt = 0;
 var decoderWaiters = null;
+var BASE = '/var/lib/lg-dts-core/';
+var PROFILE = {
+  model: 'OLED77G5RLA', firmware: '33.30.80', kernel: '5.4.268-329.ptl4tv.5', input: 3,
+  revision: 'ac5f3e3e1d7f034ad1f35c43ae7c722aeae798ae',
+  // Runtime files from the upstream prebuilt package at the pinned revision.
+  files: {
+    'control.sh': '93b42fc41c5b61fa5d469d4e5a3fa9f2a6deace538efa212b0f6b4341f9306da',
+    'watch.sh': '8c202469c97e796a561b18e2c03f7ac0eb06f050f5fb31515317b01f4aa7d931',
+    'run-on-tv.sh': '88c6dd4592ed2850ee85df06c15c322e94b45a81221883815c465cad050a3889',
+    'lg-dts-core.service': '81924d46322692d0701e443bd8588cf4f9f527ce622149d12784f7ae00efbfcd',
+    '90-lg-dts-core': '9482be2b885dc7e9b73791808666afc2904be056498992bc7ae8920e5f1a2497',
+    'config-override.py': '05c7d9d4817bb02449b093d8be51eb7218d4577447ae2375b2ed14b0409c06c5',
+    'dts_gate.ko': '8db00c1ae49a03cb13985b30d8c35c3a72385ead3dbd5871005229a2e4093246',
+    'dts_core_route.ko': '0042c2bd84d7705518d71c80c04acfc7b8dc8c1399be44d00a91eaa15c10d5ac',
+    'hd/dts_gate.ko': '8db00c1ae49a03cb13985b30d8c35c3a72385ead3dbd5871005229a2e4093246',
+    'hd/dts_core_route.ko': 'e91155f03c47f70f9868ace1a8bf61d07288da83a50de837c5dbab90372aaba0',
+    'hd/run-on-tv.sh': '8b51aa182f1330e4b74d5d3c9e6fa145f335860d2416ad351f5bdc5fe10717aa'
+  }
+};
+var NATIVE_BASE = '/var/lib/lg-dts-native/';
+var NATIVE_PROFILE = {
+  "model": "OLED83G54LW.BEKYLJP",
+  "firmware": "33.31.68",
+  "kernel": "5.4.268-329.ptl4tv.5",
+  "files": {
+    "control.py": "e26e9a76af5fb281763b5693d9416453c9780695375c5c13a76033e651bd02b8",
+    "gst/libgstghdts.so": "0a32f23ca72f8141d8474c0ff053340bb57b24ed8575ffc086f3b25a73bce53d",
+    "gh_dts_native-apply0.ko": "00f23efc35efba75d7fce920550815c04b17b1e326942ffe2d00cb37ea95a11e",
+    "gh_dts_native-apply1.ko": "efb1e193f3b4ea714418744277c2730565f0f3b9d2786e4763e04513ecfb1b8d"
+  }
+};
 var FORMATS = [
   { id: 'pcm', label: 'PCM', sad: 1, aliases: ['PCM', 'LPCM'] },
   { id: 'ac3', label: 'Dolby Digital', sad: 2, aliases: ['AC3'] },
@@ -131,6 +167,94 @@ function inspectDts(cb) {
   });
 }
 
+function helperFiles() {
+  if (!util.existsQuiet(BASE + 'control.sh')) return { installed: false, verified: false };
+  try {
+    var manifest = util.readJson(BASE + 'manifest.json', {});
+    if (manifest.target !== PROFILE.model + ' ' + PROFILE.firmware || manifest.kernel !== PROFILE.kernel ||
+        manifest.input !== 'HDMI3' || manifest.output !== 'eARC') return { installed: true, verified: false };
+    for (var file in PROFILE.files) {
+      var hash = crypto.createHash('sha256').update(fs.readFileSync(BASE + file)).digest('hex');
+      if (hash !== PROFILE.files[file]) return { installed: true, verified: false };
+    }
+    // enable invokes the installed boot hook, not the copy inside the payload.
+    var boot = crypto.createHash('sha256').update(fs.readFileSync('/var/lib/webosbrew/init.d/90-lg-dts-core')).digest('hex');
+    return { installed: true, verified: boot === PROFILE.files['90-lg-dts-core'] };
+  } catch (e) { return { installed: true, verified: false }; }
+}
+
+function nativeHelperStatus(identity, cb) {
+  var installed = util.existsQuiet(NATIVE_BASE + 'manifest.json');
+  var verified = installed;
+  var matched = identity.model === NATIVE_PROFILE.model && identity.firmware === NATIVE_PROFILE.firmware && identity.kernel === NATIVE_PROFILE.kernel;
+  Object.keys(NATIVE_PROFILE.files).forEach(function (name) {
+    try {
+      if (crypto.createHash('sha256').update(fs.readFileSync(NATIVE_BASE + name)).digest('hex') !== NATIVE_PROFILE.files[name]) verified = false;
+    } catch (e) { verified = false; }
+  });
+  var enabled = util.existsQuiet(NATIVE_BASE + 'enabled');
+  var rankReady = false;
+  try {
+    var stagedRank = fs.statSync(NATIVE_BASE + 'gstcool-native.conf');
+    var liveRank = fs.statSync('/etc/gst/gstcool.conf');
+    rankReady = stagedRank.dev === liveRank.dev && stagedRank.ino === liveRank.ino;
+  } catch (e) {}
+  var residue = rankReady || util.existsQuiet('/sys/module/gh_dts_native') ||
+    util.existsQuiet('/run/systemd/system/umediaserver.service.d/90-glasshouse-dts.conf') ||
+    util.existsQuiet(NATIVE_BASE + 'config-original.json');
+  var result = { available: matched && verified, installed: installed, verified: verified,
+    enabled: enabled, running: false, active: false, busy: changing, canDisable: verified && (enabled || residue),
+    needsRestore: !enabled && residue,
+    backend: 'native-apps', input: null, transport: 'eARC', format: 'DTS core 48 kHz',
+    profile: NATIVE_PROFILE.model + ' / ' + NATIVE_PROFILE.firmware,
+    reason: !matched ? msg('srv.audio.override.incompatible', 'No DTS forwarding profile has been validated for this TV and firmware.')
+      : !installed ? msg('srv.audio.override.nativeMissing', 'Install the matching native DTS forwarding package before enabling it.')
+        : !verified ? msg('srv.audio.override.unverified', 'The installed DTS helper does not match the pinned, checked package.') : null };
+  if (!verified || !enabled) return cb(result);
+  children.launch(function () {
+    child.execFile('/bin/systemctl', ['is-active', 'umediaserver.service'], { timeout: 3000, maxBuffer: 4096 }, function (err, stdout) {
+      var dropin = util.readTrimmed('/run/systemd/system/umediaserver.service.d/90-glasshouse-dts.conf') || '';
+      result.running = rankReady && !err && String(stdout || '').trim() === 'active' && dropin.indexOf('Environment=GST_PLUGIN_PATH=' + NATIVE_BASE + 'gst') !== -1;
+      var graph = util.readTrimmed('/proc/aaudio/dot_block_connection') || '';
+      result.active = result.running && util.readTrimmed('/sys/module/gh_dts_native/parameters/active') === '1' &&
+        /renderer_[01]_out100\s*->\s*output_3_in0/.test(graph);
+      cb(result);
+    });
+  });
+}
+
+function helperStatus(identity, cb) {
+  if (identity.model === NATIVE_PROFILE.model || util.existsQuiet(NATIVE_BASE + 'enabled') ||
+      util.existsQuiet(NATIVE_BASE + 'config-original.json') || util.existsQuiet('/sys/module/gh_dts_native')) return nativeHelperStatus(identity, cb);
+  var files = helperFiles();
+  var matched = identity.model === PROFILE.model && identity.firmware === PROFILE.firmware && identity.kernel === PROFILE.kernel;
+  var enabled = util.existsQuiet(BASE + 'enabled');
+  var reason = !matched ? msg('srv.audio.override.incompatible', 'No DTS forwarding profile has been validated for this TV and firmware.')
+    : !files.installed ? msg('srv.audio.override.missing', 'Install the matching lg-g5-dts helper before enabling the experimental override.')
+    : !files.verified ? msg('srv.audio.override.unverified', 'The installed DTS helper does not match the pinned, checked package.') : null;
+  var result = { available: matched && files.verified, installed: files.installed, verified: files.verified,
+    enabled: enabled, running: null, active: null, busy: changing, reason: reason,
+    canDisable: enabled && files.verified, profile: PROFILE.model + ' / ' + PROFILE.firmware,
+    input: PROFILE.input, transport: 'eARC', revision: PROFILE.revision };
+  if (!files.verified) return cb(result);
+  children.launch(function () {
+    child.execFile('/bin/systemctl', ['is-active', 'lg-dts-core.service'], { timeout: 3000, maxBuffer: 4096 }, function (err, stdout) {
+      result.running = String(stdout || '').trim() === 'active';
+      var hdmi = sectionValues(util.readTrimmed('/proc/lgtv-driver/audio/hdmi'))[''];
+      var adec = sectionValues(util.readTrimmed('/proc/lgtv-driver/audio/adec.p1'))[''];
+      var sound = sectionValues(util.readTrimmed('/proc/lgtv-driver/audio/sndout'));
+      var graph = util.readTrimmed('/proc/aaudio/dot_block_connection') || '';
+      result.active = result.running && /^(Y|1)$/i.test(util.readTrimmed('/sys/module/dts_core_route/parameters/enable') || '') &&
+        hdmi.AudioData === '1' && /^(DTS|DTS_HD)$/.test(hdmi.Codec || '') &&
+        adec.Start === '1' && adec.Connect === 'HDMI_PORT2' && sound.EARC && sound.EARC.EArcOnOff === 'On' &&
+        /renderer_1_out100\s*->\s*mixer_0_in100/.test(graph) && /mixer_0_out100\s*->\s*output_3_in0/.test(graph);
+      result.active = !!result.active;
+      result.canDisable = files.verified && (enabled || result.running);
+      cb(result);
+    });
+  });
+}
+
 /** @returns {Object.<string, any>} */
 function build(replies, decoder) {
   var cfg = replies.config && replies.config.returnValue !== false && replies.config.configs || {};
@@ -224,7 +348,8 @@ function status(cb, force) {
   var decoder = null;
   function done() {
     if (--left) return;
-    cb(build(replies, decoder));
+    var result = build(replies, decoder);
+    helperStatus(result.identity, function (helper) { result.override = helper; cb(result); });
   }
   function ask(key, uri, params, ttl) {
     var next = function (r) { replies[key] = r; done(); };
@@ -245,10 +370,44 @@ function status(cb, force) {
   else done();
 }
 
+function setOverride(on, cb) {
+  if (typeof on !== 'boolean') return cb({ ok: false, error: msg('srv.audio.override.boolean', 'Enabled must be true or false.') });
+  if (changing) return cb({ ok: false, error: msg('srv.audio.override.busy', 'An audio change is still in progress.') });
+  changing = true;
+  status(function (st) {
+    var helper = st.override;
+    var error = null;
+    if (on && !helper.available) error = helper.reason;
+    else if (!on && !helper.canDisable) error = msg('srv.audio.override.notEnabled', 'No verified DTS override is enabled.');
+    else if (on && (st.receiver.link !== 'eARC' || st.settings.soundOutput !== 'external_arc' || st.settings.soundOutputDigital !== 'passThrough'))
+      error = msg('srv.audio.override.setup', 'Choose HDMI ARC output, enable eARC and select Pass Through before enabling the override.');
+    // This pinned watcher can start core and HD sessions. A core-only sink
+    // needs a separately qualified core-only helper, not this combined one.
+    else if (on && helper.backend === 'native-apps' && !st.tv.formats.some(function (f) { return f.id === 'dts' && f.receiver === true; }))
+      error = msg('srv.audio.override.nativeReceiver', 'Native DTS forwarding requires a receiver that advertises DTS.');
+    else if (on && helper.backend !== 'native-apps' && st.tv.formats.filter(function (f) { return (f.id === 'dts' || f.id === 'dtshd') && f.receiver === true; }).length !== 2)
+      error = msg('srv.audio.override.receiver', 'The installed helper handles DTS and DTS-HD. The receiver must advertise both formats.');
+    if (error) { changing = false; return cb({ ok: false, error: error }); }
+    children.launch(function () {
+      var executable = helper.backend === 'native-apps' ? '/usr/bin/python3' : '/bin/sh';
+      var controller = helper.backend === 'native-apps' ? NATIVE_BASE + 'control.py' : BASE + 'control.sh';
+      child.execFile(executable, [controller, on ? 'enable' : 'disable'], { timeout: 180000, maxBuffer: 32768 }, function (err) {
+        changing = false;
+        clearCache();
+        status(function (after) {
+          var confirmed = !err && after.override.enabled === on && after.override.running === on;
+          cb({ ok: confirmed, status: after, error: confirmed ? null : msg('srv.audio.override.failed', 'The DTS helper did not confirm the change. Check its status before retrying.') });
+        }, true);
+      });
+    });
+  }, true);
+}
+
 function init(opts) {
   luna = opts.luna;
   cached = opts.lunaCached;
+  clearCache = opts.clearLunaCache || function () {};
   receiverMap = opts.hdmiReceiverMap || null;
 }
 
-module.exports = { init: init, status: status };
+module.exports = { init: init, status: status, setOverride: setOverride };

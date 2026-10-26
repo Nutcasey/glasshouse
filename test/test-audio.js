@@ -1,4 +1,4 @@
-// Public audio snapshots: what the TV, its receiver and LG's playback configuration report.
+// Public audio snapshots and the boundary before a privileged helper runs.
 var assert = require('assert');
 var events = require('events');
 var os = require('os');
@@ -16,7 +16,7 @@ var launches = 0;
 var reads = 0;
 var before;
 var cases = [];
-child.execFile = function () { launches++; throw new Error('The audio endpoint must not start a process'); };
+child.execFile = function () { launches++; throw new Error('A refused override must not start a process'); };
 function call(uri, params, cb) { reads++; cb(responses[uri] || null); }
 audio.init({ luna: call, lunaCached: function (uri, params, ttl, cb) { call(uri, params, cb); },
   hdmiReceiverMap: function (cb) { cb({ 1: 3, 2: 2, 3: 1, 4: 0 }); } });
@@ -80,10 +80,34 @@ add('malformed optional records cannot crash the capability endpoint', function 
   assert.strictEqual(format(st, 'dts').playback, true);
   assert.strictEqual(format(st, 'dts').receiver, null);
 });
-add('the endpoint is read-only', null, function (code) {
-  assert.strictEqual(code, 405);
+add('the G3 cannot execute a G5 override', null, function (code, st) {
+  assert.strictEqual(code, 400);
+  assert.strictEqual(st.ok, false);
   assert.strictEqual(launches, 0);
 }, { enabled: true });
+add('matching model/version still refuses an unverified helper', function () {
+  responses['com.webos.service.tv.systemproperty/getSystemInfo'].modelName = 'OLED77G5RLA';
+  responses['com.webos.service.tv.systemproperty/getSystemInfo'].firmwareVersion = '33.30.80';
+  os.release = function () { return '5.4.268-329.ptl4tv.5'; };
+  mock.files['/var/lib/lg-dts-core/control.sh'] = '#!/bin/sh\nexit 0\n';
+  mock.files['/var/lib/lg-dts-core/manifest.json'] = JSON.stringify({ target: 'OLED77G5RLA 33.30.80', kernel: '5.4.268-329.ptl4tv.5', input: 'HDMI3', output: 'eARC' });
+}, function (code, st) {
+  assert.strictEqual(code, 400);
+  assert.strictEqual(st.ok, false);
+  assert.strictEqual(launches, 0);
+}, { enabled: true });
+add('read-only configuration refuses before inspecting a helper', function () {
+  before = reads;
+  routes.init({ config: { allowControl: false, token: '', port: 8080 }, audio: audio });
+}, function (code) { assert.strictEqual(code, 403); assert.strictEqual(reads, before); }, { enabled: true });
+add('cross-origin writes never reach the helper', null, function (code) {
+  assert.strictEqual(code, 403);
+  assert.strictEqual(launches, 0);
+}, { enabled: true }, { host: '127.0.0.1', origin: 'https://untrusted.example', 'content-type': 'application/json' });
+add('override requires a boolean', null, function (code) {
+  assert.strictEqual(code, 400);
+  assert.strictEqual(launches, 0);
+}, { enabled: 'yes' });
 
 function restore() { os.release = originalRelease; child.execFile = originalExec; mock.restore(); }
 var guard = setTimeout(function () { restore(); throw new Error('audio endpoint did not complete'); }, 5000);
@@ -92,6 +116,8 @@ function next() {
   if (!task) { clearTimeout(guard); restore(); console.log('ALL test-audio.js assertions passed!'); return; }
   responses = JSON.parse(JSON.stringify(fixture.responses));
   Object.keys(fixture.files).forEach(function (key) { mock.files[key] = fixture.files[key]; });
+  delete mock.files['/var/lib/lg-dts-core/control.sh'];
+  delete mock.files['/var/lib/lg-dts-core/manifest.json'];
   os.release = function () { return '5.4.268-320'; };
   routes.init({ config: { allowControl: true, token: '', port: 8080 }, audio: audio });
   if (task.setup) task.setup();

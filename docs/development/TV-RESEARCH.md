@@ -4,6 +4,80 @@ Findings about how LG's webOS works, kept so the same ground is not covered
 twice. Each entry names the TV and webOS version it was found on. For how
 Glasshouse itself works, see [IMPLEMENTATION.md](../IMPLEMENTATION.md).
 
+## Native DTS playback on the G5 (webOS 10.3.1)
+
+OLED83G54LW.BEKYLJP, firmware 33.31.68, read and tested on 26 October 2026.
+The AVC-A10H receiver advertised DTS and DTS-HD, with eARC negotiated and
+Pass Through selected. Receiver capability did not enable native DTS.
+
+A generated silent DTS/48 kHz/5.1 MKV failed in the stock GStreamer pipeline:
+`matroskademux` emitted `audio/x-unknown, codec-id=A_DTS`, and `decodebin`
+reported a missing decoder. Temporarily setting `tv.model.edidType` to
+`TrueHD+dts`, verifying it and restarting ARC did not change that result.
+The original `TrueHD` value was restored and verified. The demuxer could
+extract the elementary DTS data; feeding it to `decodebin` with explicit
+`audio/x-dts` input caps instead reported `Missing decoder: DTS`.
+
+`dts_audiodec` was unregistered, and the DSP0 processor inventory contained
+no DTS decoder. LG's `audiosink` advertised raw audio input and refused a
+direct `audio/x-dts` connection. These are native playback boundaries, not
+proof that a new compressed bypass implementation is impossible. Plex's
+server-side direct-play state and source codec do not establish successful
+DTS output from the TV.
+
+The separate standard ALSA sink advertised framed DTS, but the configured
+`iec958` and `spdif` devices failed to open with ENOENT. Live ALSA configuration
+resolved `pcm.iec958` to an absent `cards.pcm.iec958` profile. A bounded
+compressed-DTS probe through `hw:0,0` negotiated no compatible format; its
+supported caps were raw PCM. This does not establish a working alternative
+native compressed-output route.
+
+The HDMI-only lg-g5-dts helper targets a different kernel binary despite
+the same `5.4.268-329.ptl4tv.5` release string. Eight of its nine original
+64-byte code guards failed against this TV's captured boot image; live
+kernel symbols also placed the DTS support gate at a different address.
+The old addresses must not be reused on this firmware.
+
+A separate exact-target native carrier trial on this 83-inch G5 reached an
+AVC-A10H as DTS. DTS core frames were wrapped in IEC 61937 bursts, matching
+FFmpeg's SPDIF output byte for byte. LG `audiosink index=0 pcm-bypass=true`
+accepted the S16LE/stereo/48 kHz carrier. The native renderer port was
+`0x100`, including for PCM bypass. Connecting it to output3 and setting
+`audio_hal_earc_set_output_format(1, 48000)` produced receiver `SYSDA DTS`.
+The original encoder3-to-output3 connection was restored afterwards.
+
+The prototype `dts_audiodec` GStreamer element accepts both `audio/x-dts` and
+the stock demuxer's `audio/x-unknown, codec-id=A_DTS`. A 30-second Matroska
+pipeline selected it automatically and completed with DTS receiver lock and
+normal EOS cleanup. LG creates the native renderer only after output-caps
+negotiation, so the forwarder sets PCM bypass and negotiates before acquiring
+the route. Its input caps must retain the compressed channel count independently
+of the two-channel IEC carrier. A suspended producer exhausted its renewable
+20-second lease; the original route returned and resumed forwarding failed
+closed. These observations establish the native DTS-core route, not lossless
+DTS-HD forwarding or compatibility with every app.
+
+Native app playback uses a different starting graph from an idle TV. The
+Cinema G5 connected renderer_1_out0 to mixer_0_in1, then
+mixer_0_out0 to output_3_in0, whereas the idle trial used encoder3 as the
+output source. The native helper records and restores that source kind. It
+revalidates the exact source/port under the block-manager operation mutex
+before replacing output3's input; the mixer-to-output1 connection is retained.
+Cleanup preserves a foreign replacement route. Standard mutex imports use
+loader relocations; private locked block-manager entry points retain code
+guards verified against the running image.
+
+LG supplies GST_PLUGIN_PATH_1_0 and disables registry updates, so an
+unversioned plugin path alone did not reach app players. The native package
+sets both paths, uses a private registry and binds a checked copy of
+gstcool.conf, selecting the forwarder ahead of decproxy as a software element.
+Plex then direct-played Casino's DTS-HD MA/DTS:X track without transcoding,
+while the Denon reported DTS core. Seeking, a toast and a 24-second pause/resume
+retained that route. A real eight-second clip completed with EOS restoration;
+a killed native player restored the PCM route, and the next player recovered
+from its orphaned module. Lossless extensions and audible quality remain
+unqualified by these muted trials.
+
 ## Audio declarations and the negotiated link (G3, webOS 9.2.2)
 
 OLED55G36LA, firmware 23.25.55, kernel `5.4.268-320`, read on 25 October 2026:

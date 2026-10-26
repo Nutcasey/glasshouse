@@ -151,6 +151,13 @@ as negotiation evidence. `?with=settings` adds LG's sound and HDMI setting rows,
 each dashboard reads one endpoint. Reads run only while an Audio tab is open;
 there is no audio-capability background subscription.
 
+The optional DTS override wraps a separately installed, pinned lg-g5-dts
+package. Its exact target, manifest, runtime hashes and boot-hook hash must
+match before enable; the helper retains its own kernel instruction guards.
+Disable calls the helper's complete restoration. The UI distinguishes the
+enabled preference, running supervisor and active kernel route. A failed or
+unknown state is not reported as successful forwarding.
+
 The audio output in the stats is named from the `soundOutput` of
 `com.webos.service.audio/master/getVolume`, which uses the sound settings'
 keys, or `tv_speaker_bt_surround` for `tv_speaker_bluetooth` when the

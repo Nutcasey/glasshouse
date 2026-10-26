@@ -1,11 +1,35 @@
 # What the dashboard changes on the TV
 
-## Audio capabilities
+## Audio capabilities and DTS forwarding
 
 The Audio tabs read LG's capability, settings and ARC services, the current
 HDMI EDID and audio driver status, and the media-resource declaration file. LG's DTS decoder is inspected on demand, at most once every five minutes.
 No audio setting changes during a snapshot. Native controls use LG's ordinary
 settings service.
+
+The experimental override invokes `control.sh enable` or `disable` on an
+already-installed, pinned lg-g5-dts helper, only on its exact supported target.
+Enable requires matching runtime-file hashes, kernel and firmware plus a
+DTS/DTS-HD-capable eARC receiver. The helper owns its enabled marker, service, kernel
+hooks, capability override and audio restoration. Glasshouse installs no
+decoder, firmware or kernel module. Unknown targets are refused; a matching
+verified helper can still be disabled after a firmware mismatch.
+
+The separately installed native-app package adds a shared GStreamer DTS
+forwarder on OLED83G54LW.BEKYLJP firmware 33.31.68, with an exact boot-image
+hash and kernel code guards. It forwards 48 kHz DTS core, including the core
+from compatible DTS-HD tracks; lossless extensions are not forwarded.
+Enabling sets the owned `TrueHD+dts` declaration, adds a volatile
+`umediaserver.service` plugin-path drop-in and restarts ARC and media playback.
+The package lives under `/var/lib/lg-dts-native`; its boot hook reapplies the
+registration while enabled. A kernel route exists only during DTS playback.
+A producer lease restores the previous route within 20 seconds of a stalled
+producer; normal stop and end-of-stream release it directly. Seeking retains
+the route. Disabling removes the registration, releases the route and restores
+the owned declaration.
+The declaration also affects HDMI capability reporting; this package qualifies
+native playback only. The original HDMI helper retains its separate compatibility
+checks.
 
 Nothing on the read-only root filesystem is written. Everything below other
 than the server's own files happens only when the owner switches it on, and the
