@@ -840,6 +840,8 @@ function handleUpload(req, res) {
       // A stream destroyed before its file has opened creates the file
       // afterwards, so it is removed again once the stream has closed.
       ws.once('close', function () { fs.unlink(file, function () {}); });
+      // Node 0.12's destroy() leaves a pending open's descriptor alive.
+      ws.once('open', function () { ws.close(); });
       try { ws.destroy(); } catch (e) {}
       installerModule.releaseUpload(file);
       return true;

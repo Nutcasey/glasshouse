@@ -198,3 +198,8 @@ app keeps the panel, a changed sleep counter closes it, late search replies
 cannot refill a closed panel, and switching search off removes its entry point.
 Home interaction fixtures mark both introductory hints as seen so hint saves
 do not count as layout edits.
+
+The sideload route check forces an upload to abort before its file opens,
+then confirms that the eventual descriptor closes and the staging file is
+removed. This catches Node 0.12's destroy-before-open behaviour without
+relying on the filesystem finishing within a fixed delay.

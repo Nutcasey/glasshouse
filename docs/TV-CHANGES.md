@@ -100,6 +100,9 @@ refuse without asking LG. Pending title lookups recheck before each further
 detail read and before launching, so switching Search off or blocking its host
 stops them too. Results and launch targets stay in memory.
 
+Aborted package uploads close their staging file even when the abort arrives
+before the file opens on Node 0.12, then remove the file.
+
 ## Home-screen app port
 
 Glasshouse Home's page, staged in `/var/lib/tvweb/home-takeover` and mounted over LG's Home, has the port filled in the same way each time the server stages it.
