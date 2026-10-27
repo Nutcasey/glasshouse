@@ -63,7 +63,22 @@ function pictureError(message) {
   el.hidden = !message;
 }
 
+// The tab is shown only where the TV offers picture settings, as the Game tab
+// is only where it has a Game Optimizer.
+async function checkPictureTab() {
+  let d;
+  try { d = await (await fetch(api('/api/picture'), { cache: 'no-store' })).json(); } catch (e) { return; }
+  setPictureAvailable(!!(d && d.available));
+}
+
+function setPictureAvailable(on) {
+  if (q('tab-btn-picture')) q('tab-btn-picture').hidden = !on;
+  if (!on && activeTab === 'picture') showTab('control');
+}
+
 function renderPicture(d, fromPoll) {
+  setPictureAvailable(d.available !== false);
+  if (d.available === false) return;
   // A poll that finds nothing new leaves the page alone, and one that does
   // waits while a control is in use, so a slider is not redrawn under a drag.
   const shown = JSON.stringify([d.rows, d.dimension, d.writable]);

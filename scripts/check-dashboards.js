@@ -1563,6 +1563,23 @@ async function visitTvAudio(browser, base, problems) {
     if (await page.locator('#rows .row').filter({ hasText: /Audio capabilities|Sound output/ }).count()) problems.push('TV audio: sound still listed under System');
   } finally { await page.close(); }
 }
+// A TV that offers no picture settings has no Picture tab in either dashboard.
+async function visitPictureUnavailable(browser, base, problems) {
+  const page = await browser.newPage();
+  page.on('pageerror', e => problems.push('Picture unavailable: ' + e.message));
+  await page.route('**/api/picture', route => route.fulfill({ json: { ok: true, available: false, writable: true, rows: [] } }));
+  try {
+    await page.goto(base + '/?tab=picture');
+    await page.waitForFunction(() => typeof activeTab === 'string' && activeTab !== 'picture', null, { timeout: 5000 })
+      .catch(() => problems.push('Picture unavailable: the web dashboard stayed on the tab'));
+    if (await page.locator('#tab-btn-picture').isVisible()) problems.push('Picture unavailable: the web dashboard shows the tab');
+    await page.goto(base + '/assets/dashboard.html');
+    await page.waitForTimeout(800);
+    const tabs = await page.evaluate(() => TABS.map(x => x.key));
+    if (tabs.indexOf('picture') !== -1) problems.push('Picture unavailable: the TV app shows the tab');
+  } finally { await page.close(); }
+}
+
 async function visitTvPictureWrites(browser, base, problems) {
   for (const outcome of ['accepted', 'refused', 'disconnected']) {
     const page = await browser.newPage();
@@ -1640,6 +1657,7 @@ async function visitTvNonOled(browser, base, problems) {
   await visitTvDashboard(browser, base, problems);
   await visitTvAudio(browser, base, problems);
   await visitTvPictureWrites(browser, base, problems);
+  await visitPictureUnavailable(browser, base, problems);
   await visitTvNonOled(browser, base, problems);
   await visitHomeArrangement(browser, base, problems);
   await visitHomePicture(browser, base, problems);

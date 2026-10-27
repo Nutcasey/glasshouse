@@ -201,6 +201,15 @@ lgs.collect('picture', function (r) {
 });
 console.log('  ✓ picture rows take their choices, ranges and visibility from the TV');
 
+// A TV that describes none of its picture settings gets no Picture rows.
+var allDesc = picDesc;
+picDesc = {};
+lgs.collect('picture', function (r) {
+  assert.deepEqual(r.rows, [], 'nothing offered without LG\'s own choices and ranges');
+});
+picDesc = allDesc;
+console.log('  ✓ without a description of the picture settings, none are offered');
+
 // LG marks the mode as adjusted, as its own app does, and only once
 lgs.set('contrast', 80, function (r) { assert.strictEqual(r.ok, true); });
 assert.deepEqual(picWrites[0], { category: 'picture', settings: { contrast: 80, pictureSettingModified: { cinema: true, vivid: true } } });

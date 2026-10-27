@@ -5,6 +5,11 @@ Picture menu groups them: brightness, colour, clarity, motion and aspect ratio,
 with white balance and colour management folded below. The TV app has the same
 tab.
 
+Each TV shows only what its own menu offers: a setting the TV does not
+describe, or hides, is left out, and one it greys out for the picture mode or
+what is on screen is greyed out here too. A TV that describes none of its
+picture settings, as some older webOS versions may, has no Picture tab.
+
 ![Picture settings on a G3 in the web dashboard](../screenshots/picture-g3-desktop.png)
 
 ## The picture on screen

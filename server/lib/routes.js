@@ -1599,7 +1599,8 @@ function handleRequest(req, res) {
    */
   if (pathname === '/api/picture') {
     return lgSettingsModule.collect('picture', function (r) {
-      send(res, 200, JSON.stringify({ ok: true, writable: !!config.allowControl, rows: r.rows,
+      // available false where the TV offers none: both dashboards then leave the tab out.
+      send(res, 200, JSON.stringify({ ok: true, available: r.rows.length > 0, writable: !!config.allowControl, rows: r.rows,
         dimension: r.dimensions.picture || null, inputs: telemetryModule.inputNameMap }));
     }, 4000);
   }

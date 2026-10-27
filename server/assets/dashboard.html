@@ -411,7 +411,7 @@ var TABS = [
   { key: 'apps',    label: t('tab.apps', 'Apps'),         url: '/api/apps',        build: appsRows },
   { key: 'oled',    label: t('tab.oledCare', 'OLED Care'),    url: '/api/oledcare',    build: oledRows, optional: true },
   { key: 'game',    label: t('tab.game', 'Game'),         url: '/api/game',        build: gameRows, optional: true },
-  { key: 'picture', label: t('tab.picture', 'Picture'),      url: '/api/picture',     build: pictureRows, poll: 5000 },
+  { key: 'picture', label: t('tab.picture', 'Picture'),      url: '/api/picture',     build: pictureRows, poll: 5000, optional: true },
   { key: 'audio',   label: t('tab.audio', 'Audio'),        url: '/api/audio?with=settings', build: audioRows, poll: 8000 },
   { key: 'saver',   label: t('tv.tab.screenSaver', 'Screen Saver'), url: '/api/screensaver', build: saverRows, optional: true },
   { key: 'home',    label: t('tab.home', 'Home'),         url: '/api/home?with=catalogue,channels,lghome', build: homeRows, optional: true },

@@ -649,6 +649,12 @@ function collect(section, cb, ttl) {
         if (r.hideable && !desc && descs[storeOf(r)] && Object.keys(descs[storeOf(r)]).length) return;
         out.push(rowValue(r, v, desc));
       });
+      // A TV that describes none of its picture settings (an older webOS, or a
+      // description that failed) gets no Picture rows: without LG's own
+      // choices and ranges, the tab could offer what its menu does not.
+      if (sections.indexOf('picture') !== -1 && !(descs.picture && Object.keys(descs.picture).length)) {
+        out = out.filter(function (x) { return x.section !== 'picture'; });
+      }
       return cb({ ok: true, rows: out, dimensions: dims });
     }
     var store = stores[i++];

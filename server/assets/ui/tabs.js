@@ -130,6 +130,7 @@ if (tabsNav) {
 }
 // Reveals the Game tab on TVs with LG's Game Optimizer, and Home where Glasshouse Home is offered.
 loadGame();
+checkPictureTab();
 loadHomeAvailable();
 
 // The menu bar names the tab on show, in the page's language: the strings are
