@@ -75,8 +75,102 @@ Plex then direct-played Casino's DTS-HD MA/DTS:X track without transcoding,
 while the Denon reported DTS core. Seeking, a toast and a 24-second pause/resume
 retained that route. A real eight-second clip completed with EOS restoration;
 a killed native player restored the PCM route, and the next player recovered
-from its orphaned module. Lossless extensions and audible quality remain
-unqualified by these muted trials.
+from its orphaned module. Those core-mode trials did not qualify lossless extensions or audible quality.
+
+The first DTS-HD trials supplied type 17 packets matching FFmpeg at both
+192 kHz stereo and eight-channel HBR rates. LG accepted those raw caps, but
+the Denon reported an unidentified bitstream. The captured output stride was
+32 bytes for both eight-channel S16LE and four-channel S32LE carriers;
+LG's idle MAT path used 16 bytes. Those initial trials did not establish receiver-side lossless forwarding.
+
+In the matched kernel, `aren_start` selects two bypass output channels when
+the PCM input has fewer than three channels, and eight otherwise. The same
+rule applies to `pcm_multi_ch`. `renderer_set_pcm_bypass_rts_out_channels`
+sets the bypass SRCBIN's `out-channels` property. The audiosink caps field
+`out-channels` does not override that kernel rule. A packed four-channel
+S32LE carrier therefore requires a separate output-channel adjustment before
+its byte layout can be assessed on the receiver.
+
+On 27 October 2026, shared-buffer snapshots located an alteration between
+the renderer's input and the buffer after bypass SRCBIN/lipsync. LG's
+`renderer_set_pcm_format` builds a 32-byte command: eight little-endian u32
+values for input rate, channels, bits, endian, unsigned flag, then output
+rate, channels and bits. Endian 0 is LE and unsigned 0 is signed. Command
+`0x50020020` normally targets renderer+48; a temporary trial targeted the
+known bypass SRCBIN at renderer+52 instead. Setting input 192 kHz/eight
+channels/16 bits and output 192 kHz/eight channels/32 bits preserved complete
+FFmpeg DTS-HD bursts in the high halves of S32 samples, with zero low halves.
+This established byte preservation at that buffer, not at the eARC wire.
+
+The eight-channel post-converter ring interleaves 32-byte record headers with
+8192-byte payloads. Its header words were `[2,12,10,4,256,0,0,8192]`; treating
+those headers as samples falsely suggests inserted data. Physical ring
+addresses change between players and must be traced through each live module
+graph. SRCBIN property queries returned -1 even with a distinct initial
+sentinel, so they did not establish the actual format.
+
+LG's output setup separately calls `aud_clock_update_output` before its eARC
+HAL operations. The output3 clock callback on this firmware was
+`aud_hal_set_arc_sample_rate`. A temporary trial changed and read back its
+rate as 192 kHz, then explicitly restored 48 kHz and the saved flag. Both
+the two-channel and eight-channel DTS-HD trials still produced receiver
+`Unknown` with no sample rate. The installed DTS-core helper remained
+unchanged. Neither the format command nor the clock change alone qualifies
+lossless forwarding.
+
+The complete eARC sequence on 27 October 2026 established DTS:X reception.
+After the bypass SRCBIN command and output-clock update, the trial mirrored
+LG's mute, channel, non-PCM format, unmute and `set_on` operations. A second
+channel call after the format change selects the non-PCM branch. Calling
+`audio_hal_earc_set_on` with the saved on-state reprogrammes the link even
+when it is already on. The Denon then reported `SYSDA DTS:X`, signal 31 and
+48 kHz from the unchanged type 17 HBR carrier. Mode 6 and compressed layout A
+(layout field 0) worked; layout B was not required. The HAL takes a physical
+192 kHz rate, while its channel-status sampling code represents 768 kHz.
+
+Passive snapshots of all four 16 KiB eARC hardware source rings contained
+bit-exact carrier words in the high halves of S32 samples, with zero low
+halves. Their stereo pairs followed input channels 0/1, 2/3, 4/5 and 6/7.
+The DSP's `output-channels=2` property therefore did not establish that six
+channels were missing from the multichannel hardware output.
+
+The deployed forwarder also reached DTS:X through `com.webos.media` with a
+real Casino DTS-HD MA/DTS:X clip: 297 complete HD frames, zero core-only frames
+and 145 startup frames replaced with silence. Native app preroll precedes
+LG's delayed format event, so the module keeps the HAL muted while configuring
+or recovering the output; the element emits silence until `hd_ready` is set.
+The true HAL mute is channel-status word 2 bit 18, distinct from the DSP
+output's mute byte. Cleanup restored the mixer route, removed the module and
+restored the original output clock. These muted trials establish transport
+and receiver identification, not an audible quality assessment or every app's
+compatibility.
+
+Plex Casino subsequently direct-played the original MA/DTS:X track without
+transcoding and retained receiver DTS:X through seek, a notification and a
+24-second pause/resume. Stop restored normal routing. Native media-service
+clips also completed with EOS restoration for MA stereo/5.1/7.1, HRA, ES,
+plain DTS, DTS:X IMAX, DTS 96/24 and 96 kHz MA. The receiver's protocol uses
+generic DTS-HD, DTS and DTS:X labels; these do not independently identify ES
+or IMAX-specific receiver processing.
+
+One remuxed DTS 96/24 clip was refused by uMS before forwarding started.
+FFmpeg had written Matroska SamplingFrequency 96000, whereas the original
+track says 48000. Changing only that field and the Tracks CRC, with identical
+compressed-payload and packet hashes, made the native clip play and the
+receiver report 96 kHz. The uncorrected clip played through gst-launch. A
+separate real 96 kHz MA track with a 96000 container frequency also played
+through uMS, so this does not establish a general native 96 kHz limit. The
+precise reason uMS refuses the mismatched DTS 96/24 header is unresolved.
+
+On this G5, a whole-category `getSystemSettings` sound query returned digital
+output `auto`, while named queries for `soundOutputDigital` returned the
+actual `passThrough` value. Both answers were successful and repeated without
+a setting write between them. Using the category answer alone falsely blocked
+re-enabling the DTS helper. Audio status now prefers named output values and
+retains the category answer as a fallback; sound rows request only keys found
+in the category response, avoiding unsupported keys on older TVs. These are
+reading changes, not changes to LG's sound settings.
+
 ## Audio declarations and the negotiated link (G3, webOS 9.2.2)
 
 OLED55G36LA, firmware 23.25.55, kernel `5.4.268-320`, read on 25 October 2026:

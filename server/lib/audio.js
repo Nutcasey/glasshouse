@@ -41,10 +41,10 @@ var NATIVE_PROFILE = {
   "firmware": "33.31.68",
   "kernel": "5.4.268-329.ptl4tv.5",
   "files": {
-    "control.py": "e26e9a76af5fb281763b5693d9416453c9780695375c5c13a76033e651bd02b8",
-    "gst/libgstghdts.so": "0a32f23ca72f8141d8474c0ff053340bb57b24ed8575ffc086f3b25a73bce53d",
-    "gh_dts_native-apply0.ko": "00f23efc35efba75d7fce920550815c04b17b1e326942ffe2d00cb37ea95a11e",
-    "gh_dts_native-apply1.ko": "efb1e193f3b4ea714418744277c2730565f0f3b9d2786e4763e04513ecfb1b8d"
+    "control.py": "2a9d4236a3849fa3c97809a93997b129417b51e8a7a1f552a7c125f8dac83f8d",
+    "gst/libgstghdts.so": "8b64b23d4ac6fd13e8d04386c9911bf9913d8e88d8e77053c902db1642995325",
+    "gh_dts_native-apply0.ko": "963626ca5f76e3f41a1316d1b36af14423cd523bb3f6286323d088217dd11f80",
+    "gh_dts_native-apply1.ko": "017be9b24435f6e6c79c2b7d5d7ebb3d07ccdfc194c69f18c829165469e9c1cd"
   }
 };
 var FORMATS = [
@@ -183,6 +183,21 @@ function helperFiles() {
   } catch (e) { return { installed: true, verified: false }; }
 }
 
+function nativeStreamStatus() {
+  var stream = util.readJson(NATIVE_BASE + 'last-stream.json', null);
+  if (!stream || stream.active !== true || stream.carrierWordRate !== 768000 ||
+      stream.sampleRate !== 192000 || stream.channels !== 8) return null;
+  var counts = ['hdFrames', 'coreOnlyFrames', 'silentFrames', 'droppedPartialFrames'];
+  for (var index = 0; index < counts.length; index++) {
+    var value = stream[counts[index]];
+    if (typeof value !== 'number' || !isFinite(value) || value < 0 || Math.floor(value) !== value) return null;
+  }
+  return { hdFrames: stream.hdFrames, coreOnlyFrames: stream.coreOnlyFrames,
+    silentFrames: stream.silentFrames, droppedPartialFrames: stream.droppedPartialFrames,
+    lastPayload: /^(dtshd|core|silence)$/.test(stream.lastPayload) ? stream.lastPayload : null,
+    reason: typeof stream.reason === 'string' ? stream.reason : null };
+}
+
 function nativeHelperStatus(identity, cb) {
   var installed = util.existsQuiet(NATIVE_BASE + 'manifest.json');
   var verified = installed;
@@ -193,6 +208,7 @@ function nativeHelperStatus(identity, cb) {
     } catch (e) { verified = false; }
   });
   var enabled = util.existsQuiet(NATIVE_BASE + 'enabled');
+  var hdSelected = util.readTrimmed(NATIVE_BASE + 'hd-rate') === '768000';
   var rankReady = false;
   try {
     var stagedRank = fs.statSync(NATIVE_BASE + 'gstcool-native.conf');
@@ -205,7 +221,9 @@ function nativeHelperStatus(identity, cb) {
   var result = { available: matched && verified, installed: installed, verified: verified,
     enabled: enabled, running: false, active: false, busy: changing, canDisable: verified && (enabled || residue),
     needsRestore: !enabled && residue,
-    backend: 'native-apps', input: null, transport: 'eARC', format: 'DTS core 48 kHz',
+    backend: 'native-apps', input: null, transport: 'eARC', mode: hdSelected ? 'hd' : 'core',
+    format: hdSelected ? 'DTS-HD HBR 192 kHz' : 'DTS core 48 kHz',
+    hdCarrierActive: false, hdReady: false, hdPayloadActive: false, stream: null,
     profile: NATIVE_PROFILE.model + ' / ' + NATIVE_PROFILE.firmware,
     reason: !matched ? msg('srv.audio.override.incompatible', 'No DTS forwarding profile has been validated for this TV and firmware.')
       : !installed ? msg('srv.audio.override.nativeMissing', 'Install the matching native DTS forwarding package before enabling it.')
@@ -218,6 +236,15 @@ function nativeHelperStatus(identity, cb) {
       var graph = util.readTrimmed('/proc/aaudio/dot_block_connection') || '';
       result.active = result.running && util.readTrimmed('/sys/module/gh_dts_native/parameters/active') === '1' &&
         /renderer_[01]_out100\s*->\s*output_3_in0/.test(graph);
+      if (result.active) {
+        var activeHd = util.readTrimmed('/sys/module/gh_dts_native/parameters/carrier_rate') === '192000';
+        result.hdCarrierActive = activeHd;
+        result.format = activeHd ? 'DTS-HD HBR 192 kHz' : 'DTS core 48 kHz';
+        result.hdReady = activeHd && util.readTrimmed('/sys/module/gh_dts_native/parameters/hd_ready') === '1';
+        result.stream = activeHd ? nativeStreamStatus() : null;
+        result.hdPayloadActive = !!(result.hdReady && result.stream && result.stream.hdFrames > 0 &&
+          result.stream.coreOnlyFrames === 0 && !result.stream.reason);
+      }
       cb(result);
     });
   });
@@ -260,7 +287,13 @@ function build(replies, decoder) {
   var cfg = replies.config && replies.config.returnValue !== false && replies.config.configs || {};
   var info = replies.identity && replies.identity.returnValue !== false && replies.identity || {};
   var sr = replies.settings && replies.settings.returnValue !== false && replies.settings || {};
-  var settings = sr.settings && typeof sr.settings === 'object' ? sr.settings : {};
+  var settings = {};
+  var categorySettings = sr.settings && typeof sr.settings === 'object' ? sr.settings : {};
+  Object.keys(categorySettings).forEach(function (key) { settings[key] = categorySettings[key]; });
+  var current = replies.outputSettings && replies.outputSettings.returnValue === true && replies.outputSettings.settings;
+  ['soundOutput', 'soundOutputDigital'].forEach(function (key) {
+    if (current && typeof current[key] === 'string') settings[key] = current[key];
+  });
   var arc = replies.arc && replies.arc.returnValue !== false ? replies.arc : null;
   var edid = replies.edid && replies.edid.returnValue !== false ? replies.edid : null;
   var inputPort = /^hdmi([1-9])$/.exec(String(sr.dimension && sr.dimension.audioInput || ''));
@@ -344,7 +377,7 @@ function build(replies, decoder) {
 function status(cb, force) {
   /** @type {Object.<string, any>} */
   var replies = {};
-  var left = 9;
+  var left = 10;
   var decoder = null;
   function done() {
     if (--left) return;
@@ -364,6 +397,11 @@ function status(cb, force) {
   // The whole category, as lgsettings asks: webOS 4.4 answers nothing when a
   // named key it lacks, such as eArcSupport, is in the list.
   ask('settings', 'com.webos.service.settings/getSystemSettings', { category: 'sound' }, 3000);
+  // G5 33.31.68 returned Auto for the whole category while a named query
+  // returned the actual Pass Through setting. A failed named query keeps the
+  // category values and dimension metadata used by older TVs.
+  ask('outputSettings', 'com.webos.service.settings/getSystemSettings',
+    { category: 'sound', keys: ['soundOutput', 'soundOutputDigital'] }, 3000);
   ask('input', 'com.webos.service.audio/tv/getAudioInputProperty', {}, 3000);
   inspectDts(function (value) { decoder = value; done(); });
   if (receiverMap) receiverMap(function (map) { replies.receiverMap = map; done(); });
@@ -385,6 +423,9 @@ function setOverride(on, cb) {
     // needs a separately qualified core-only helper, not this combined one.
     else if (on && helper.backend === 'native-apps' && !st.tv.formats.some(function (f) { return f.id === 'dts' && f.receiver === true; }))
       error = msg('srv.audio.override.nativeReceiver', 'Native DTS forwarding requires a receiver that advertises DTS.');
+    else if (on && helper.backend === 'native-apps' && helper.mode === 'hd' &&
+      !st.tv.formats.some(function (f) { return f.id === 'dtshd' && f.receiver === true; }))
+      error = msg('srv.audio.override.nativeHdReceiver', 'DTS-HD forwarding requires a receiver that advertises DTS-HD.');
     else if (on && helper.backend !== 'native-apps' && st.tv.formats.filter(function (f) { return (f.id === 'dts' || f.id === 'dtshd') && f.receiver === true; }).length !== 2)
       error = msg('srv.audio.override.receiver', 'The installed helper handles DTS and DTS-HD. The receiver must advertise both formats.');
     if (error) { changing = false; return cb({ ok: false, error: error }); }

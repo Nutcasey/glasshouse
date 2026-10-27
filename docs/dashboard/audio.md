@@ -37,7 +37,6 @@ display confirms what arrives.
 media configuration for apps on the TV. They describe playback, not what
 reaches a receiver.
 
-<<<<<<< HEAD
 ## Experimental DTS forwarding
 
 Controls a separately installed
@@ -57,18 +56,29 @@ Switching off runs the helper's full restoration, which can interrupt HDMI
 audio briefly. Enabling takes two presses; disabling takes one.
 
 A separate native-app profile is available on OLED83G54LW.BEKYLJP firmware
-33.31.68 with the matching native forwarding package installed. It forwards
-48 kHz DTS core through the shared TV audio pipeline over eARC. DTS-HD
-extensions are not forwarded. Plex is one possible test source; registration
-belongs to the shared media service. This profile needs receiver DTS support,
-HDMI ARC output and Pass Through. Enabling restarts TV media playback.
-The switch reports the native route rather than waiting for HDMI 3.
+33.31.68 with the matching native forwarding package installed. The default
+mode forwards 48 kHz DTS core. An opt-in HD mode forwards complete DTS-HD MA
+and DTS:X frames on an eight-channel 192 kHz HBR carrier. The mode is selected
+with the package's `control.py mode core|hd` command before playback; the
+switch enables or disables the selected mode for the shared TV media service.
+It requires HDMI ARC output, Pass Through and receiver DTS support. HD mode
+also requires an active eARC link and receiver DTS-HD support. Enabling
+restarts TV media playback.
 
-The native carrier, shared LG player and Plex app were tried on that G5 with
-an AVC-A10H. Casino direct-played its DTS-HD track without transcoding while
-the receiver reported DTS core. Seek, pause/resume, a notification, end-of-stream,
-player-crash recovery and disabling/re-enabling the control were checked.
-Ordinary ARC, lossless DTS-HD and untested firmware are not established.
+The description distinguishes preparation, active HD payload and a core-only
+source. It reports the TV's forwarding state; the receiver's incoming-signal
+display confirms reception. HD starts and recovers with silence until the
+output has settled. Frames that exceed the carrier capacity stop playback
+rather than silently dropping the HD extensions.
+
+The native carrier, shared LG player and Plex app were tried in core mode on
+that G5 with an AVC-A10H. Casino direct-played its DTS-HD track without
+transcoding while the receiver reported DTS core. Seek, pause/resume, a
+notification, end-of-stream, player-crash recovery and disabling/re-enabling
+the control were checked. HD mode reached the same receiver as DTS:X from a
+raw carrier and a native LG media-service clip. Plex Casino also direct-played its MA/DTS:X track with DTS:X reception through
+seek, a notification and a 24-second pause/resume. Ordinary ARC and other
+firmware remain unqualified.
 
 The helper's upstream trial recorded DTS and DTS:X on that exact 77-inch G5,
 with a Ugoos SK1 source and Samsung HW-Q950A receiver. That result does not

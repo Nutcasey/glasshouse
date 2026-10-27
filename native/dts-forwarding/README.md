@@ -5,12 +5,18 @@ Experimental shared GStreamer forwarding for OLED83G54LW.BEKYLJP, firmware
 from the upstream HDMI-input helper. Plex is a test source, not an integration
 boundary.
 
-`dts_audiodec` accepts DTS and LG's unknown `A_DTS` caps. It preserves 16-bit
-DTS core frames at 48 kHz in IEC 61937 bursts and supplies LG audiosink in PCM
-bypass mode. The kernel route connects the active renderer port 0x100 to eARC
-output3 with non-PCM signalling. DTS-HD extensions are skipped; this version
-does not provide lossless DTS-HD or DTS:X forwarding. DTS Express and
-14-bit-packed DTS are outside this initial profile.
+`dts_audiodec` accepts DTS and LG's unknown `A_DTS` caps and supplies LG
+audiosink in PCM bypass mode. The kernel route connects the active renderer
+port 0x100 to eARC output3 with non-PCM signalling. There are two modes:
+
+- core, the default: 16-bit DTS core frames at 48 kHz in IEC 61937 bursts.
+  DTS-HD extensions are dropped.
+- hd, opt-in: each complete DTS-HD frame, core and extension substreams, in
+  an IEC 61937 type 17 burst on an eight-channel 192 kHz carrier (768 kHz high
+  bit rate). This carries DTS-HD Master Audio and DTS:X unchanged. See
+  [DTS-HD mode](#dts-hd-mode).
+
+DTS Express and 14-bit-packed DTS are outside both modes.
 
 The element holds an exclusive stream lock and renews a kernel lease. Stop
 and EOS release the route; seek retains it so the native bypass stays valid. A stalled producer loses its route after
@@ -75,5 +81,78 @@ codec refusal or transcoding remains outside the forwarder's control.
 Receiver evidence on the Cinema G5/AVC-A10H includes `SYSDA DTS`, normal EOS,
 a 30-second native Matroska run and a suspended-producer lease expiry. Plex Casino direct-played its original DTS-HD MA/DTS:X source while the Denon
 received DTS core. Seek, notification, pause/resume, EOS and player-crash
-recovery were also tried. Full power-cycle persistence remains untested. No audible assessment or
-lossless extension forwarding is established by the silent carrier trials.
+recovery were also tried in core mode. Full power-cycle persistence remains
+untested, and no audible assessment has been made.
+
+## DTS-HD mode
+
+```sh
+python3 /var/lib/lg-dts-native/control.py mode hd
+python3 /var/lib/lg-dts-native/control.py mode core
+```
+
+`mode hd` writes `768000` to `hd-rate`; `mode core` removes it. The mode is
+read when a stream starts and is fixed for that stream, so changing it affects
+only the next one. Anything other than exactly `768000` selects core. The mode
+applies to every native app that uses the shared pipeline. Like core, it is
+qualified only on OLED83G54LW.BEKYLJP firmware 33.31.68.
+
+An HD stream starts only on an active eARC link to a receiver that advertises
+DTS-HD; otherwise start is refused. While the route is held, the kernel module:
+
+- sets LG's bypass sample-rate converter to pass the 16-bit eight-channel
+  carrier unchanged at 192 kHz
+- raises the eARC output clock to 192 kHz
+- runs LG's own eARC sequence (mute, channels, non-PCM format, channels again,
+  link set-up) and unmutes once the output format has held for 200 ms
+- repeats that sequence, muted, after any LG format change
+
+On release the module restores the saved clock, format, channels, audio mode,
+mute and link. If another source has taken the output by then, the module
+applies LG's current settings for that source instead.
+
+The kernel publishes `hd_ready` only once the format, clock and link are in
+place. Until then, and whenever it falls back to 0, the forwarder sends silent
+bursts of the same length, so playback starts or recovers muted rather than
+sending the bitstream as PCM. A stream that stays not ready for three seconds
+of playback stops with an error.
+
+A frame whose complete payload does not fit its burst, or whose extension
+header is malformed, stops playback; a core-only burst is never substituted.
+An incomplete final frame is dropped.
+
+`last-stream.json`, also shown by `control.py status`, counts each kind of
+burst separately:
+
+| Field | Meaning |
+| --- | --- |
+| `hdReady` | The kernel's readiness when last written |
+| `hdFrames` | Complete DTS-HD frames sent |
+| `coreOnlyFrames` | Core frames sent without extensions |
+| `silentFrames` | Silent bursts sent while not ready |
+| `droppedPartialFrames` | Incomplete final frames dropped |
+
+A stream counts as lossless only when `hdReady` is true, `hdFrames` is above
+zero, `coreOnlyFrames` is zero and `reason` is absent. These counters describe
+the payload after startup gating; `silentFrames` records source frames replaced
+with silence while the output is not ready.
+
+The two-channel 192 kHz carrier is not supported: the receiver never
+identified it.
+
+Tested on the Cinema G5 with a Denon AVC-A10H, both with a raw carrier and with
+a native umediaserver clip. The receiver reported DTS:X. The clip sent 297
+DTS-HD frames, no core-only frames and 145 silent frames at start, and the
+normal route was restored after stop. Plex Casino also direct-played its
+MA/DTS:X track without transcoding, with receiver DTS:X through seek, a
+notification and a 24-second pause/resume. Stop restored the normal route.
+
+
+Additional muted native-player clips completed with normal EOS restoration:
+DTS:X IMAX (Dreamgirls), MA 7.1 (Creed), MA 5.1 (2001), MA stereo (Crossroads),
+HRA (Queen), ES 6.1 (U2), plain DTS (Babylon 5), DTS 96/24 and 96 kHz MA
+(Xenogears). The receiver reported DTS:X, DTS-HD or DTS as appropriate, and
+96 kHz for the two high-rate tracks. Its generic labels do not independently
+qualify ES or IMAX-specific receiver processing. The 96/24 test retains the
+original file's 48 kHz Matroska sampling-frequency field; a remux with that
+field changed to 96 kHz was refused by uMS, although gst-launch played it.

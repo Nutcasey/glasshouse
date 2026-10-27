@@ -17,8 +17,15 @@ verified helper can still be disabled after a firmware mismatch.
 
 The separately installed native-app package adds a shared GStreamer DTS
 forwarder on OLED83G54LW.BEKYLJP firmware 33.31.68, with an exact boot-image
-hash and kernel code guards. It forwards 48 kHz DTS core, including the core
-from compatible DTS-HD tracks; lossless extensions are not forwarded.
+hash and kernel code guards. By default it forwards 48 kHz DTS core, including
+the core from compatible DTS-HD tracks. An opt-in HD mode (`control.py mode
+hd`, which writes `hd-rate` in the package directory) forwards complete DTS-HD
+frames on an eight-channel 192 kHz eARC carrier. While an HD stream holds the
+route, the kernel module changes LG's bypass sample-rate converter format, the
+eARC output clock, the eARC format, channels and mute, and re-runs LG's eARC
+link set-up. Playback starts and recovers muted until that is in place. On
+release it restores the saved settings, or LG's current settings if another
+source has taken the output.
 Enabling sets the owned `TrueHD+dts` declaration, adds a volatile
 `umediaserver.service` plugin-path drop-in and restarts ARC and media playback.
 The package lives under `/var/lib/lg-dts-native`; its boot hook reapplies the

@@ -131,6 +131,22 @@ function renderAudioSettings(rows) {
   }
 }
 
+function nativeDtsDescription(helper) {
+  if (helper.active) {
+    if (helper.hdCarrierActive) {
+      if (helper.hdPayloadActive) return t('audio.nativeHdActive', 'DTS-HD forwarding is active. Complete DTS-HD MA or DTS:X frames are being sent over eARC. Check the receiver’s incoming format to confirm reception.');
+      if (helper.hdReady && helper.stream && helper.stream.coreOnlyFrames > 0)
+        return t('audio.nativeHdCore', 'The current stream is forwarding DTS core only.');
+      return t('audio.nativeHdPreparing', 'Preparing DTS-HD output. Playback is muted while the output settles.');
+    }
+    return t('audio.overrideActive', 'The helper reports an active compressed forwarding route. Check the receiver’s incoming format to confirm DTS reception.');
+  }
+  if (helper.running) return helper.mode === 'hd'
+    ? t('audio.nativeHdWaiting', 'Enabled for TV apps with DTS-HD MA and DTS:X forwarding over eARC.')
+    : t('audio.nativeWaiting', 'Enabled for TV apps using the shared audio pipeline. Forwards 48 kHz DTS core over eARC; DTS-HD extensions are not forwarded.');
+  return t('audio.overrideStopped', 'Enabled, but its service is not running. Disable the override before retrying.');
+}
+
 function renderAudioOverride() {
   const st = audioState;
   const helper = st.override;
@@ -144,13 +160,14 @@ function renderAudioOverride() {
     on ? t('audio.disable', 'Disable override') : helper.available ? t('audio.enable', 'Enable override') : t('audio.unavailable', 'Unavailable');
   q('audio-override-desc').textContent = on && !helper.verified ? helper.reason : helper.needsRestore
     ? t('audio.nativeRestore', 'A previous change needs restoration. Disable forwarding before enabling it again.') : on
-    ? helper.active ? t('audio.overrideActive', 'The helper reports an active compressed forwarding route. Check the receiver’s incoming format to confirm DTS reception.')
-      : helper.running ? helper.backend === 'native-apps'
-        ? t('audio.nativeWaiting', 'Enabled for TV apps using the shared audio pipeline. Forwards 48 kHz DTS core over eARC; DTS-HD extensions are not forwarded.')
-        : t('audio.overrideWaiting', 'Running and waiting for a matching DTS input on HDMI 3 over eARC.')
-      : t('audio.overrideStopped', 'Enabled, but its service is not running. Disable the override before retrying.')
+    ? helper.backend === 'native-apps' ? nativeDtsDescription(helper)
+      : helper.active ? t('audio.overrideActive', 'The helper reports an active compressed forwarding route. Check the receiver’s incoming format to confirm DTS reception.')
+        : helper.running ? t('audio.overrideWaiting', 'Running and waiting for a matching DTS input on HDMI 3 over eARC.')
+          : t('audio.overrideStopped', 'Enabled, but its service is not running. Disable the override before retrying.')
     : helper.available ? helper.backend === 'native-apps'
-      ? t('audio.nativeReady', 'Enable DTS core forwarding for TV apps through the shared audio pipeline. Enabling restarts TV media playback. Requires eARC and Pass Through.')
+      ? helper.mode === 'hd'
+        ? t('audio.nativeHdReady', 'Enable experimental DTS-HD MA and DTS:X forwarding for TV apps. Requires eARC, Pass Through and a DTS-HD receiver. Enabling restarts TV playback.')
+        : t('audio.nativeReady', 'Enable DTS core forwarding for TV apps through the shared audio pipeline. Enabling restarts TV media playback. Requires eARC and Pass Through.')
       : t('audio.overrideReady', 'Experimental HDMI 3 to eARC forwarding is available with the checked helper. Changing it can briefly interrupt HDMI audio.')
       : dts.advertised === true && st.tv.dtsDecoder === true
         ? t('audio.overrideNative', 'The TV already advertises DTS and has LG’s DTS decoder. Use its native audio settings first. No experimental forwarding profile is offered for this TV.')

@@ -13,7 +13,10 @@ EDID flag does not promote ARC, stale driver values do not become live audio,
 and corrupt or missing evidence remains unknown. It also checks that wrong
 targets, unverified helpers, read-only mode and cross-origin requests cannot
 launch the privileged helper. Hardware qualification of a DTS override still
-requires a source-to-receiver trial.
+requires a source-to-receiver trial. A named current output reading overrides
+stale whole-category values; a refused named query preserves older-TV values.
+`test-lgsettings.js` covers the same current-value behaviour at the settings
+collection boundary, including omitted keys and failed named queries.
 
 The dashboard check opens both Audio tabs: the sound settings come first and
 are gone from the TV app's System tab, experimental forwarding asks for a

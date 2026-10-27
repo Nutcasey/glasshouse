@@ -24,7 +24,8 @@
  * render the rows as they come.
  *
  * Each category is read whole, one call for all its rows: asking for a key
- * the TV does not have fails the whole call on some firmware.
+ * the TV does not have fails the whole call on some firmware. Sound is then
+ * read again by name, for the keys the whole read returned (see collect).
  *
  * Strict ES5 for node 0.12 on webOS 4.
  */
@@ -269,7 +270,9 @@ function collect(section, cb) {
   var dims = {};
   var descs = {};
   var i = 0;
-  (function next() {
+  next();
+
+  function next() {
     if (i >= cats.length) {
       var out = [];
       rows.forEach(function (r) {
@@ -284,26 +287,39 @@ function collect(section, cb) {
     lunaCached('com.webos.service.settings/getSystemSettings', { category: cat }, 30000, function (res) {
       values[cat] = (res && res.returnValue !== false && res.settings) || {};
       if (res && res.dimension) dims[cat] = res.dimension;
-      // The values a choice or number may take on this TV, and whether it can
-      // be changed now, which follows the input on screen.
       var keys = rows.filter(function (r) { return r.category === cat; })
                      .map(function (r) { return r.key; })
                      .filter(function (k) { return values[cat][k] !== undefined; });
       if (!keys.length) return next();
-      lunaCached('com.webos.service.settings/getSystemSettingDesc', { category: cat, keys: keys }, 30000, function (d) {
-        descs[cat] = {};
-        ((d && d.results) || []).forEach(function (x) {
-          var vs = x.values || {};
-          var d = vs.arrayExt ? { arrayExt: vs.arrayExt } : { min: vs.min, max: vs.max };
-          // LG greys out a setting it cannot change now, such as Deep Colour
-          // while the TV is not on an HDMI input.
-          d.active = !(x.ui && x.ui.active === false);
-          descs[cat][x.key] = d;
-        });
-        next();
+      if (cat !== 'sound') return describe(cat, keys);
+      // The sound category read whole can lag a change: a G5 on webOS 10.3
+      // reported Digital Sound Output as auto there and passThrough, as its
+      // menu showed, when the key was named. Only keys the whole read
+      // returned are named, so no TV is asked for one it lacks.
+      lunaCached('com.webos.service.settings/getSystemSettings', { category: cat, keys: keys }, 30000, function (now) {
+        var current = (now && now.returnValue !== false && now.settings) || {};
+        keys.forEach(function (k) { if (current[k] !== undefined) values[cat][k] = current[k]; });
+        describe(cat, keys);
       });
     });
-  })();
+  }
+
+  // The values a choice or number may take on this TV, and whether it can
+  // be changed now, which follows the input on screen.
+  function describe(cat, keys) {
+    lunaCached('com.webos.service.settings/getSystemSettingDesc', { category: cat, keys: keys }, 30000, function (d) {
+      descs[cat] = {};
+      ((d && d.results) || []).forEach(function (x) {
+        var vs = x.values || {};
+        var d = vs.arrayExt ? { arrayExt: vs.arrayExt } : { min: vs.min, max: vs.max };
+        // LG greys out a setting it cannot change now, such as Deep Colour
+        // while the TV is not on an HDMI input.
+        d.active = !(x.ui && x.ui.active === false);
+        descs[cat][x.key] = d;
+      });
+      next();
+    });
+  }
 }
 
 // value: true or false for a switch, one of the row's values for a choice,

@@ -33,12 +33,19 @@ static u32 original_nonpcm, original_rate;
 static int applied;
 static u32 lease = 1;
 static u32 restore_pcm;
+/* The eARC sample rate for the IEC 61937 carrier: 48000 for the DTS core,
+ * 192000 for DTS-HD bursts (two channels, or eight for HBR). */
+static u32 carrier_rate = 48000;
+static u32 hd_ready;
+static u32 original_clock_rate, original_clock_flag, original_channels, original_acmod;
+static u32 original_audio_mode, original_hal_mute, original_earc_on;
+static int hd_saved;
 
 /* Recovered from _bm_disconnect_block_locked and _bm_get_block_port on this
  * exact image: port connections +48, peer port +16, owner +32, port ID +40,
  * public block-info +88. The block-manager operation mutex protects the walk. */
-static int output_edge(void **source, u32 *source_port) {
-    void *node = ((void *(*)(void *))NATIVE_FIND_BLOCK)(output_block);
+static int output_edge_for(void *output, void **source, u32 *source_port) {
+    void *node = ((void *(*)(void *))NATIVE_FIND_BLOCK)(output);
     u8 *port, *head, *entry, *peer, *owner;
     if (!node) return -1;
     port = ((u8 *(*)(void *, u32, u8))NATIVE_GET_PORT)(node, 0, 1);
@@ -56,12 +63,175 @@ static int output_edge(void **source, u32 *source_port) {
     return 1;
 }
 
+static int output_edge(void **source, u32 *source_port) {
+    return output_edge_for(output_block, source, source_port);
+}
+
+static int valid_output_rate(u32 rate) {
+    return rate == 32000 || rate == 44100 || rate == 48000 || rate == 64000 || rate == 88200 ||
+        rate == 96000 || rate == 128000 || rate == 176400 || rate == 192000;
+}
+
+static int owns_route_locked(void) {
+    void *source = (void *)0;
+    u32 port = 0;
+    return ((block_fn)NATIVE_BM_GET)("renderer", NATIVE_SOURCE_INDEX) == source_block &&
+        ((block_fn)NATIVE_BM_GET)("output", 3) == output_block &&
+        output_edge(&source, &port) == 1 && source == source_block && port == 0x100;
+}
+
+static int owns_route(void) {
+    int owned;
+    mutex_lock((void *)NATIVE_BM_MUTEX);
+    owned = owns_route_locked();
+    mutex_unlock((void *)NATIVE_BM_MUTEX);
+    return owned;
+}
+
+static int output_clock(u32 *rate, u32 *flag) {
+    u8 *entry = (u8 *)NATIVE_OUTPUT_CLOCK_ENTRY, *object, *control;
+    int result = -19;
+    if (!entry[8]) return result;
+    mutex_lock(entry + 0x38);
+    object = *(u8 **)(entry + 16);
+    if (entry[9] && object) {
+        control = *(u8 **)(object + 128);
+        if (control && *(void **)(control + 32) == (void *)NATIVE_CLOCK_CALLBACK) {
+            *rate = *(u32 *)(object + 12);
+            *flag = object[16];
+            if (valid_output_rate(*rate) && *flag <= 1) result = 0;
+        }
+    }
+    mutex_unlock(entry + 0x38);
+    return result;
+}
+
+static int hd_format_matches(void) {
+    u32 rate = 0, flag = 0;
+    return !output_clock(&rate, &flag) && rate == 192000 && flag == original_clock_flag &&
+        *(volatile u32 *)NATIVE_HAL_NONPCM == 1 && *(volatile u32 *)NATIVE_HAL_RATE == 192000 &&
+        *(volatile u32 *)NATIVE_HAL_CHANNEL_COUNT == 8 &&
+        (*(volatile u32 *)NATIVE_HAL_CONTROL & 7) == 6 &&
+        ((*(volatile u32 *)NATIVE_HAL_CS0 >> 24) & 15) == 9 &&
+        (*(volatile u32 *)NATIVE_HAL_CS0 & 2);
+}
+
+/* The clock callback and link reprogramming sleep. Neither block-manager nor
+ * clock-table mutex may be held across them. The producer lease owns the UID. */
+static int configure_hd(void) {
+    u32 uid, format[8] = {192000, 8, 16, 0, 0, 192000, 8, 32};
+    int result;
+    mutex_lock((void *)NATIVE_BM_MUTEX);
+    if (!owns_route_locked() || !*((u8 *)source_block + 77)) {
+        mutex_unlock((void *)NATIVE_BM_MUTEX);
+        return -16;
+    }
+    ((void (*)(u32))NATIVE_HAL_MUTE)(1);
+    __atomic_store_n(&hd_ready, 0, __ATOMIC_RELEASE);
+    uid = *(u32 *)((u8 *)source_block + 52);
+    mutex_unlock((void *)NATIVE_BM_MUTEX);
+    result = ((int (*)(void *, u32, u32, u32, void *, u32))NATIVE_SEND_COMMAND)
+        ((void *)0, 0x50020020, 0, uid, format, sizeof(format));
+    if (result < 0) return result;
+    msleep(100);
+    if (!owns_route()) return -16;
+    result = ((int (*)(u32, u32, u32))NATIVE_UPDATE_CLOCK)(3, 192000, original_clock_flag);
+    if (result < 0 || !owns_route()) return result < 0 ? result : -16;
+    ((void (*)(u32))NATIVE_HAL_MUTE)(1);
+    ((format_fn)NATIVE_HAL_CHANNEL)(8, 2);
+    ((format_fn)NATIVE_HAL_FORMAT)(1, 192000);
+    ((format_fn)NATIVE_HAL_CHANNEL)(8, 2);
+    ((void (*)(u32))NATIVE_HAL_SET_ON)(original_earc_on);
+    ((print_fn)NATIVE_PRINTK)("\0016gh_dts_native: HD srcbin=%08x, output clock and eARC link configured\n", uid);
+    return 0;
+}
+
+struct output_state {
+    void *output;
+    u32 codec, channels, rate, acmod, flag, on;
+};
+
+static int same_output_state(const struct output_state *a, const struct output_state *b) {
+    return a->output == b->output && a->codec == b->codec && a->channels == b->channels &&
+        a->rate == b->rate && a->acmod == b->acmod && a->flag == b->flag && a->on == b->on;
+}
+
+static void copy_output_state(void *output, struct output_state *state) {
+    volatile u8 *bytes = output;
+    state->output = output;
+    state->codec = *(volatile u32 *)(bytes + 68);
+    state->channels = *(volatile u32 *)(bytes + 72);
+    state->rate = *(volatile u32 *)(bytes + 76);
+    state->acmod = *(volatile u32 *)(bytes + 80);
+    state->flag = *(volatile u32 *)(bytes + 84);
+    state->on = bytes[129];
+}
+
+static int foreign_output_state(struct output_state *state, int *foreign) {
+    struct output_state repeated;
+    void *output, *source = (void *)0;
+    u32 port = 0;
+    int edge, valid = 0;
+    *foreign = 0;
+    mutex_lock((void *)NATIVE_BM_MUTEX);
+    output = ((block_fn)NATIVE_BM_GET)("output", 3);
+    if (output && *(u32 *)((u8 *)output + 44) == 3) {
+        edge = output_edge_for(output, &source, &port);
+        /* An ambiguous input must stay muted: it could still mix our carrier
+         * with another source. A single foreign edge belongs entirely to LG. */
+        if (edge == 0 || (edge == 1 && (source != source_block || port != 0x100))) {
+            *foreign = 1;
+            copy_output_state(output, state);
+            __atomic_thread_fence(__ATOMIC_ACQUIRE);
+            copy_output_state(output, &repeated);
+            valid = same_output_state(state, &repeated) && state->codec <= 4 &&
+                state->channels > 0 && state->channels <= 8 && valid_output_rate(state->rate) &&
+                state->acmod <= 7 && state->flag <= 1 && state->on <= 1;
+        }
+    }
+    mutex_unlock((void *)NATIVE_BM_MUTEX);
+    return valid;
+}
+
+/* LG suppresses an output status equal to its cache. Replaying its current
+ * tuple returns global clock/mute state even when the new source is PCM48
+ * like the old one; the foreign connection itself is never changed. */
+static void hand_back_output(void) {
+    struct output_state state, current;
+    u32 rate = 0, flag = 0;
+    unsigned int attempt;
+    int foreign = 0;
+    for (attempt = 0; attempt < 3; attempt++) {
+        if (!foreign_output_state(&state, &foreign) || output_clock(&rate, &flag)) {
+            msleep(50);
+            continue;
+        }
+        ((int (*)(u32, u32, u32))NATIVE_UPDATE_CLOCK)(3, state.rate, state.flag);
+        ((void (*)(u32))NATIVE_HAL_MUTE)(1);
+        ((format_fn)NATIVE_HAL_CHANNEL)(state.channels, state.acmod);
+        ((format_fn)NATIVE_HAL_FORMAT)(state.codec != 0, state.rate);
+        ((format_fn)NATIVE_HAL_CHANNEL)(state.channels, state.acmod);
+        if (!foreign_output_state(&current, &foreign) || !same_output_state(&state, &current)) continue;
+        ((void (*)(u32))NATIVE_HAL_MUTE)(0);
+        ((void (*)(u32))NATIVE_HAL_SET_ON)(state.on);
+        if (foreign_output_state(&current, &foreign) && same_output_state(&state, &current)) {
+            ((print_fn)NATIVE_PRINTK)("\0016gh_dts_native: returned output to LG codec=%u channels=%u rate=%u\n",
+                state.codec, state.channels, state.rate);
+            return;
+        }
+    }
+    if (foreign && (*(volatile u32 *)NATIVE_HAL_CS2 & (1U << 18)))
+        ((void (*)(u32))NATIVE_HAL_MUTE)(0);
+    ((print_fn)NATIVE_PRINTK)("\0013gh_dts_native: LG output handback did not settle; foreign=%d\n", foreign);
+}
+
 static void restore_route(void) {
     block_fn block = (block_fn)NATIVE_BM_GET;
-    void *current_source = (void *)0;
+    void *current_source = (void *)0, *restored_source = (void *)0;
     u32 current_port = 0;
     int edge, restored = 0, restore_format = 0;
     if (!__atomic_exchange_n(&applied, 0, __ATOMIC_SEQ_CST)) return;
+    __atomic_store_n(&hd_ready, 0, __ATOMIC_RELEASE);
     mutex_lock((void *)NATIVE_BM_MUTEX);
     if (block("output", 3) == output_block) {
         edge = output_edge(&current_source, &current_port);
@@ -72,38 +242,100 @@ static void restore_route(void) {
             int disconnected = edge == 0 || ((disconnect_fn)NATIVE_DISCONNECT_LOCKED)(output_block, 0) >= 0;
             if (disconnected) {
                 restore_format = 1;
+                if (hd_saved) ((void (*)(u32))NATIVE_HAL_MUTE)(1);
                 if (current_baseline)
                     restored = ((connection_fn)NATIVE_CONNECT_LOCKED)(current_baseline, 0, output_block, 0) >= 0;
+                if (restored) restored_source = current_baseline;
             }
         }
     }
+    if (restore_format) {
+        if (hd_saved) ((format_fn)NATIVE_HAL_CHANNEL)(original_channels, original_acmod);
+        ((format_fn)NATIVE_HAL_FORMAT)(original_nonpcm, original_rate);
+        if (hd_saved) {
+            ((format_fn)NATIVE_HAL_CHANNEL)(original_channels, original_acmod);
+            ((void (*)(u32))NATIVE_HAL_AUDIO_MODE)(original_audio_mode);
+        }
+    }
     mutex_unlock((void *)NATIVE_BM_MUTEX);
-    if (restore_format) ((format_fn)NATIVE_HAL_FORMAT)(original_nonpcm, original_rate);
+    if (restore_format && hd_saved) {
+        u32 rate = 0, flag = 0;
+        int still_owned, result;
+        current_source = (void *)0;
+        current_port = 0;
+        mutex_lock((void *)NATIVE_BM_MUTEX);
+        edge = block("output", 3) == output_block ? output_edge(&current_source, &current_port) : -1;
+        still_owned = edge == 0 || (edge == 1 && restored_source && current_source == restored_source && current_port == 0);
+        mutex_unlock((void *)NATIVE_BM_MUTEX);
+        if (!still_owned) {
+            hand_back_output();
+            return;
+        }
+        result = ((int (*)(u32, u32, u32))NATIVE_UPDATE_CLOCK)(3, original_clock_rate, original_clock_flag);
+        ((void (*)(u32))NATIVE_HAL_MUTE)(original_hal_mute);
+        ((void (*)(u32))NATIVE_HAL_SET_ON)(original_earc_on);
+        msleep(100);
+        ((print_fn)NATIVE_PRINTK)("\0016gh_dts_native: HD restore clock=%u flag=%u result=%d readback=%d\n",
+            original_clock_rate, original_clock_flag, result,
+            !output_clock(&rate, &flag) && rate == original_clock_rate && flag == original_clock_flag);
+    } else if (hd_saved) {
+        hand_back_output();
+    }
     ((print_fn)NATIVE_PRINTK)(restored ? "\0016gh_dts_native: original output route restored\n" :
         restore_format ? "\0013gh_dts_native: carrier disconnected and format restored; baseline source unavailable\n" :
         "\0016gh_dts_native: output ownership changed; preserving current route\n");
 }
 
 static int watch_route(void *unused) {
-    unsigned int tick = 0, previous = lease;
+    unsigned int tick = 0, previous = lease, phase = 0, stable = 0, attempts = 0;
     (void)unused;
     while (tick < 200 && !kthread_should_stop()) {
-        void *current_source = (void *)0;
-        u32 current_port = 0;
-        int owned;
         msleep(100);
         tick++;
         if (__atomic_load_n(&lease, __ATOMIC_ACQUIRE) != previous) {
             previous = __atomic_load_n(&lease, __ATOMIC_ACQUIRE);
             tick = 0;
         }
-        mutex_lock((void *)NATIVE_BM_MUTEX);
-        owned = ((block_fn)NATIVE_BM_GET)("renderer", NATIVE_SOURCE_INDEX) == source_block &&
-            ((block_fn)NATIVE_BM_GET)("output", 3) == output_block &&
-            output_edge(&current_source, &current_port) == 1 && current_source == source_block && current_port == 0x100;
-        mutex_unlock((void *)NATIVE_BM_MUTEX);
-        if (!owned) break;
-        if (*(volatile u32 *)NATIVE_HAL_NONPCM != 1 || *(volatile u32 *)NATIVE_HAL_RATE != 48000) break;
+        if (!owns_route()) {
+            ((print_fn)NATIVE_PRINTK)("\0016gh_dts_native: output ownership lost\n");
+            break;
+        }
+        if (carrier_rate == 48000) {
+            if (*(volatile u32 *)NATIVE_HAL_NONPCM != 1 || *(volatile u32 *)NATIVE_HAL_RATE != 48000) break;
+            continue;
+        }
+        if (phase && !hd_format_matches()) {
+            u32 rate = 0, flag = 0;
+            ((void (*)(u32))NATIVE_HAL_MUTE)(1);
+            __atomic_store_n(&hd_ready, 0, __ATOMIC_RELEASE);
+            output_clock(&rate, &flag);
+            ((print_fn)NATIVE_PRINTK)("\0016gh_dts_native: HD format changed mode=%u CS0=%08x clock=%u flag=%u\n",
+                *(volatile u32 *)NATIVE_HAL_CONTROL & 7, *(volatile u32 *)NATIVE_HAL_CS0, rate, flag);
+            phase = stable = 0;
+        }
+        if (!phase) {
+            if (++stable < 2) continue;
+            if (++attempts > 8) {
+                ((print_fn)NATIVE_PRINTK)("\0013gh_dts_native: HD format recovery attempts exhausted\n");
+                break;
+            }
+            if (configure_hd() < 0) {
+                ((print_fn)NATIVE_PRINTK)("\0013gh_dts_native: HD setup lost its route or clock\n");
+                break;
+            }
+            phase = 1;
+            stable = 0;
+        } else if (phase == 1 && ++stable >= 2) {
+            if (!owns_route() || !hd_format_matches()) continue;
+            ((void (*)(u32))NATIVE_HAL_MUTE)(original_hal_mute);
+            __atomic_store_n(&hd_ready, 1, __ATOMIC_RELEASE);
+            phase = 2;
+            stable = 0;
+            ((print_fn)NATIVE_PRINTK)("\0016gh_dts_native: HD ready after stable output format\n");
+        } else if (phase == 2 && ++stable >= 50) {
+            attempts = 0;
+            stable = 0;
+        }
     }
     restore_route();
     /* Keep the task alive until module removal owns kthread_stop(). */
@@ -135,11 +367,14 @@ int init_module(void) {
     int connected;
     void *current_source = (void *)0;
     u32 current_port = 0;
-    if (restore_pcm > 1) return -22;
+    if (restore_pcm > 1 || (carrier_rate != 48000 && carrier_rate != 192000)) return -22;
+    __atomic_store_n(&hd_ready, 0, __ATOMIC_RELEASE);
     source_block = block("renderer", NATIVE_SOURCE_INDEX);
     old_source_block = block(restore_pcm ? "mixer" : "encoder", restore_pcm ? 0 : 3);
     output_block = block("output", 3);
     if (!source_block || !old_source_block || !output_block) return -19;
+    if (carrier_rate == 192000 && (output_clock(&original_clock_rate, &original_clock_flag) ||
+        (original_clock_rate != 48000 && original_clock_rate != 192000))) return -19;
     print("\0016gh_dts_native: native PCM bypass head=%08x\n",
           ((u32 (*)(void *))NATIVE_PCM_HEAD)(source_block));
     mutex_lock((void *)NATIVE_BM_MUTEX);
@@ -155,17 +390,34 @@ int init_module(void) {
         mutex_unlock((void *)NATIVE_BM_MUTEX);
         return -22;
     }
+    if (carrier_rate == 192000) {
+        original_channels = *(volatile u32 *)NATIVE_HAL_CHANNEL_COUNT;
+        original_acmod = *(volatile u32 *)NATIVE_HAL_CHANNEL_ACMOD;
+        original_audio_mode = *(volatile u32 *)NATIVE_HAL_CONTROL & 7;
+        original_hal_mute = (*(volatile u32 *)NATIVE_HAL_CS2 >> 18) & 1;
+        original_earc_on = *((u8 *)output_block + 129);
+        if (*(u32 *)((u8 *)output_block + 44) != 3 || !*((u8 *)source_block + 77) ||
+            (original_channels != 2 && original_channels != 6 && original_channels != 8) ||
+            original_acmod > 7 || original_hal_mute != 0 || original_earc_on != 1) {
+            mutex_unlock((void *)NATIVE_BM_MUTEX);
+            return -22;
+        }
+        hd_saved = 1;
+        ((void (*)(u32))NATIVE_HAL_MUTE)(1);
+        print("\0016gh_dts_native: HD baseline clock=%u flag=%u channels=%u acmod=%u mode=%u\n",
+            original_clock_rate, original_clock_flag, original_channels, original_acmod, original_audio_mode);
+    }
     applied = 1;
     ((disconnect_fn)NATIVE_DISCONNECT_LOCKED)(output_block, 0);
     connected = ((connection_fn)NATIVE_CONNECT_LOCKED)(source_block, 0x100, output_block, 0);
     mutex_unlock((void *)NATIVE_BM_MUTEX);
     print("\0016gh_dts_native: native PCM carrier route result=%d\n", connected);
     if (connected < 0) { restore_route(); return connected; }
-    ((format_fn)NATIVE_HAL_FORMAT)(1, 48000);
+    ((format_fn)NATIVE_HAL_FORMAT)(1, carrier_rate);
     watchdog = kthread_create_on_node(watch_route, (void *)0, -1, "gh-dts-guard");
     if ((u64)watchdog >= (u64)-4095) { watchdog = (void *)0; restore_route(); return -12; }
     wake_up_process(watchdog);
-    print("\0016gh_dts_native: renderer%d PCM-bypass -> eARC; 20-second producer lease\n", NATIVE_SOURCE_INDEX);
+    print("\0016gh_dts_native: renderer%d PCM-bypass -> eARC at %u; 20-second producer lease\n", NATIVE_SOURCE_INDEX, carrier_rate);
 #endif
     return 0;
 }
@@ -219,7 +471,9 @@ _Static_assert(sizeof(struct target_parameter) == 40, "parameter size");
 static const struct target_parameter parameters[] __attribute__((section("__param"), aligned(8), used)) = {
     {"lease", &__this_module, &uint_operations, 0600, -1, 0, &lease},
     {"active", &__this_module, &uint_operations, 0400, -1, 0, &applied},
-    {"restore_pcm", &__this_module, &uint_operations, 0400, -1, 0, &restore_pcm}
+    {"restore_pcm", &__this_module, &uint_operations, 0400, -1, 0, &restore_pcm},
+    {"carrier_rate", &__this_module, &uint_operations, 0400, -1, 0, &carrier_rate},
+    {"hd_ready", &__this_module, &uint_operations, 0400, -1, 0, &hd_ready}
 };
 #endif
 static const char module_license[] __attribute__((section(".modinfo"), used)) = "license=GPL";

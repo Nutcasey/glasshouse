@@ -70,8 +70,10 @@ def stop():
         stop_unlocked()
 
 
-def start(index):
+def start(index, carrier=0):
     verify()
+    if carrier not in (0, 768000):
+        raise RuntimeError('Only the core and eight-channel DTS-HD carrier profiles are qualified')
     if index not in (0, 1) or not (BASE / 'enabled').exists():
         raise RuntimeError('Native DTS forwarding is disabled')
     if PARAMS.exists():
@@ -90,6 +92,10 @@ def start(index):
     advanced = arc.get('advancedEarcCapability', [])
     if 'DTS' not in formats and not any(item.get('audioCodingType') == 'DTS' for item in advanced):
         raise RuntimeError('The receiver does not advertise DTS')
+    if carrier and (arc.get('arcActivation', '').lower() != 'earc' or
+                    not ({'DTSHD', 'DTSHD_MA', 'DTSX_P1'} &
+                         (set(formats) | {item.get('audioCodingType') for item in advanced}))):
+        raise RuntimeError('DTS-HD requires an active eARC link and a receiver advertising DTS-HD')
     graph = Path('/proc/aaudio/dot_block_connection').read_text()
     (BASE / 'last-start-graph.dot').write_text(graph)
     sources = [source for source in ('encoder_3_out0', 'mixer_0_out0') if source + ' -> output_3_in0' in graph]
@@ -99,7 +105,8 @@ def start(index):
         raise RuntimeError('Native renderer ' + str(index) + ' is not present yet')
     try:
         run(['/sbin/insmod', str(BASE / ('gh_dts_native-apply' + str(index) + '.ko')),
-             'restore_pcm=' + str(int(sources[0] == 'mixer_0_out0'))], 8)
+             'restore_pcm=' + str(int(sources[0] == 'mixer_0_out0')),
+             'carrier_rate=' + str(192000 if carrier else 48000)], 8)
         if (PARAMS / 'active').read_text().strip() != '1':
             raise RuntimeError('The native route did not become active')
         (BASE / 'last-error.json').unlink(missing_ok=True)
@@ -207,22 +214,50 @@ def enable():
         raise
 
 
+def mode(value):
+    verify()
+    if value not in ('core', 'hd'):
+        raise RuntimeError('Native DTS mode must be core or hd')
+    path = BASE / 'hd-rate'
+    if value == 'core':
+        path.unlink(missing_ok=True)
+    else:
+        temporary = path.with_suffix('.tmp')
+        with temporary.open('w') as stream:
+            os.chmod(temporary, 0o600)
+            stream.write('768000\n')
+            stream.flush()
+            os.fsync(stream.fileno())
+        temporary.replace(path)
+
+
 def status():
     verify()
     enabled = (BASE / 'enabled').exists()
     active = PARAMS.exists() and (PARAMS / 'active').read_text().strip() == '1'
+    configured_hd = (BASE / 'hd-rate').exists() and (BASE / 'hd-rate').read_text().strip() == '768000'
+    active_hd = active and (PARAMS / 'carrier_rate').read_text().strip() == '192000'
+    hd_ready = active_hd and (PARAMS / 'hd_ready').read_text().strip() == '1'
+    stream = {}
+    try:
+        stream = json.loads((BASE / 'last-stream.json').read_text())
+    except (OSError, ValueError):
+        pass
     print(json.dumps({'enabled': enabled, 'running': enabled and DROPIN.exists() and rank_owned(),
-                      'active': active, 'scope': 'native-apps', 'format': 'DTS core 48 kHz'}))
+                      'active': active, 'scope': 'native-apps', 'mode': 'hd' if configured_hd else 'core',
+                      'hdReady': hd_ready,
+                      'format': 'DTS-HD HBR 192 kHz' if (active_hd if active else configured_hd) else 'DTS core 48 kHz',
+                      'stream': stream if active_hd else None}))
 
 
 if __name__ == '__main__':
-    if os.geteuid() != 0 or len(sys.argv) < 2 or sys.argv[1] not in ('start', 'stop', 'enable', 'disable', 'boot', 'status'):
-        sys.exit('Usage: control.py start 0|1 | stop | enable | disable | boot | status (root)')
+    if os.geteuid() != 0 or len(sys.argv) < 2 or sys.argv[1] not in ('start', 'stop', 'enable', 'disable', 'boot', 'status', 'mode'):
+        sys.exit('Usage: control.py start 0|1 [0|768000] | stop | enable | disable | boot | status | mode core|hd (root)')
     try:
         action = sys.argv[1]
         if action == 'start':
             with module_lock():
-                start(int(sys.argv[2]))
+                start(int(sys.argv[2]), int(sys.argv[3]) if len(sys.argv) > 3 else 0)
         elif action == 'stop':
             stop()
         else:
@@ -237,6 +272,8 @@ if __name__ == '__main__':
                         except Exception:
                             disable()
                             raise
+                elif action == 'mode':
+                    mode(sys.argv[2])
                 else:
                     globals()[action]()
     except Exception as error:
