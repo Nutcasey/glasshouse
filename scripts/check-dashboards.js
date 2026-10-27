@@ -523,6 +523,33 @@ async function visitTvNonOled(browser, base, problems) {
   }
 }
 
+async function visitAudio(browser, base, problems) {
+  const page = await browser.newPage();
+  page.on('pageerror', e => problems.push('Web audio: ' + e.message));
+  try {
+    const state = await page.request.get(base + '/api/audio?with=settings').then(r => r.json());
+    let failed = false;
+    await page.route('**/api/audio*', route => {
+      if (failed) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'Audio service unavailable' }) });
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify(state) });
+    });
+    await page.goto(base + '/?tab=audio');
+    await page.waitForFunction(() => audioState !== null);
+    if (!await page.locator('#audio-settings [data-lgs]').count()) problems.push('Audio tab: LG sound settings missing');
+    failed = true;
+    // The readings and their Refresh are folded below the settings.
+    await page.locator('#audio-more > summary').click();
+    await page.locator('#audio-refresh').click();
+    await page.waitForFunction(() => !document.querySelector('#audio-error').hidden);
+    if (await page.locator('#audio-readings').isVisible() || await page.locator('#audio-settings :enabled').count())
+      problems.push('Web audio: a failed read left stale controls usable');
+    failed = false;
+    await page.locator('#audio-refresh').click();
+    await page.waitForFunction(() => document.querySelector('#audio-error').hidden);
+    if (!await page.locator('#audio-readings').isVisible()) problems.push('Web audio: readings did not recover after a failed read');
+  } finally { await page.close(); }
+}
+
 (async () => {
   const server = await startServer();
   const base = 'http://127.0.0.1:' + server.port;
@@ -542,6 +569,6 @@ async function visitTvNonOled(browser, base, problems) {
   await browser.close();
   for (const p of problems) console.log(p);
   console.log((web.length + tv.length) + ' tabs opened (' + web.length + ' web, ' + tv.length + ' TV app), ' +
-              'TV navigation, audio and LCD profile, and the Home tab's editing, order, uploads and availability checked, ' + problems.length + ' problem' + (problems.length === 1 ? '' : 's'));
+              'TV navigation, audio and LCD profile, and the Home tab\'s editing, order, uploads and availability checked, ' + problems.length + ' problem' + (problems.length === 1 ? '' : 's'));
   process.exit(problems.length ? 1 : 0);
 })().catch(e => { console.error(e.message); process.exit(1); });
