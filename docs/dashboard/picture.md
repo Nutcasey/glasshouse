@@ -42,5 +42,7 @@ as in LG's menu. Left and Right change it by one, faster while held; Up and
 Down jump a tenth of its range; OK or Back finish. The TV takes each value as
 it changes. Outside a slider, Left and Right switch tabs as everywhere else in
 the app. OK cycles a choice or switches a setting.
+Moving to another slider while a change is still being saved keeps both
+adjustments; a refused change does not discard another row's pending value.
 
 ![Picture settings in the G3's TV app, with Contrast selected](../screenshots/picture-g3-tv.png)

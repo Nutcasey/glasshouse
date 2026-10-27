@@ -1563,6 +1563,54 @@ async function visitTvAudio(browser, base, problems) {
     if (await page.locator('#rows .row').filter({ hasText: /Audio capabilities|Sound output/ }).count()) problems.push('TV audio: sound still listed under System');
   } finally { await page.close(); }
 }
+async function visitTvPictureWrites(browser, base, problems) {
+  for (const outcome of ['accepted', 'refused', 'disconnected']) {
+    const page = await browser.newPage();
+    const writes = [];
+    let releaseFirst, firstSeen, secondSeen;
+    const held = new Promise(resolve => { releaseFirst = resolve; });
+    const started = new Promise(resolve => { firstSeen = resolve; });
+    const secondStarted = new Promise(resolve => { secondSeen = resolve; });
+    page.on('pageerror', e => problems.push('TV picture: ' + e.message));
+    await page.route('**/api/picture', route => route.fulfill({ json: { ok: true, writable: true, rows: [
+      { id: 'backlight', title: 'Panel brightness', section: 'picture', group: 'brightness', type: 'number', value: 95, min: 0, max: 100 },
+      { id: 'contrast', title: 'Contrast', section: 'picture', group: 'brightness', type: 'number', value: 85, min: 0, max: 100 }
+    ] } }));
+    await page.route('**/api/control', async route => {
+      writes.push(route.request().postDataJSON().value);
+      if (writes.length === 2) secondSeen();
+      if (writes.length === 1) {
+        firstSeen();
+        await held;
+        if (outcome === 'disconnected') return route.abort();
+        if (outcome === 'refused') return route.fulfill({ json: { ok: false, error: 'Setting locked' } });
+      }
+      await route.fulfill({ json: { ok: true } });
+    });
+    try {
+      await page.goto(base + '/assets/dashboard.html?tab=picture');
+      await page.waitForSelector('#rows .row.sel:has-text("Panel brightness")');
+      for (const key of ['Enter', 'ArrowLeft', 'Enter', 'ArrowDown', 'Enter', 'ArrowLeft', 'Enter']) {
+        await page.keyboard.press(key);
+      }
+      await started;
+      const second = page.waitForRequest(request => request.url().endsWith('/api/control') &&
+        request.postDataJSON().value.id === 'contrast', { timeout: 2000 });
+      releaseFirst();
+      await second;
+      await secondStarted;
+      if (JSON.stringify(writes) !== JSON.stringify([{ id: 'backlight', value: 94 }, { id: 'contrast', value: 84 }])) {
+        problems.push('TV picture: incorrect slider writes after ' + outcome + ' response: ' + JSON.stringify(writes));
+      }
+    } catch (e) {
+      problems.push('TV picture: pending slider lost after ' + outcome + ' response: ' + e.message);
+    } finally {
+      releaseFirst();
+      await page.close();
+    }
+  }
+}
+
 async function visitTvNonOled(browser, base, problems) {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   page.on('pageerror', e => problems.push('TV non-OLED: ' + e.message));
@@ -1591,6 +1639,7 @@ async function visitTvNonOled(browser, base, problems) {
     .concat(tv.map(t => ({ url: base + '/assets/dashboard.html?tab=' + t, label: 'TV ' + t }))), problems);
   await visitTvDashboard(browser, base, problems);
   await visitTvAudio(browser, base, problems);
+  await visitTvPictureWrites(browser, base, problems);
   await visitTvNonOled(browser, base, problems);
   await visitHomeArrangement(browser, base, problems);
   await visitHomePicture(browser, base, problems);

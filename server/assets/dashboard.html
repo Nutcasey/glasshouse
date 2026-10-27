@@ -1562,13 +1562,13 @@ function lgNumber(g, v) {
  * final value has gone.
  */
 var adjusting = null;   // the row being adjusted
-var adjustSent = null;  // the value last sent for it
+var adjustPending = [];
 var adjustInFlight = false;
 var adjustHeld = 0, adjustLastKey = 0;
 
 function startAdjust() {
   adjusting = rows[sel];
-  adjustSent = adjusting.cur;
+  if (adjusting.adjustSent === undefined) adjusting.adjustSent = adjusting.cur;
   adjustHeld = 0;
   render();
 }
@@ -1615,10 +1615,14 @@ function adjustHtml(r) {
 }
 
 function pushAdjust(r) {
-  if (adjustInFlight || r.cur === adjustSent) {
-    if (!adjustInFlight && !adjusting) fetchTab(true);
+  if (r.cur !== r.adjustSent && adjustPending.indexOf(r) === -1) adjustPending.push(r);
+  if (adjustInFlight) return;
+  r = adjustPending.shift();
+  if (!r) {
+    if (!adjusting) fetchTab(true);
     return;
   }
+  if (r.cur === r.adjustSent) return pushAdjust(r);
   adjustInFlight = true;
   var value = r.cur;
   fetch('/api/control', {
@@ -1630,14 +1634,15 @@ function pushAdjust(r) {
       // A refused value is not retried: the row is put right by the next read.
       if (res && res.ok === false) {
         flash(res.error || t('tv.failed', 'That did not work'));
-        adjustSent = r.cur;
-      } else adjustSent = value;
+        r.adjustSent = r.cur;
+      } else r.adjustSent = value;
       pushAdjust(r);
     })
     .catch(function () {
       adjustInFlight = false;
-      adjustSent = r.cur;
+      r.adjustSent = r.cur;
       flash(t('tv.failed', 'That did not work'));
+      pushAdjust(r);
     });
 }
 
