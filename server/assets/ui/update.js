@@ -28,6 +28,7 @@ let updBusy = false;
 // the page or report the TV unreachable for an absence it was told to expect.
 let updRestarting = false;
 let updInstalled = null;
+let updViaHomebrewChannel = false;
 // What the last install or rollback came to, kept across re-renders until the next action.
 let updArrival = '';
 
@@ -35,6 +36,7 @@ function renderUpdate(d) {
   const pill = q('upd-pill'), desc = q('upd-desc'), msg = q('upd-msg');
   const inst = q('upd-install'), roll = q('upd-rollback'), chk = q('upd-check');
   updInstalled = d.installed;
+  updViaHomebrewChannel = !!d.viaHomebrewChannel;
   q('upd-title').textContent = t('server.version', 'Version {version}', { version: d.installed });
 
   const working = d.state === 'checking' || d.state === 'downloading' || d.state === 'installing';
@@ -405,7 +407,10 @@ async function checkNow() {
 
 function installUpdate() {
   const v = q('upd-install').dataset.v;
-  if (!confirm(t('server.install.confirm', 'Install v{version}?\n\nThe server is replaced and restarted, and the previous version stays on the TV so it can be rolled back.', { version: v }))) return;
+  const prompt = updViaHomebrewChannel
+    ? t('server.install.confirm.package', 'Install v{version}?\n\nThe Glasshouse app closes while its package is replaced, then the server restarts. No rollback copy is kept.', { version: v })
+    : t('server.install.confirm', 'Install v{version}?\n\nThe server is replaced and restarted, and the previous version stays on the TV so it can be rolled back.', { version: v });
+  if (!confirm(prompt)) return;
   return runInstall(v, updInstalled, updProg, q('upd-msg'));
 }
 
@@ -507,6 +512,8 @@ function showUpdatePopup(d) {
   q('updpop-summary').hidden = !latest;
   q('updpop-desc').textContent = !d.writable
     ? t('server.popup.desc.noControls', 'Controls are turned off in the config, so it cannot be installed from here.')
+    : d.viaHomebrewChannel
+    ? t('server.popup.desc.package', 'Installing it closes the Glasshouse app, replaces its package and restarts the server. No rollback copy is kept.')
     : t('server.popup.desc', 'Installing it replaces the server and restarts it. The previous version stays on the TV for rollback.');
   q('updpop-from').textContent = 'v' + d.installed;
   q('updpop-to').textContent = 'v' + d.latest;

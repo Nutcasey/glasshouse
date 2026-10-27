@@ -10,7 +10,7 @@ The **Server** tab, `/?tab=server`, holds Glasshouse's own settings: Glasshouse 
 
 ![Glasshouse: the version and Check now, server health, daily update check, watch time, settings backup, daily backup and the app on the home screen](../screenshots/server-glasshouse.png)
 
-Shows the installed version and whether a newer release is out. **Check now** looks straight away, and **Install** appears when there is something to install, with **What's new**: a short summary of what each release since the installed one brings, newest first, and a link to its full notes. **Roll back**, under the version, puts back the version installed before, after asking first. [Updating](../managing.md#updating) covers installs from before the tab existed.
+Shows the installed version and whether a newer release is out. **Check now** looks straight away, and **Install** appears when there is something to install, with **What's new**: a short summary of what each release since the installed one brings, newest first, and a link to its full notes. Package installs close the Glasshouse app and keep no rollback copy. For installs made with `deploy.sh`, **Roll back**, under the version, puts back the version installed before, after asking first. [Updating](../managing.md#updating) covers installs from before the tab existed.
 
 **Check for updates daily** looks once a day on its own, and lets Home Assistant offer the update.
 

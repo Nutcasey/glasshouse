@@ -358,7 +358,7 @@ function installReleasePackage(ver, done) {
       try { mkdirp(packageStageDir); } catch (e) { return fail('could not create ' + packageStageDir + ': ' + e.message); }
       var ipk = path.join(packageStageDir, file);
       console.log('update: downloading the v' + ver + ' package');
-      probeFetch(RELEASE_DOWNLOAD + ver + '/' + file, ipk, function (e2) {
+      fetch.download(RELEASE_DOWNLOAD + ver + '/' + file, ipk, {}, function (e2) {
         if (e2) return fail(e2.message);
         hashFile(ipk, function (e3, got) {
           if (e3) return fail('could not read the download: ' + e3.message);

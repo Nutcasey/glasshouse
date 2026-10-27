@@ -64,6 +64,7 @@ var installTimeoutMs = 120000;
 var elevateTimeoutMs = 60000;
 
 var job = null;
+var ownPackageInstalling = false;
 // An upload is streaming into the staging directory; a job's cleanup must not touch it.
 var uploadHeld = 0;
 var UPLOAD_HOLD_MS = 30 * 60 * 1000;
@@ -717,13 +718,13 @@ function snapshot() {
 
 // Another install may not start: a job is working or waiting for confirmation.
 function isBusy() {
-  return !!(job && UNFINISHED[job.state]);
+  return ownPackageInstalling || !!(job && UNFINISHED[job.state]);
 }
 
 // Something is being downloaded, verified or installed: settings saves,
 // restarts and updates wait; an unconfirmed preview does not hold them.
 function isWorking() {
-  return !!(job && WORKING[job.state]);
+  return ownPackageInstalling || !!(job && WORKING[job.state]);
 }
 
 /* -------------------------------------------------------------- start */
@@ -1256,8 +1257,12 @@ function recover() {
 function installOwnPackage(file, version, cb) {
   if (isBusy()) return cb(new Error(msg('srv.install.busy', 'an install is already in progress')));
   var id = SELF_UPDATING[1];
+  ownPackageInstalling = true;
   runInstall({ file: file, info: { package: id, version: version, apps: [{ id: id, version: version }] } },
-    function (err) { cb(err ? new Error(err) : null); });
+    function (err) {
+      ownPackageInstalling = false;
+      cb(err ? new Error(err) : null);
+    });
 }
 
 function init(opts) {
@@ -1265,6 +1270,7 @@ function init(opts) {
   if (job && job.timer) clearTimeout(job.timer);
   killChild();
   job = null;
+  ownPackageInstalling = false;
   uploadHeld = 0;
   lunaFn = opts.luna || null;
   appsMod = opts.apps || require('./apps');

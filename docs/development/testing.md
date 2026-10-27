@@ -51,6 +51,9 @@ gzips without `zlib.gzipSync`. The suites that run the repository's own scripts
 through `execSync`, `test-module-calls.js`, `test-tvwebctl.js` and
 `test-remote-worker.js`, skip on node 0.10.
 
+`test-installer.js` checks that Glasshouse's own package install holds the
+restart and install guards, then releases both before reporting success or failure.
+
 `test-remote-worker.js` runs the remote-button worker's Python tests
 (`test/test_remote_buttons.py`) under Python 3: a disconnected device and one at
 EOF are dropped rather than read in a busy loop, a device with nothing to read
