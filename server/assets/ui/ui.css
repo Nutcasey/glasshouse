@@ -1527,7 +1527,8 @@ button.tools-jump:active{background:var(--w80)}
 .pic-cms .hh{font-size:12px;color:var(--w60);border-top:0;padding-top:0}
 .pic-cms .in{gap:10px;font-size:15px;color:var(--w100)}
 .pic-cms .lgs-range{gap:10px;width:100%}
-.pic-cms .lgs-range input{width:100%;min-width:0}
+/* #picpane's fixed slider width would otherwise win, leaving them a third of a phone's width. */
+#picpane .pic-cms .lgs-range input{width:100%;-webkit-flex:1;flex:1;min-width:0}
 .pic-cms .lgs-range .num{min-width:4ch}
 .pic-sw{width:12px;height:12px;border-radius:50%;flex:none}
 .pic-sw[data-colour="red"]{background:#FF3030}
