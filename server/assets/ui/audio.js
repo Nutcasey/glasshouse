@@ -141,9 +141,10 @@ function nativeDtsDescription(helper) {
     }
     return t('audio.overrideActive', 'The helper reports an active compressed forwarding route. Check the receiver’s incoming format to confirm DTS reception.');
   }
-  if (helper.running) return helper.mode === 'hd'
+  if (helper.running) return (helper.mode === 'hd'
     ? t('audio.nativeHdWaiting', 'Enabled for TV apps with DTS-HD MA and DTS:X forwarding over eARC.')
-    : t('audio.nativeWaiting', 'Enabled for TV apps using the shared audio pipeline. Forwards 48 kHz DTS core over eARC; DTS-HD extensions are not forwarded.');
+    : t('audio.nativeWaiting', 'Enabled for TV apps using the shared audio pipeline. Forwards 48 kHz DTS core over eARC; DTS-HD extensions are not forwarded.')) +
+    (helper.lastError ? ' ' + t('audio.nativeRefused', 'The last DTS stream was refused, so it did not play: {reason}', { reason: helper.lastError }) : '');
   return t('audio.overrideStopped', 'Enabled, but its service is not running. Disable the override before retrying.');
 }
 
@@ -169,7 +170,7 @@ function renderAudioOverride() {
         ? t('audio.nativeHdReady', 'Enable experimental DTS-HD MA and DTS:X forwarding for TV apps. Requires eARC, Pass Through and a DTS-HD receiver. Enabling restarts TV playback.')
         : t('audio.nativeReady', 'Enable DTS core forwarding for TV apps through the shared audio pipeline. Enabling restarts TV media playback. Requires eARC and Pass Through.')
       : t('audio.overrideReady', 'Experimental HDMI 3 to eARC forwarding is available with the checked helper. Changing it can briefly interrupt HDMI audio.')
-      : dts.advertised === true && st.tv.dtsDecoder === true
+      : dts && dts.advertised === true && st.tv.dtsDecoder === true
         ? t('audio.overrideNative', 'The TV already advertises DTS and has LG’s DTS decoder. Use its native audio settings first. No experimental forwarding profile is offered for this TV.')
         : helper.reason || t('audio.overrideUnknown', 'No validated DTS forwarding helper is available for this TV.');
 }

@@ -41,10 +41,10 @@ var NATIVE_PROFILE = {
   "firmware": "33.31.68",
   "kernel": "5.4.268-329.ptl4tv.5",
   "files": {
-    "control.py": "2a9d4236a3849fa3c97809a93997b129417b51e8a7a1f552a7c125f8dac83f8d",
-    "gst/libgstghdts.so": "8b64b23d4ac6fd13e8d04386c9911bf9913d8e88d8e77053c902db1642995325",
-    "gh_dts_native-apply0.ko": "963626ca5f76e3f41a1316d1b36af14423cd523bb3f6286323d088217dd11f80",
-    "gh_dts_native-apply1.ko": "017be9b24435f6e6c79c2b7d5d7ebb3d07ccdfc194c69f18c829165469e9c1cd"
+    "control.py": "826c719788508f48abd23411eacf8b44e204c225fcbe8bc2a4d9b10667739324",
+    "gst/libgstghdts.so": "01918d6ed558eab4ae7b20a43e3bcbe3283e0be7f6a489d57d69c918fde5ab20",
+    "gh_dts_native-apply0.ko": "3fe32e07c7cc84be2121c5118f4d36912e6057a03546d153a1031e59afd78427",
+    "gh_dts_native-apply1.ko": "dac431f8da07666e8ece36528d7b222ba89b34d877e88661265cb68584713fe5"
   }
 };
 var FORMATS = [
@@ -223,12 +223,18 @@ function nativeHelperStatus(identity, cb) {
     needsRestore: !enabled && residue,
     backend: 'native-apps', input: null, transport: 'eARC', mode: hdSelected ? 'hd' : 'core',
     format: hdSelected ? 'DTS-HD HBR 192 kHz' : 'DTS core 48 kHz',
-    hdCarrierActive: false, hdReady: false, hdPayloadActive: false, stream: null,
+    hdCarrierActive: false, hdReady: false, hdPayloadActive: false, stream: null, lastError: null,
     profile: NATIVE_PROFILE.model + ' / ' + NATIVE_PROFILE.firmware,
     reason: !matched ? msg('srv.audio.override.incompatible', 'No DTS forwarding profile has been validated for this TV and firmware.')
       : !installed ? msg('srv.audio.override.nativeMissing', 'Install the matching native DTS forwarding package before enabling it.')
         : !verified ? msg('srv.audio.override.unverified', 'The installed DTS helper does not match the pinned, checked package.') : null };
   if (!verified || !enabled) return cb(result);
+  // control.py (start) and the forwarder (acquire, lease) record why a stream's
+  // route was refused or lost; the next successful start deletes the record. A
+  // refused stream fails in the app, because the forwarder outranks LG's
+  // decoder while forwarding is enabled.
+  var lastError = util.readJson(NATIVE_BASE + 'last-error.json', null);
+  if (lastError && /^(start|acquire|lease)$/.test(lastError.action) && typeof lastError.error === 'string') result.lastError = lastError.error.slice(0, 200);
   children.launch(function () {
     child.execFile('/bin/systemctl', ['is-active', 'umediaserver.service'], { timeout: 3000, maxBuffer: 4096 }, function (err, stdout) {
       var dropin = util.readTrimmed('/run/systemd/system/umediaserver.service.d/90-glasshouse-dts.conf') || '';
@@ -397,7 +403,7 @@ function status(cb, force) {
   // The whole category, as lgsettings asks: webOS 4.4 answers nothing when a
   // named key it lacks, such as eArcSupport, is in the list.
   ask('settings', 'com.webos.service.settings/getSystemSettings', { category: 'sound' }, 3000);
-  // G5 33.31.68 returned Auto for the whole category while a named query
+  // G5 33.31.68 returned auto for the whole category while a named query
   // returned the actual Pass Through setting. A failed named query keeps the
   // category values and dimension metadata used by older TVs.
   ask('outputSettings', 'com.webos.service.settings/getSystemSettings',
@@ -419,25 +425,28 @@ function setOverride(on, cb) {
     else if (!on && !helper.canDisable) error = msg('srv.audio.override.notEnabled', 'No verified DTS override is enabled.');
     else if (on && (st.receiver.link !== 'eARC' || st.settings.soundOutput !== 'external_arc' || st.settings.soundOutputDigital !== 'passThrough'))
       error = msg('srv.audio.override.setup', 'Choose HDMI ARC output, enable eARC and select Pass Through before enabling the override.');
-    // This pinned watcher can start core and HD sessions. A core-only sink
-    // needs a separately qualified core-only helper, not this combined one.
     else if (on && helper.backend === 'native-apps' && !st.tv.formats.some(function (f) { return f.id === 'dts' && f.receiver === true; }))
       error = msg('srv.audio.override.nativeReceiver', 'Native DTS forwarding requires a receiver that advertises DTS.');
     else if (on && helper.backend === 'native-apps' && helper.mode === 'hd' &&
       !st.tv.formats.some(function (f) { return f.id === 'dtshd' && f.receiver === true; }))
       error = msg('srv.audio.override.nativeHdReceiver', 'DTS-HD forwarding requires a receiver that advertises DTS-HD.');
+    // This pinned watcher can start core and HD sessions. A core-only sink
+    // needs a separately qualified core-only helper, not this combined one.
     else if (on && helper.backend !== 'native-apps' && st.tv.formats.filter(function (f) { return (f.id === 'dts' || f.id === 'dtshd') && f.receiver === true; }).length !== 2)
       error = msg('srv.audio.override.receiver', 'The installed helper handles DTS and DTS-HD. The receiver must advertise both formats.');
     if (error) { changing = false; return cb({ ok: false, error: error }); }
     children.launch(function () {
       var executable = helper.backend === 'native-apps' ? '/usr/bin/python3' : '/bin/sh';
       var controller = helper.backend === 'native-apps' ? NATIVE_BASE + 'control.py' : BASE + 'control.sh';
-      child.execFile(executable, [controller, on ? 'enable' : 'disable'], { timeout: 180000, maxBuffer: 32768 }, function (err) {
+      child.execFile(executable, [controller, on ? 'enable' : 'disable'], { timeout: 180000, maxBuffer: 32768 }, function (err, stdout, stderr) {
         changing = false;
         clearCache();
+        // control.py exits with "Native DTS: <reason>" on stderr.
+        var refused = /Native DTS: ([^\n]+)\s*$/.exec(String(stderr || ''));
         status(function (after) {
-          var confirmed = !err && after.override.enabled === on && after.override.running === on;
-          cb({ ok: confirmed, status: after, error: confirmed ? null : msg('srv.audio.override.failed', 'The DTS helper did not confirm the change. Check its status before retrying.') });
+          var confirmed = !err && after.override.enabled === on && after.override.running === on && !after.override.needsRestore;
+          cb({ ok: confirmed, status: after, error: confirmed ? null : msg('srv.audio.override.failed', 'The DTS helper did not confirm the change. Check its status before retrying.') +
+            (refused ? ' ' + refused[1].slice(0, 200) : '') });
         }, true);
       });
     });

@@ -71,15 +71,22 @@ python3 /var/lib/lg-dts-native/control.py status
 python3 /var/lib/lg-dts-native/control.py disable
 ```
 
-Enable owns an EDID-declaration journal and a volatile systemd drop-in. Both
+Enable owns an EDID-declaration journal, a volatile systemd drop-in and a bind
+mount of a re-ranked copy of `/etc/gst/gstcool.conf`. Both
 GStreamer plugin-path variables are set because LG supplies a version-specific
 path. A private version-specific registry permits scanning without replacing
 LG's registry. ARC and umediaserver restart so new native app players inherit
 the registration. Apps must supply DTS to that shared pipeline; app-specific
 codec refusal or transcoding remains outside the forwarder's control.
+While enabled the forwarder outranks LG's DTS decoder proxy, so a stream that
+starts without HDMI ARC, Pass Through, eARC and a DTS receiver is refused and
+fails in the app; `last-error.json` records the reason until the next start.
+MPEG-PS private-stream DTS (`audio/x-private1-dts`) is not claimed, because
+its per-packet substream header would land inside frames.
 
-Receiver evidence on the Cinema G5/AVC-A10H includes `SYSDA DTS`, normal EOS,
-a 30-second native Matroska run and a suspended-producer lease expiry. Plex Casino direct-played its original DTS-HD MA/DTS:X source while the Denon
+Receiver evidence on the OLED83G54LW/AVC-A10H includes `SYSDA DTS`, normal EOS,
+a 30-second native Matroska run and a suspended-producer lease expiry. Plex
+direct-played Casino's original DTS-HD MA/DTS:X source while the Denon
 received DTS core. Seek, notification, pause/resume, EOS and player-crash
 recovery were also tried in core mode. Full power-cycle persistence remains
 untested, and no audible assessment has been made.
@@ -140,10 +147,10 @@ with silence while the output is not ready.
 The two-channel 192 kHz carrier is not supported: the receiver never
 identified it.
 
-Tested on the Cinema G5 with a Denon AVC-A10H, both with a raw carrier and with
+Tested on the OLED83G54LW with a Denon AVC-A10H, both with a raw carrier and with
 a native umediaserver clip. The receiver reported DTS:X. The clip sent 297
 DTS-HD frames, no core-only frames and 145 silent frames at start, and the
-normal route was restored after stop. Plex Casino also direct-played its
+normal route was restored after stop. Plex also direct-played Casino's
 MA/DTS:X track without transcoding, with receiver DTS:X through seek, a
 notification and a 24-second pause/resume. Stop restored the normal route.
 

@@ -61,8 +61,8 @@ mode forwards 48 kHz DTS core. An opt-in HD mode forwards complete DTS-HD MA
 and DTS:X frames on an eight-channel 192 kHz HBR carrier. The mode is selected
 with the package's `control.py mode core|hd` command before playback; the
 switch enables or disables the selected mode for the shared TV media service.
-It requires HDMI ARC output, Pass Through and receiver DTS support. HD mode
-also requires an active eARC link and receiver DTS-HD support. Enabling
+It requires HDMI ARC output with an active eARC link, Pass Through and
+receiver DTS support. HD mode also requires receiver DTS-HD support. Enabling
 restarts TV media playback.
 
 The description distinguishes preparation, active HD payload and a core-only
@@ -71,23 +71,23 @@ display confirms reception. HD starts and recovers with silence until the
 output has settled. Frames that exceed the carrier capacity stop playback
 rather than silently dropping the HD extensions.
 
-The native carrier, shared LG player and Plex app were tried in core mode on
-that G5 with an AVC-A10H. Casino direct-played its DTS-HD track without
-transcoding while the receiver reported DTS core. Seek, pause/resume, a
-notification, end-of-stream, player-crash recovery and disabling/re-enabling
-the control were checked. HD mode reached the same receiver as DTS:X from a
-raw carrier and a native LG media-service clip. Plex Casino also direct-played its MA/DTS:X track with DTS:X reception through
-seek, a notification and a 24-second pause/resume. Ordinary ARC and other
-firmware remain unqualified.
+While forwarding is enabled it replaces LG's DTS handling in TV apps, so a DTS
+stream that starts without the eARC set-up above (TV speakers selected, Pass
+Through off, or the receiver on plain ARC) is refused and does not play. The
+description then gives the reason for the last refused stream.
 
-![Live Cinema G5 dashboard during native DTS-HD forwarding](../screenshots/audio-g5-native-hd.png)
+Both modes are qualified on the OLED83G54LW with a Denon AVC-A10H, through
+Plex and LG's media service, including seek, pause, notifications, end of
+stream, player-crash recovery and disabling and re-enabling. Ordinary ARC and
+other firmware remain unqualified.
 
-This capture is from the supported Cinema G5 during native HD playback. The
-status describes frames sent by the TV; receiver identification was checked
-separately. Active disable/re-enable, forced player termination, the next
-player's HD recovery and subsequent 48 kHz PCM output were also checked.
+![Live OLED83G54LW dashboard during native DTS-HD forwarding](../screenshots/audio-g5-native-hd.png)
 
-The helper's upstream trial recorded DTS and DTS:X on that exact 77-inch G5,
+This capture is from the OLED83G54LW during native HD playback. The status
+describes frames sent by the TV; receiver identification was checked
+separately.
+
+The helper's upstream trial recorded DTS and DTS:X on the OLED77G5RLA,
 with a Ugoos SK1 source and Samsung HW-Q950A receiver. That result does not
 qualify the Glasshouse integration or a different G5 size, firmware or kernel.
 The forwarding route uses the TV's existing DSP; it does not add a TV-app DTS

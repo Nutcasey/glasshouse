@@ -12,7 +12,11 @@ declarations: receiver formats remain separate from TV capabilities, an eARC
 EDID flag does not promote ARC, stale driver values do not become live audio,
 and corrupt or missing evidence remains unknown. It also checks that wrong
 targets, unverified helpers, read-only mode and cross-origin requests cannot
-launch the privileged helper. Hardware qualification of a DTS override still
+launch the privileged helper. On a mocked OLED83G54LW with the native package,
+it checks that HD payload is reported only with every readiness signal, that
+leftover changes ask for restoration, that a receiver or link not fit for the
+mode is refused before the controller runs, and that a failed or incomplete
+disable is not confirmed. Hardware qualification of a DTS override still
 requires a source-to-receiver trial. A named current output reading overrides
 stale whole-category values; a refused named query preserves older-TV values.
 `test-lgsettings.js` covers the same current-value behaviour at the settings

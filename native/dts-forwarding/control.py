@@ -21,14 +21,18 @@ IDENTITY = {'modelName': 'OLED83G54LW.BEKYLJP', 'firmwareVersion': '33.31.68'}
 
 
 def run(arguments, timeout=25):
-    return subprocess.check_output(arguments, stderr=subprocess.STDOUT, timeout=timeout).decode()
+    try:
+        return subprocess.check_output(arguments, stderr=subprocess.STDOUT, timeout=timeout).decode()
+    except subprocess.CalledProcessError as error:
+        output = error.output.decode(errors='replace').strip()
+        raise RuntimeError(os.path.basename(arguments[0]) + ' failed' + (': ' + output[-200:] if output else '')) from None
 
 
 def luna(method, payload):
     command = '/usr/bin/luna-send -w 4000 -n 1 ' + shlex.quote('luna://' + method) + ' ' + shlex.quote(json.dumps(payload))
     result = json.loads(run(['/usr/bin/script', '-q', '-e', '-c', command, '/dev/null'], 8).strip())
     if result.get('returnValue') is not True:
-        raise RuntimeError('TV service refused ' + method)
+        raise RuntimeError('TV service refused ' + method + (': ' + str(result['errorText']) if result.get('errorText') else ''))
     return result
 
 
@@ -171,13 +175,26 @@ def disable_rank():
 
 
 def disable():
+    # Every step is attempted: a registration left behind without the enabled
+    # marker makes the forwarder refuse every DTS stream in TV apps.
     (BASE / 'enabled').unlink(missing_ok=True)
-    stop()
-    disable_rank()
-    DROPIN.unlink(missing_ok=True)
-    run(['/bin/systemctl', 'daemon-reload'])
-    restore_declaration()
-    run(['/bin/systemctl', 'restart', 'umediaserver.service'])
+    errors = []
+    for step in (stop, disable_rank, lambda: DROPIN.unlink(missing_ok=True),
+                 lambda: run(['/bin/systemctl', 'daemon-reload']), restore_declaration,
+                 lambda: run(['/bin/systemctl', 'restart', 'umediaserver.service'])):
+        try:
+            step()
+        except Exception as error:
+            errors.append(str(error))
+    if errors:
+        raise RuntimeError('; '.join(errors))
+
+
+def disable_after(error):
+    try:
+        disable()
+    except Exception as cleanup:
+        raise RuntimeError(str(error) + '; cleanup also failed: ' + str(cleanup)) from None
 
 
 def enable():
@@ -209,8 +226,8 @@ def enable():
         run(['/bin/systemctl', 'daemon-reload'])
         run(['/bin/systemctl', 'restart', 'arccontroller.service'])
         run(['/bin/systemctl', 'restart', 'umediaserver.service'])
-    except Exception:
-        disable()
+    except Exception as error:
+        disable_after(error)
         raise
 
 
@@ -269,8 +286,8 @@ if __name__ == '__main__':
                     if (BASE / 'enabled').exists():
                         try:
                             enable()
-                        except Exception:
-                            disable()
+                        except Exception as error:
+                            disable_after(error)
                             raise
                 elif action == 'mode':
                     mode(sys.argv[2])

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /* Private O24 audio interfaces, pinned to the captured 33.31.68 image.
- * The initial build only audits these interfaces; it changes no audio state.
- * module layout is checked against the target's unmodified stock module. */
+ * Without NATIVE_APPLY the module only audits them; apply builds route a renderer
+ * to eARC output 3 under a producer lease. The layout is checked against the stock module. */
 #include "target.h"
 
 typedef unsigned long u64;
@@ -34,7 +34,7 @@ static int applied;
 static u32 lease = 1;
 static u32 restore_pcm;
 /* The eARC sample rate for the IEC 61937 carrier: 48000 for the DTS core,
- * 192000 for DTS-HD bursts (two channels, or eight for HBR). */
+ * 192000 for the eight-channel DTS-HD (HBR) carrier. */
 static u32 carrier_rate = 48000;
 static u32 hd_ready;
 static u32 original_clock_rate, original_clock_flag, original_channels, original_acmod;
@@ -382,12 +382,14 @@ int init_module(void) {
         block(restore_pcm ? "mixer" : "encoder", restore_pcm ? 0 : 3) != old_source_block ||
         output_edge(&current_source, &current_port) != 1 || current_source != old_source_block || current_port != 0) {
         mutex_unlock((void *)NATIVE_BM_MUTEX);
+        print("\0013gh_dts_native: refused; the eARC output route changed during start\n");
         return -16;
     }
     original_nonpcm = *(volatile u32 *)NATIVE_HAL_NONPCM;
     original_rate = *(volatile u32 *)NATIVE_HAL_RATE;
     if (original_nonpcm > 1 || (original_rate != 48000 && original_rate != 192000)) {
         mutex_unlock((void *)NATIVE_BM_MUTEX);
+        print("\0013gh_dts_native: refused; unexpected eARC baseline nonpcm=%u rate=%u\n", original_nonpcm, original_rate);
         return -22;
     }
     if (carrier_rate == 192000) {
@@ -400,6 +402,8 @@ int init_module(void) {
             (original_channels != 2 && original_channels != 6 && original_channels != 8) ||
             original_acmod > 7 || original_hal_mute != 0 || original_earc_on != 1) {
             mutex_unlock((void *)NATIVE_BM_MUTEX);
+            print("\0013gh_dts_native: refused HD baseline channels=%u acmod=%u mute=%u earc=%u\n",
+                  original_channels, original_acmod, original_hal_mute, original_earc_on);
             return -22;
         }
         hd_saved = 1;
@@ -478,7 +482,7 @@ static const struct target_parameter parameters[] __attribute__((section("__para
 #endif
 static const char module_license[] __attribute__((section(".modinfo"), used)) = "license=GPL";
 static const char module_vermagic[] __attribute__((section(".modinfo"), used)) = NATIVE_VERMAGIC;
-static const char module_description[] __attribute__((section(".modinfo"), used)) = "description=Glasshouse native DTS exact-target audio interface audit";
+static const char module_description[] __attribute__((section(".modinfo"), used)) = "description=Glasshouse native DTS exact-target eARC forwarding route";
 __asm__(".pushsection .plt,\"ax\",%progbits\n.byte 0\n.popsection\n"
         ".pushsection .init.plt,\"a\",%progbits\n.byte 0\n.popsection\n"
         ".pushsection .text.ftrace_trampoline,\"ax\",%progbits\n.byte 0\n.popsection\n");

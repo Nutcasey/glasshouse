@@ -63,7 +63,7 @@ functions = {'NATIVE_PRINTK': 'printk', 'NATIVE_BM_GET': 'bm_get_block_info_by_i
              'NATIVE_CONNECT_LOCKED': '_bm_connect_block_locked',
              'NATIVE_DISCONNECT_LOCKED': '_bm_disconnect_block_locked'}
 base = 0xffffffc010088000
-header = ['/* Generated only for the analysed Cinema G5 33.31.68 target. */']
+header = ['/* Generated only for the analysed OLED83G54LW 33.31.68 target. */']
 checks = []
 for macro, name in functions.items():
     location = address(name)
@@ -72,7 +72,7 @@ for macro, name in functions.items():
         raise SystemExit('Symbol outside captured kernel: ' + name)
     header.append('#define ' + macro + ' ' + hex(location) + 'UL')
     checks.append({'name': name, 'address': hex(location), 'bytes': data.hex()})
-# Recovered from the two stores in audio_hal_earc_set_output_format.
+# Data addresses recovered from the disassembly of the eARC HAL and block-manager functions on this image.
 header += ['#define NATIVE_HAL_NONPCM 0xffffffc01264d5c4UL',
            '#define NATIVE_HAL_CS0 0xffffffc01264d5b8UL',
            '#define NATIVE_HAL_CS2 0xffffffc01264d5c0UL',

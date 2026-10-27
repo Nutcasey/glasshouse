@@ -78,10 +78,20 @@ static gboolean hd_ready(void) {
     return length > 0 && ready[0] == '1';
 }
 
+/* LG's pipelines ignore GST_DEBUG, so a refusal before control.py runs, or a
+ * lost lease, is kept where control.py keeps its own (the next start deletes it). */
+static void record_failure(GstGhDts *self, const gchar *action, const gchar *why) {
+    gchar *json = g_strdup_printf("{\"action\":\"%s\",\"error\":\"%s\"}\n", action, why);
+    GST_WARNING_OBJECT(self, "native DTS %s: %s", action, why);
+    g_file_set_contents(BASE "/last-error.json", json, -1, NULL);
+    g_free(json);
+}
+
 static gpointer keep_route(gpointer data) {
     GstGhDts *self = data;
     while (!g_atomic_int_get(&self->stopping)) {
         if (!heartbeat(self)) {
+            record_failure(self, "lease", "the route lease was lost: the module is inactive or forwarding was disabled");
             g_atomic_int_set(&self->failed, 1);
             control(self, "stop", 0, -1);
             break;
@@ -133,21 +143,30 @@ static GstElement *find_native_sink(GstGhDts *self) {
 static gboolean acquire_route(GstGhDts *self) {
     gint index = -1;
     gboolean bypass = FALSE;
-    if (access(BASE "/enabled", R_OK)) return FALSE;
+    const gchar *why = "forwarding is disabled";
+    if (access(BASE "/enabled", R_OK)) goto failed;
+    why = "another stream owns the route";
     self->lock_fd = open(BASE "/stream.lock", O_CREAT | O_RDWR | O_CLOEXEC, 0600);
     if (self->lock_fd < 0 || flock(self->lock_fd, LOCK_EX | LOCK_NB)) goto failed;
+    why = "no single LG audiosink in the pipeline";
     self->sink = find_native_sink(self);
     if (!self->sink) goto failed;
     g_object_get(self->sink, "index", &index, "pcm-bypass", &self->previous_bypass, NULL);
+    why = "audiosink renderer index is not 0 or 1";
     if (index != 0 && index != 1) goto failed;
     g_object_set(self->sink, "pcm-bypass", TRUE, NULL);
     g_object_get(self->sink, "pcm-bypass", &bypass, NULL);
     /* LG creates its renderer when the raw output caps reach audiosink. */
-    if (!bypass || !gst_audio_decoder_negotiate(GST_AUDIO_DECODER(self)) || !control(self, "start", index, (gint)self->rate)) goto failed;
+    why = "audiosink refused pcm-bypass or the carrier caps";
+    if (!bypass || !gst_audio_decoder_negotiate(GST_AUDIO_DECODER(self))) goto failed;
+    /* control.py records its own reason when it refuses. */
+    why = NULL;
+    if (!control(self, "start", index, (gint)self->rate)) goto failed;
     self->owns_route = TRUE;
     self->lease = 1;
     self->ready = FALSE;
     self->gated_samples = 0;
+    why = "the started route is not active";
     if (!heartbeat(self)) goto failed;
     g_atomic_int_set(&self->failed, 0);
     g_atomic_int_set(&self->stopping, 0);
@@ -155,6 +174,7 @@ static gboolean acquire_route(GstGhDts *self) {
     GST_INFO_OBJECT(self, "Native DTS%s carrier on renderer %d", self->rate ? "-HD" : " core", index);
     return TRUE;
 failed:
+    if (why) record_failure(self, "acquire", why);
     release_route(self);
     return FALSE;
 }
@@ -220,7 +240,8 @@ static gboolean set_format(GstAudioDecoder *decoder, GstCaps *caps) {
 }
 
 static GstCaps *get_caps(GstAudioDecoder *decoder, GstCaps *filter) {
-    /* Compressed channel counts do not match the stereo carrier channel count. */
+    /* A compressed stream's channel count is unrelated to the carrier's (two
+     * for core, eight for HD), so downstream caps are not passed upstream. */
     GstCaps *caps = gst_pad_get_pad_template_caps(GST_AUDIO_DECODER_SINK_PAD(decoder));
     if (filter) {
         GstCaps *intersection = gst_caps_intersect_full(filter, caps, GST_CAPS_INTERSECT_FIRST);
@@ -230,7 +251,7 @@ static GstCaps *get_caps(GstAudioDecoder *decoder, GstCaps *filter) {
     return caps;
 }
 
-/* A frame is the core, plus its extension substream when DTS-HD is carried;
+/* A frame is the core, plus up to four extension substreams when DTS-HD is carried;
  * in core mode the extension is skipped by the next sync search. */
 static GstFlowReturn parse_frame(GstAudioDecoder *decoder, GstAdapter *adapter, gint *offset, gint *length) {
     GstGhDts *self = (GstGhDts *)decoder;
@@ -359,8 +380,9 @@ static void gst_gh_dts_init(GstGhDts *self) {
 static void gst_gh_dts_class_init(GstGhDtsClass *class) {
     GstElementClass *element = GST_ELEMENT_CLASS(class);
     GstAudioDecoderClass *decoder = GST_AUDIO_DECODER_CLASS(class);
-    /* x-private1-dts (MPEG-PS) carries a 4-byte substream header; parse_frame's sync search skips it. */
-    GstCaps *input = gst_caps_from_string("audio/x-dts; audio/x-private1-dts; audio/x-unknown,codec-id=(string)A_DTS");
+    /* audio/x-private1-dts is not claimed: MPEG-PS keeps a 4-byte substream
+     * header at each packet start, which lands inside frames that span packets. */
+    GstCaps *input = gst_caps_from_string("audio/x-dts; audio/x-unknown,codec-id=(string)A_DTS");
     GstCaps *output = gst_caps_from_string("audio/x-raw,format=(string)S16LE,channels=(int)2,rate=(int)48000,layout=(string)interleaved; "
         "audio/x-raw,format=(string)S16LE,channels=(int)8,rate=(int)192000,layout=(string)interleaved");
     gst_element_class_add_pad_template(element, gst_pad_template_new("sink", GST_PAD_SINK, GST_PAD_ALWAYS, input));

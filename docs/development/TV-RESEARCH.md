@@ -58,7 +58,7 @@ closed. These observations establish the native DTS-core route, not lossless
 DTS-HD forwarding or compatibility with every app.
 
 Native app playback uses a different starting graph from an idle TV. The
-Cinema G5 connected renderer_1_out0 to mixer_0_in1, then
+OLED83G54LW connected renderer_1_out0 to mixer_0_in1, then
 mixer_0_out0 to output_3_in0, whereas the idle trial used encoder3 as the
 output source. The native helper records and restores that source kind. It
 revalidates the exact source/port under the block-manager operation mutex
@@ -145,7 +145,7 @@ restored the original output clock. These muted trials establish transport
 and receiver identification, not an audible quality assessment or every app's
 compatibility.
 
-Plex Casino subsequently direct-played the original MA/DTS:X track without
+Plex subsequently direct-played Casino's original MA/DTS:X track without
 transcoding and retained receiver DTS:X through seek, a notification and a
 24-second pause/resume. Stop restored normal routing. Native media-service
 clips also completed with EOS restoration for MA stereo/5.1/7.1, HRA, ES,
@@ -166,7 +166,7 @@ On this G5, a whole-category `getSystemSettings` sound query returned digital
 output `auto`, while named queries for `soundOutputDigital` returned the
 actual `passThrough` value. Both answers were successful and repeated without
 a setting write between them. Using the category answer alone falsely blocked
-re-enabling the DTS helper. Audio status now prefers named output values and
+re-enabling the DTS helper. Audio status prefers named output values and
 retains the category answer as a fallback; sound rows request only keys found
 in the category response, avoiding unsupported keys on older TVs. These are
 reading changes, not changes to LG's sound settings.

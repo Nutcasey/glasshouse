@@ -1520,9 +1520,10 @@ function nativeDtsDescription(helper) {
     }
     return t('audio.overrideActive', 'The helper reports an active compressed forwarding route. Check the receiver’s incoming format to confirm DTS reception.');
   }
-  if (helper.running) return helper.mode === 'hd'
+  if (helper.running) return (helper.mode === 'hd'
     ? t('audio.nativeHdWaiting', 'Enabled for TV apps with DTS-HD MA and DTS:X forwarding over eARC.')
-    : t('audio.nativeWaiting', 'Enabled for TV apps using the shared audio pipeline. Forwards 48 kHz DTS core over eARC; DTS-HD extensions are not forwarded.');
+    : t('audio.nativeWaiting', 'Enabled for TV apps using the shared audio pipeline. Forwards 48 kHz DTS core over eARC; DTS-HD extensions are not forwarded.')) +
+    (helper.lastError ? ' ' + t('audio.nativeRefused', 'The last DTS stream was refused, so it did not play: {reason}', { reason: helper.lastError }) : '');
   return t('audio.overrideStopped', 'Enabled, but its service is not running. Disable the override before retrying.');
 }
 

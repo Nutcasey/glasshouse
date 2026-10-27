@@ -27,13 +27,18 @@ link set-up. Playback starts and recovers muted until that is in place. On
 release it restores the saved settings, or LG's current settings if another
 source has taken the output.
 Enabling sets the owned `TrueHD+dts` declaration, adds a volatile
-`umediaserver.service` plugin-path drop-in and restarts ARC and media playback.
+`umediaserver.service` plugin-path drop-in, bind-mounts a checked copy of
+`/etc/gst/gstcool.conf` that ranks the forwarder ahead of LG's DTS decoder
+proxy, and restarts ARC and media playback. The bind mount does not survive a
+reboot; the boot hook reapplies it while enabled.
 The package lives under `/var/lib/lg-dts-native`; its boot hook reapplies the
 registration while enabled. A kernel route exists only during DTS playback.
 A producer lease restores the previous route within 20 seconds of a stalled
 producer; normal stop and end-of-stream release it directly. Seeking retains
-the route. Disabling removes the registration, releases the route and restores
-the owned declaration.
+the route. While enabled, a DTS stream in a TV app without the eARC set-up is
+refused rather than handed back to LG's decoder. Disabling removes the
+registration and the bind mount, releases the route and restores the owned
+declaration.
 The declaration also affects HDMI capability reporting; this package qualifies
 native playback only. The original HDMI helper retains its separate compatibility
 checks.

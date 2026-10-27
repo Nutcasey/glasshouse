@@ -80,8 +80,8 @@ static inline int dts_hd_frame_size(const unsigned char *data, size_t length,
  * the DTS-HD start code and big-endian payload size precede the core and its
  * extension substream, and the repetition period follows the carrier rate
  * (192000 for two-channel 192 kHz, 768000 for eight-channel HBR).
- * Returns 0 if the complete payload cannot be carried; extensions are never
- * silently replaced by a core-only fallback. */
+ * Returns 0 for an unsupported rate or core byte order, or a payload too large
+ * for the burst; extensions are never silently replaced by a core-only fallback. */
 static inline unsigned int dts_hd_burst(const unsigned char *data, unsigned int total, const struct dts_core_frame *core,
                                         unsigned int rate, unsigned char *burst) {
     static const unsigned char start[10] = {1, 0, 0, 0, 0, 0, 0, 0, 0xfe, 0xfe};
