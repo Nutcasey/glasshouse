@@ -80,6 +80,13 @@ raw carrier and a native LG media-service clip. Plex Casino also direct-played i
 seek, a notification and a 24-second pause/resume. Ordinary ARC and other
 firmware remain unqualified.
 
+![Live Cinema G5 dashboard during native DTS-HD forwarding](../screenshots/audio-g5-native-hd.png)
+
+This capture is from the supported Cinema G5 during native HD playback. The
+status describes frames sent by the TV; receiver identification was checked
+separately. Active disable/re-enable, forced player termination, the next
+player's HD recovery and subsequent 48 kHz PCM output were also checked.
+
 The helper's upstream trial recorded DTS and DTS:X on that exact 77-inch G5,
 with a Ugoos SK1 source and Samsung HW-Q950A receiver. That result does not
 qualify the Glasshouse integration or a different G5 size, firmware or kernel.

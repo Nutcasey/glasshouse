@@ -156,3 +156,10 @@ HRA (Queen), ES 6.1 (U2), plain DTS (Babylon 5), DTS 96/24 and 96 kHz MA
 qualify ES or IMAX-specific receiver processing. The 96/24 test retains the
 original file's 48 kHz Matroska sampling-frequency field; a remux with that
 field changed to 96 kHz was refused by uMS, although gst-launch played it.
+
+
+HD lifecycle checks also covered disabling the active route from the dashboard,
+re-enabling with the HD preference retained, killing only the test media
+pipeline, restoring LG's route, and automatically removing its orphaned module
+when the next player acquired HD output. A subsequent native 48 kHz PCM clip
+reached the receiver as PCM with no DTS module or forwarding route active.

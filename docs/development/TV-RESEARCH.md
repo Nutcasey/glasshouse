@@ -171,6 +171,13 @@ retains the category answer as a fallback; sound rows request only keys found
 in the category response, avoiding unsupported keys on older TVs. These are
 reading changes, not changes to LG's sound settings.
 
+With the current-settings reading corrected, the live dashboard disabled an
+active HD stream and re-enabled the selected HD mode. ARC reconnection needed
+a settling interval after the service restart. A forcibly killed native media
+pipeline returned output3 to LG's route; its idle orphaned module was removed
+when the next player acquired HD output. A subsequent native PCM Matroska clip
+reached the receiver as PCM at 48 kHz with no DTS module active.
+
 ## Audio declarations and the negotiated link (G3, webOS 9.2.2)
 
 OLED55G36LA, firmware 23.25.55, kernel `5.4.268-320`, read on 25 October 2026:

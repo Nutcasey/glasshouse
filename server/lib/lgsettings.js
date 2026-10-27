@@ -293,8 +293,8 @@ function collect(section, cb) {
       if (!keys.length) return next();
       if (cat !== 'sound') return describe(cat, keys);
       // The sound category read whole can lag a change: a G5 on webOS 10.3
-      // reported Digital Sound Output as auto there and passThrough, as its
-      // menu showed, when the key was named. Only keys the whole read
+      // reported Digital Sound Output as auto there and passThrough when the
+      // key was named. Only keys the whole read
       // returned are named, so no TV is asked for one it lacks.
       lunaCached('com.webos.service.settings/getSystemSettings', { category: cat, keys: keys }, 30000, function (now) {
         var current = (now && now.returnValue !== false && now.settings) || {};
