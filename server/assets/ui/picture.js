@@ -67,7 +67,7 @@ function renderPicture(d, fromPoll) {
   // A poll that finds nothing new leaves the page alone, and one that does
   // waits while a control is in use, so a slider is not redrawn under a drag.
   const shown = JSON.stringify([d.rows, d.dimension, d.writable]);
-  if (shown === pictureShown) return;
+  if (fromPoll && shown === pictureShown) return;
   if (fromPoll && document.activeElement && document.activeElement.closest('#picpane select, #picpane input')) return;
   pictureShown = shown;
 

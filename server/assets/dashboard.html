@@ -1552,6 +1552,7 @@ function lgNumber(g, v) {
  * Until then a poll leaves the rows alone.
  */
 var adjustTimer = null;
+var adjustPending = [];
 function adjustRow(step) {
   var r = rows[sel];
   var next = Math.max(r.min, Math.min(r.max, r.cur + step));
@@ -1559,11 +1560,22 @@ function adjustRow(step) {
   r.cur = next;
   r.value = lgNumber(r, next);
   render();
+  if (adjustPending.indexOf(r) === -1) adjustPending.push(r);
   clearTimeout(adjustTimer);
-  adjustTimer = setTimeout(function () {
+  adjustTimer = setTimeout(flushAdjustments, 450);
+}
+
+function flushAdjustments() {
+  if (busy) {
+    adjustTimer = setTimeout(flushAdjustments, 50);
+    return;
+  }
+  var r = adjustPending.shift();
+  if (!r) {
     adjustTimer = null;
-    send({ action: 'lgSetting', value: { id: r.key, value: r.cur } });
-  }, 450);
+    return fetchTab(true);
+  }
+  send({ action: 'lgSetting', value: { id: r.key, value: r.cur } }, null, flushAdjustments);
 }
 
 /*
@@ -2576,7 +2588,7 @@ function awaitRestart(targetVer, doneLabel) {
   }, 1500);
 }
 
-function send(body, note) {
+function send(body, note, done) {
   busy = true;
   fetch('/api/control', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -2584,11 +2596,12 @@ function send(body, note) {
   }).then(function (r) { return r.json().catch(function () { return {}; }); })
     .then(function (res) {
       busy = false;
-      if (res && res.ok === false) { flash(res.error || t('tv.failed', 'That did not work')); return fetchTab(true); }
+      if (res && res.ok === false) { flash(res.error || t('tv.failed', 'That did not work')); return done ? done() : fetchTab(true); }
       if (note) flash(note);
-      fetchTab(true);
+      if (done) done();
+      else fetchTab(true);
     })
-    .catch(function () { busy = false; flash(t('tv.failed', 'That did not work')); });
+    .catch(function () { busy = false; flash(t('tv.failed', 'That did not work')); if (done) done(); });
 }
 
 function sendPost(url, body, note) {

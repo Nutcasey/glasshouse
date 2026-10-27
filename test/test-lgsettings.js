@@ -210,6 +210,13 @@ assert.deepEqual(picWrites[1], { category: 'picture', settings: { contrast: 81 }
 lgs.set('contrast', 101, function (r) { assert.strictEqual(r.ok, false); });
 lgs.set('energySaving', 'screen_off', function (r) { assert.strictEqual(r.ok, false); });
 lgs.set('gamma', 'low', function (r) { assert.strictEqual(r.ok, false); });
+picDesc.contrast.ui = { visible: false };
+lgs.set('contrast', 80, function (r) { assert.strictEqual(r.ok, false); });
+delete picDesc.contrast.ui;
+picDesc.superResolution.values.arrayExt[1].active = false;
+lgs.set('superResolution', 'low', function (r) { assert.strictEqual(r.ok, false); });
+delete picDesc.superResolution.values.arrayExt[1].active;
+assert.strictEqual(picWrites.length, 2, 'hidden settings and inactive choices are not written');
 lgs.set('pictureMode', 'hdrCinema', function (r) { assert.strictEqual(r.ok, false); });
 lgs.set('pictureMode', 'vivid', function (r) { assert.strictEqual(r.ok, true); });
 assert.deepEqual(picWrites[2], { category: 'picture', settings: { pictureMode: 'vivid' } });

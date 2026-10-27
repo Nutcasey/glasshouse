@@ -564,7 +564,7 @@ function choicesFor(r, desc) {
   var shown = desc && desc.arrayExt;
   if (!shown) return r.choices;
   var visible = shown.filter(function (c) {
-    return c.visible !== false && !(r.exclude && r.exclude.indexOf(c.value) !== -1);
+    return c.visible !== false && c.active !== false && !(r.exclude && r.exclude.indexOf(c.value) !== -1);
   });
   if (r.section === 'picture') {
     return visible.map(function (c) { return { value: c.value, label: labelFor(r, c.value) }; });
@@ -697,6 +697,7 @@ function set(id, value, cb) {
     luna('com.webos.service.settings/getSystemSettingDesc', ask, function (d) {
       var x = d && d.results && d.results[0];
       var desc = x && x.key === r.key ? describe(x) : null;
+      if (r.hideable && desc && !desc.visible) return cb(inactive);
       var stored = valueToStore(r, value, desc);
       if (stored === undefined) return cb({ ok: false, error: msg('srv.lgsettings.badValue', 'That value is not one this setting takes') });
       var settings = {};

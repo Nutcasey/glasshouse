@@ -18,6 +18,9 @@ are gone from the TV app's System tab, and a failed read leaves no stale
 readings. The web tab removes stale controls after a failed read and restores
 them after a successful retry.
 
+`test-lgsettings.js` checks that picture writes refuse hidden settings and
+inactive choices, alongside locked rows and values outside the TV's range.
+
 [`checks.yml`](https://github.com/rorygallagher2024/glasshouse/blob/main/.github/workflows/checks.yml) runs these on each pull request and each merge to main.
 
 | Check | What it catches |
