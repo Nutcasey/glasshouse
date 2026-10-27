@@ -139,4 +139,88 @@ lgs.ROWS.filter(function (x) { return x.id === 'soundOutput'; })[0].choices.forE
 });
 console.log('  ✓ the sound outputs have the names module\'s English');
 
+
+// 6. Picture: what the TV describes decides the rows, their values and ranges
+var pic = {
+  picture: { pictureMode: 'cinema', contrast: 85, backlight: '80', energySaving: 'off', superResolution: 'off',
+    hdrDynamicToneMapping: 'on', blackLevel: { ntsc: 'auto', pal: 'auto' }, skinColor: '0', edgeEnhancer: 'on',
+    pictureSettingModified: { cinema: false, vivid: true } },
+  aspectRatio: { arcMenuBySystem: 'off' }
+};
+var picDesc = {
+  pictureMode: { values: { arrayExt: [{ value: 'vivid' }, { value: 'cinema' }, { value: 'hdrCinema', visible: false }] } },
+  contrast: { values: { range: { min: 0, max: 100, interval: 1 } } },
+  energySaving: { values: { arrayExt: [{ value: 'auto' }, { value: 'off' }, { value: 'screen_off' }] } },
+  superResolution: { values: { arrayExt: [{ value: 'off' }, { value: 'low' }, { value: 'ultra' }] } },
+  hdrDynamicToneMapping: { values: { arrayExt: [{ value: 'on' }, { value: 'off' }] }, ui: { visible: false } },
+  truMotionMode: { values: { arrayExt: [{ value: 'off' }, { value: 'cinemaClear' }] } },
+  gamma: { values: { arrayExt: [{ value: 'low' }] }, ui: { active: false } },
+  skinColor: { values: { range: { min: -5, max: 5 } } },
+  backlight: { values: { range: { min: 0, max: 100 } } }
+};
+var picWrites = [], asked = [], onScreen = 'default';
+function picDescribe(payload) {
+  return { returnValue: false, results: payload.keys.filter(function (k) { return picDesc[k]; })
+    .map(function (k) { return { key: k, values: picDesc[k].values, ui: picDesc[k].ui || {} }; }) };
+}
+function picRead(payload) {
+  asked.push(payload);
+  if (payload.app_id) return { returnValue: true, settings: payload.app_id === 'com.webos.app.hdmi4' ? { truMotionMode: 'off', arcPerApp: 'original' } : {} };
+  return { returnValue: true, settings: pic[payload.category] || {}, dimension: { input: onScreen, pictureMode: 'cinema' } };
+}
+lgs.init({
+  lunaCached: function (uri, payload, ttl, cb) {
+    if (/getForegroundAppInfo$/.test(uri)) return cb({ appId: 'com.webos.app.hdmi4' });
+    cb(/Desc$/.test(uri) ? picDescribe(payload) : picRead(payload));
+  },
+  luna: function (uri, payload, cb) {
+    if (/getForegroundAppInfo$/.test(uri)) return cb({ appId: 'com.webos.app.hdmi4' });
+    if (/Desc$/.test(uri)) return cb(picDescribe(payload));
+    if (/getSystemSettings$/.test(uri)) return cb(picRead(payload));
+    picWrites.push(payload);
+    cb({ returnValue: true });
+  },
+  clearLunaCache: function () {}
+});
+lgs.collect('picture', function (r) {
+  var by = {};
+  r.rows.forEach(function (x) { by[x.id] = x; });
+  assert.deepEqual(by.pictureMode.choices.map(function (c) { return c.label; }), ['Vivid', 'Cinema']);
+  assert.deepEqual([by.contrast.min, by.contrast.max], [0, 100]);
+  assert.deepEqual(by.energySaving.choices.map(function (c) { return c.value; }), ['auto', 'off']);
+  assert.deepEqual(by.superResolution.choices.map(function (c) { return c.label; }), ['Off', 'Low', 'Ultra']);
+  assert.strictEqual(by.skinColor.value, 0);
+  assert.strictEqual(by.backlight.value, 80, 'a number kept as text reads as a number');
+  assert.strictEqual(by.hdrDynamicToneMapping, undefined, 'a setting LG hides is left out');
+  assert.strictEqual(by.blackLevel, undefined, 'an app\'s Video Range, kept per colour system, is left out');
+  assert.strictEqual(by.edgeEnhancer, undefined, 'a key the TV keeps but does not describe is left out');
+  assert.strictEqual(by.truMotionMode.value, 'off');
+  assert.strictEqual(by.arcPerApp.value, 'original');
+  assert.deepEqual(r.dimensions.picture, { input: 'default', pictureMode: 'cinema' });
+  assert.ok(asked.some(function (a) { return a.category === 'aspectRatio' && a.app_id === 'com.webos.app.hdmi4'; }));
+});
+console.log('  ✓ picture rows take their choices, ranges and visibility from the TV');
+
+// LG marks the mode as adjusted, as its own app does, and only once
+lgs.set('contrast', 80, function (r) { assert.strictEqual(r.ok, true); });
+assert.deepEqual(picWrites[0], { category: 'picture', settings: { contrast: 80, pictureSettingModified: { cinema: true, vivid: true } } });
+pic.picture.pictureSettingModified.cinema = true;
+lgs.set('contrast', 81, function (r) { assert.strictEqual(r.ok, true); });
+assert.deepEqual(picWrites[1], { category: 'picture', settings: { contrast: 81 } });
+lgs.set('contrast', 101, function (r) { assert.strictEqual(r.ok, false); });
+lgs.set('energySaving', 'screen_off', function (r) { assert.strictEqual(r.ok, false); });
+lgs.set('gamma', 'low', function (r) { assert.strictEqual(r.ok, false); });
+lgs.set('pictureMode', 'hdrCinema', function (r) { assert.strictEqual(r.ok, false); });
+lgs.set('pictureMode', 'vivid', function (r) { assert.strictEqual(r.ok, true); });
+assert.deepEqual(picWrites[2], { category: 'picture', settings: { pictureMode: 'vivid' } });
+console.log('  ✓ picture writes mark the mode, and refuse values, ranges and locks the TV does not allow');
+
+// Per-app settings are written for the app on screen, and Gallery is left alone
+lgs.set('truMotionMode', 'cinemaClear', function (r) { assert.strictEqual(r.ok, true); });
+assert.deepEqual(picWrites[3], { category: 'picture', settings: { truMotionMode: 'cinemaClear' }, current_app: true });
+onScreen = 'gallery';
+lgs.set('contrast', 70, function (r) { assert.strictEqual(r.ok, false); });
+assert.strictEqual(picWrites.length, 4);
+console.log('  ✓ per-app settings are written as LG writes them, and Gallery is not changed');
+
 console.log('ALL test-lgsettings.js assertions passed!\n');
