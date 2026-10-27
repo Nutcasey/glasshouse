@@ -1640,3 +1640,15 @@ item with `position: absolute` children and no in-flow height collapses to 0 px.
 CSS transitions and transforms similarly require `-webkit-transition`,
 `-webkit-transform`, and `element.style.webkitTransform` in script (#746).
 
+
+## Installing Glasshouse's own package (G3, webOS 9.2.2)
+
+- `appInstallService/dev/install` with `ipkUrl` set to a local `.ipk` of
+  `io.github.rorygallagher2024.lg-webos-dashboard` replaced the app in about
+  1.5 s, with the server, run from `/var/lib/tvweb`, left running. The package
+  has no services, so nothing lost root.
+- The app was open at the time and the install closed it; the TV went back to
+  Home.
+- Network-input key codes (`networkinput/test/sendKeyCode`) did not reach the
+  Glasshouse app's page; key events written to the remote's input device
+  (`LGE RCU`) did.

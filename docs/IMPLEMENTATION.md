@@ -1131,6 +1131,8 @@ log shows, while a parse error leaves no process to log anything.
 
 The in-place updater (`server/lib/updater.js`) downloads the release tarball from GitHub directly onto the TV and unpacks it over `/var/lib/tvweb/` without needing a computer or `deploy.sh`.
 
+On a Homebrew Channel install, server files unpacked over `/var/lib/tvweb/` would be taken back to the app's copy, so the updater installs the release's package instead: it reads `<id>.manifest.json` from the release, downloads the `.ipk` it names to `/media/developer/temp/glasshouse-update`, checks the sha256, installs it with `appInstallService/dev/install` (`installer.installOwnPackage`), and runs the new `payload/install.sh` detached, which moves the server over and restarts it. The package carries no services, so `dev/install` costs it no root, and the server keeps running from `/var/lib/tvweb/` until that script restarts it. `dev/install` closes the app while it is open. `--force` still takes the tarball path.
+
 ### Download Client Probing
 The download requires `curl` or `wget` on the TV. LG's stock `/usr/bin/curl` reaches GitHub on tested TVs, but third-party tools or stripped setups might place modern clients in non-standard paths. To ensure reliable downloads across webOS generations, the updater probes executable binaries in prioritized order:
 
@@ -1162,7 +1164,7 @@ The call is `luna://com.webos.appInstallService/dev/install` with `{id, ipkUrl: 
 
 **`luna-send` is spawned directly, not through `luna.Subscription`.** The subscription's close handler reconnects, and a reconnect would issue the install a second time. The child is killed on success, failure, timeout and server exit. The service keeps working after `luna-send` is given up on, so a timeout (120 s) checks `listApps` for the expected version before reporting a failure. Cancelling is possible only before the install starts; killing `luna-send` does not stop one in progress.
 
-**`dev/install` kills the package's services.** The Homebrew Channel and the dashboard's own package would lose root that way, so the installer refuses both and leaves them to update themselves.
+**`dev/install` kills the package's services.** The Homebrew Channel would lose root that way, so the installer refuses it and the dashboard's own package; the updater installs the latter itself, as above.
 
 ### Root
 

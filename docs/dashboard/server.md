@@ -14,7 +14,7 @@ Shows the installed version and whether a newer release is out. **Check now** lo
 
 **Check for updates daily** looks once a day on its own, and lets Home Assistant offer the update.
 
-**Update pop-up** shows a pop-up in the browser it is switched on in when a newer release is out, over whichever tab is open, with the release's one-line summary. **Update** installs it the way **Install** does, with its progress in the pop-up, and **Dismiss** leaves it until the next release. It is off by default and kept per browser. Where the update cannot be installed from the dashboard, because controls are off or the Homebrew Channel owns the install, the pop-up only says it is out.
+**Update pop-up** shows a pop-up in the browser it is switched on in when a newer release is out, over whichever tab is open, with the release's one-line summary. **Update** installs it the way **Install** does, with its progress in the pop-up, and **Dismiss** leaves it until the next release. It is off by default and kept per browser. Where controls are off, the pop-up only says it is out.
 
 **Server health** shows the background process uptime and memory footprint on the TV.
 

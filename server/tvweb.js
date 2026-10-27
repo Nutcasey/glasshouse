@@ -761,6 +761,17 @@ function hbcAppDir() {
   return readTrimmed(HBC_MARK) || HBC_APP_DEFAULT;
 }
 
+// Detached: it restarts the server once the files are in place.
+function runHomebrewChannelInstaller() {
+  try {
+    child_process.spawn('/bin/sh', [path.join(hbcAppDir(), 'payload/install.sh')], {
+      detached: true, stdio: 'ignore'
+    }).unref();
+  } catch (e) {
+    console.error('update: could not run the app\'s installer: ' + e.message);
+  }
+}
+
 function checkHomebrewChannelApp() {
   if (!fromHomebrewChannel()) return;
   var dir = hbcAppDir();
@@ -773,13 +784,7 @@ function checkHomebrewChannelApp() {
     if (!carried || carried === hbcTried || !updater.verNewer(carried, TVWEB_VERSION)) return;
     hbcTried = carried;
     console.log('update: the Homebrew Channel app carries v' + carried + ', installing it');
-    try {
-      child_process.spawn('/bin/sh', [path.join(dir, 'payload/install.sh')], {
-        detached: true, stdio: 'ignore'
-      }).unref();
-    } catch (e) {
-      console.error('update: could not run the app\'s installer: ' + e.message);
-    }
+    runHomebrewChannelInstaller();
     return;
   }
   if (!fs.existsSync(path.dirname(dir)) || ++hbcMissing < 2) return;
@@ -881,7 +886,9 @@ updater.init({
   installDir: __dirname,
   writeSettings: routes.writeSettings,
   viaHomebrewChannel: fromHomebrewChannel,
-  installerBusy: installer.isWorking
+  installerBusy: installer.isWorking,
+  installPackage: installer.installOwnPackage,
+  afterPackage: runHomebrewChannelInstaller
 });
 
 // Bare in the user agent: a catalog has no use for the commit.
@@ -1199,7 +1206,6 @@ function setupHomeAssistant() {
       lgRows: lgsRows,
       allowPower: CONFIG.allowPower,
       isOled: oled.getIsOled(),
-      updatesElsewhere: fromHomebrewChannel(),
       piccap: piccapWanted() && piccap.getState() !== null,
       huesync: huesyncWanted() && huesync.getState() !== null,
       iconBaseUrl: iconServer.baseUrl()
@@ -1955,6 +1961,8 @@ if (CLI_MODE === 'check') {
   updater.installUpdate({ force: CLI_FORCE }, function (r) {
     if (!r.ok) { console.error(r.error); process.exit(1); }
     if (!r.updated) { console.log(r.note + ' (v' + r.installed + ')'); process.exit(3); }
+    // The app's installer restarts the server itself, after moving the files.
+    if (r.restarting) { console.log('installed the v' + r.latest + ' package; its installer restarts the server'); process.exit(3); }
     console.log('installed v' + r.latest + ' over v' + r.installed + ', ' + r.files + ' files');
     process.exit(0);
   });

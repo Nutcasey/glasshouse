@@ -51,8 +51,6 @@ function renderUpdate(d) {
     : t('server.state.unchecked', 'not checked');
 
   desc.textContent = !d.available ? ''
-    : d.viaHomebrewChannel
-    ? t('server.available.hbc', 'v{version} is out. Update Glasshouse in the Homebrew Channel, or sideload the latest .ipk from GitHub releases.', { version: d.latest })
     : t('server.available', 'v{version} is out. Installing it replaces the server and restarts it.', { version: d.latest });
   desc.hidden = !d.available;
   renderWhatsNew(d);
@@ -168,7 +166,7 @@ function renderUpdate(d) {
 
   chk.hidden = !d.writable;
   chk.disabled = working || updBusy;
-  inst.hidden = !(d.available && d.writable && !d.viaHomebrewChannel);
+  inst.hidden = !(d.available && d.writable);
   inst.disabled = working || updBusy;
   inst.textContent = t('server.install', 'Install v{version}', { version: d.latest });
   inst.dataset.v = d.latest || '';
@@ -499,7 +497,7 @@ function offerUpdatePopup(d) {
 
 function showUpdatePopup(d) {
   const box = q('updpop');
-  const canInstall = d.writable && !d.viaHomebrewChannel;
+  const canInstall = d.writable;
   box.dataset.v = d.latest;
   q('updpop-title').textContent = t('server.popup.title', 'v{version} is out', { version: d.latest });
   // The release's own one-line summary, written to be read at a glance.
@@ -507,9 +505,7 @@ function showUpdatePopup(d) {
   const latest = news.find(r => r.version === d.latest) || news[0];
   q('updpop-summary').textContent = latest ? latest.summary : '';
   q('updpop-summary').hidden = !latest;
-  q('updpop-desc').textContent = d.viaHomebrewChannel
-    ? t('server.popup.desc.hbc', 'Update Glasshouse in the Homebrew Channel, or sideload the latest .ipk from GitHub releases.')
-    : !d.writable
+  q('updpop-desc').textContent = !d.writable
     ? t('server.popup.desc.noControls', 'Controls are turned off in the config, so it cannot be installed from here.')
     : t('server.popup.desc', 'Installing it replaces the server and restarts it. The previous version stays on the TV for rollback.');
   q('updpop-from').textContent = 'v' + d.installed;

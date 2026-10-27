@@ -1247,6 +1247,19 @@ function recover() {
 
 /* --------------------------------------------------------------- init */
 
+/*
+ * Glasshouse's own package, for the updater, which has checked it against the
+ * release's checksum. Outside checkIds: Glasshouse has no services for
+ * dev/install to strip of root, and its server runs from /var/lib/tvweb, so
+ * the install leaves it running.
+ */
+function installOwnPackage(file, version, cb) {
+  if (isBusy()) return cb(new Error(msg('srv.install.busy', 'an install is already in progress')));
+  var id = SELF_UPDATING[1];
+  runInstall({ file: file, info: { package: id, version: version, apps: [{ id: id, version: version }] } },
+    function (err) { cb(err ? new Error(err) : null); });
+}
+
 function init(opts) {
   opts = opts || {};
   if (job && job.timer) clearTimeout(job.timer);
@@ -1287,6 +1300,7 @@ module.exports = {
   releaseUpload: releaseUpload,
   touchUpload: touchUpload,
   recover: recover,
+  installOwnPackage: installOwnPackage,
   SELF_UPDATING: SELF_UPDATING,
   NAME_RE: NAME_RE,
   cmpVer: cmpVer,

@@ -1419,14 +1419,10 @@ function buildEntities(opts) {
     var updatePayload = {
       name: 'Server Update',
       state_topic: topic.update,
-      icon: 'mdi:package-up'
+      icon: 'mdi:package-up',
+      command_topic: topic.command('update'),
+      payload_install: 'install'
     };
-    // Without a command topic Home Assistant shows the release but no Install
-    // button, which is right where the Homebrew Channel does the updating.
-    if (!opts.updatesElsewhere) {
-      updatePayload.command_topic = topic.command('update');
-      updatePayload.payload_install = 'install';
-    }
     entities.push({ type: 'update', id: 'server_update', payload: updatePayload });
 
     if (opts.allowPower) {

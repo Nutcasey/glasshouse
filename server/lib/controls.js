@@ -928,7 +928,8 @@ function doControl(action, value, cb) {
 
     case 'update':
       return updater.installUpdate(function (r) {
-        if (r && r.ok && r.updated) {
+        // A package update's own installer restarts the server once its files are in.
+        if (r && r.ok && r.updated && !r.restarting) {
           setTimeout(function () {
             if (!doRestartSelf()) console.error('update: no tvwebctl found - restart manually to apply');
           }, 600);
