@@ -888,7 +888,9 @@ updater.init({
   viaHomebrewChannel: fromHomebrewChannel,
   installerBusy: installer.isWorking,
   installPackage: installer.installOwnPackage,
-  afterPackage: runHomebrewChannelInstaller
+  // Marked as tried so the periodic check does not start a second installer
+  // run over the same staging directory while this one is copying.
+  afterPackage: function (ver) { hbcTried = ver; runHomebrewChannelInstaller(); }
 });
 
 // Bare in the user agent: a catalog has no use for the commit.

@@ -55,9 +55,10 @@ var publishDiscoveryFn = null;
 var viaHomebrewChannel = function () { return false; };
 var installerBusy = function () { return false; };
 // installPackage(file, version, cb(err)) puts an .ipk in place with the TV's
-// app installer; afterPackage() runs the app's own installer, which moves the
-// server over and restarts it.
+// app installer; afterPackage(version) runs the app's own installer, which
+// moves the server over and restarts it.
 var installPackageFn = null;
+/** @type {(version: string) => void} */
 var afterPackageFn = function () {};
 var packageStageDir = '/media/developer/temp/glasshouse-update';
 var updateFirstTimer = null;
@@ -369,7 +370,7 @@ function installReleasePackage(ver, done) {
             rmrf(packageStageDir, function () {
               setUpdateState('installed');
               console.log('update: installed the v' + ver + ' package over v' + shownVersion);
-              afterPackageFn();
+              afterPackageFn(ver);
               done({ ok: true, updated: true, installed: currentVersion, latest: ver, restarting: true });
             });
           });
