@@ -19,7 +19,7 @@
  * first 4096 bytes of a downloaded tvweb.js for this line (up to 0.82.2), and
  * refuses a release where it is further down (#586).
  */
-var TVWEB_VERSION = '0.118.0';
+var TVWEB_VERSION = '0.120.0';
 
 var http = require('http');
 var fs = require('fs');
@@ -49,6 +49,7 @@ var privacy = require('./lib/privacy');
 var devtools = require('./lib/devtools');
 var oled = require('./lib/oled');
 var screensavers = require('./lib/screensavers');
+var idlesaver = require('./lib/idlesaver');
 var appsModule = require('./lib/apps');
 var iconServer = require('./lib/iconserver');
 var samrescan = require('./lib/samrescan');
@@ -56,6 +57,7 @@ var servicesModule = require('./lib/services');
 var preload = require('./lib/preload');
 var quickAccess = require('./lib/quickaccess');
 var remoteKeys = require('./lib/remotekeys');
+var clockFormat = require('./lib/clock');
 var homeScreen = require('./lib/homescreen');
 /*
  * Glasshouse Home is loaded apart from the rest: one of its files missing from
@@ -87,6 +89,8 @@ var say = require('./lib/say');
 var lgSettings = require('./lib/lgsettings');
 var game = require('./lib/game');
 var piccapTransport = require('./lib/piccap');
+var audioCapabilities = require('./lib/audio');
+var huesyncTransport = require('./lib/huesync');
 var remotebuttons = require('./lib/remotebuttons');
 var logsModule = require('./lib/logs');
 var syslogForwarder = require('./lib/syslog');
@@ -94,6 +98,7 @@ var ntpClient = require('./lib/ntp');
 var history = require('./lib/history');
 var sshKeys = require('./lib/sshkeys');
 var screentime = require('./lib/screentime');
+var saverPowerOff = require('./lib/saverpoweroff');
 var remoteBattery = require('./lib/remotebattery');
 var backup = require('./lib/backup');
 var power = require('./lib/power');
@@ -223,6 +228,9 @@ var CONFIG = {
   // PicCap is offered where it is installed; its Home Assistant entity is
   // switched off like any other.
   piccap: { pollIntervalMs: 30000 },
+
+  // Hue Sync likewise: offered where its app is installed.
+  huesync: { pollIntervalMs: 30000 },
 
   // Home Assistant & MQTT Integration
   mqtt: {
@@ -523,6 +531,7 @@ var LIVE_STALE = {
 };
 
 lgSettings.init({ luna: luna, lunaCached: lunaCached, clearLunaCache: clearLunaCache });
+audioCapabilities.init({ luna: luna, lunaCached: lunaCached, hdmiReceiverMap: telemetry.hdmiReceiverMap });
 game.init({ lunaCached: lunaCached, inputKey: telemetry.inputKey });
 privacy.init({ luna: luna, lunaCached: lunaCached, config: CONFIG, lgSettings: lgSettings, services: servicesModule });
 oled.init({ luna: luna, config: CONFIG });
@@ -536,10 +545,13 @@ remoteKeys.init({ luna: luna, subscription: lunaTransport.Subscription, services
 homeScreen.init({ luna: luna, config: CONFIG, inputNames: telemetry.inputNameMap, stateDir: __dirname, webosVersion: telemetry.detectWebosVersion() });
 // webOS 10's layout is an overlay mount, gone after a restart of the TV.
 homeScreen.reapply();
+// The TV's own 12 or 24 hour setting, for every clock Glasshouse draws. A
+// change restages a clock screen saver, which has it written into its file.
+clockFormat.init({ luna: luna, onChange: function () { screensavers.restageScreensaver(); } });
 screensavers.init({
   luna: luna,
+  hour12: clockFormat.hour12,
   webosVersion: telemetry.detectWebosVersion(),
-  assetPath: assetPath,
   config: CONFIG,
   injectKey: controls.injectKey,
   KEY_BACK: controls.KEY_BACK,
@@ -547,6 +559,7 @@ screensavers.init({
   watchKeys: function (on) { if (!on || remotebuttons.isSupported()) remotebuttons.want('screensaver', on); },
   mediaState: telemetry.readMediaState
 });
+idlesaver.init({ luna: luna, mediaState: telemetry.readMediaState });
 telemetry.init({
   luna: luna,
   lunaCached: lunaCached,
@@ -557,6 +570,7 @@ telemetry.init({
   game: game,
   power: power,
   remoteBattery: remoteBattery,
+  home: glasshouseHome,
   tvwebVersion: TVWEB_DISPLAY_VERSION
 });
 
@@ -597,6 +611,24 @@ var piccap = piccapTransport.init({
   onAvailableChange: function () { piccapChanged(); }
 });
 
+// Set once MQTT is up: Hue Sync appearing or going changes the discovery.
+var huesyncChanged = function () {};
+/*
+ * Asks Hue Sync only where its app is installed, and for Home Assistant only
+ * while its Hue Sync entity is wanted: each check starts a luna-send.
+ */
+function huesyncWanted() {
+  var ents = (CONFIG.mqtt && CONFIG.mqtt.entities) || {};
+  var off = ents.disabled || [];
+  return ents.controls !== false && off.indexOf('huesync') === -1 && off.indexOf('switch.huesync') === -1;
+}
+var huesync = huesyncTransport.init({
+  luna: luna,
+  pollIntervalMs: CONFIG.huesync && CONFIG.huesync.pollIntervalMs,
+  wanted: huesyncWanted,
+  onAvailableChange: function () { huesyncChanged(); }
+});
+
 var notificationState = notifications.init({ luna: luna });
 
 // ---------------------------------------------------------------- controls
@@ -628,6 +660,7 @@ controls.init({
   luna: luna,
   lunaUrgent: lunaTransport.callUrgent,
   piccap: piccap,
+  huesync: huesync,
   clearLunaCache: clearLunaCache,
   config: CONFIG,
   telemetry: telemetry,
@@ -880,7 +913,10 @@ function appsChanged() {
 
 routes.init({
   config: CONFIG,
+  audio: audioCapabilities,
+  clock: clockFormat,
   piccapStatus: piccap.status,
+  huesyncStatus: huesync.status,
   repo: repo,
   installer: installer,
   prometheus: prometheus,
@@ -1086,8 +1122,12 @@ function setupHomeAssistant() {
   });
   activeMqttClient = mqttClient;
   piccap.attachMqtt({ client: mqttClient, prefix: pfx, allowControl: CONFIG.allowControl });
+  huesync.attachMqtt({ client: mqttClient, prefix: pfx, allowControl: CONFIG.allowControl });
   piccapChanged = function () {
     requestDiscoveryRepublish('PicCap status');
+  };
+  huesyncChanged = function () {
+    requestDiscoveryRepublish('Hue Sync status');
   };
   republishDiscovery = function () {
     requestDiscoveryRepublish('configuration');
@@ -1153,6 +1193,7 @@ function setupHomeAssistant() {
     var entities = ha.buildEntities({
       pfx: pfx,
       installedApps: telemetry.getInstalledApps(),
+      inputNames: telemetry.inputNameMap,
       pictureModes: telemetry.getPictureModes(),
       soundOutputs: telemetry.getSoundOutputs(),
       lgRows: lgsRows,
@@ -1160,6 +1201,7 @@ function setupHomeAssistant() {
       isOled: oled.getIsOled(),
       updatesElsewhere: fromHomebrewChannel(),
       piccap: piccapWanted() && piccap.getState() !== null,
+      huesync: huesyncWanted() && huesync.getState() !== null,
       iconBaseUrl: iconServer.baseUrl()
     });
 
@@ -1267,6 +1309,11 @@ function setupHomeAssistant() {
     if (ev.group !== 'power' && mqttClient.connected) pusher.changed();
   };
   var lastAppSig = '';
+  // The input chosen from Home Assistant, { id, until }, while the TV switches.
+  var pendingInput = null;
+  // The last telemetry published, to say a chosen input in at once.
+  var lastPub = null;
+  var lastInputSig = '';
   var lastCapSig = '';
 
   /*
@@ -1288,6 +1335,7 @@ function setupHomeAssistant() {
       mqttClient.publish(mqttTopics.status, statusPayload(), true);
       publishTelemetry();
       piccap.refreshAndPublishState();
+      huesync.refreshAndPublishState();
     }
     // After the publishes above: on a B8 the TV can be asleep within 5s.
     mqttClient.setWill(off ? 'asleep' : 'offline');
@@ -1295,6 +1343,11 @@ function setupHomeAssistant() {
   liveState.state.onChange(function (ev) {
     if (ev.group === 'power' && ev.key === 'systemOn' && typeof ev.value === 'boolean') setTvOff(!ev.value);
   });
+  // The power group starts before the bridge, which waits for device
+  // detection, and its first answer can come before this listener: a server
+  // started in standby then reported the TV on, and missed the switch-on.
+  var startPower = liveState.state.snapshot().power;
+  if (startPower && typeof startPower.systemOn === 'boolean') setTvOff(!startPower.systemOn);
 
   /*
    * While the TV is off but still up, readings change little and nothing is
@@ -1360,6 +1413,8 @@ function setupHomeAssistant() {
        */
       var piccapState = piccap.getState();
       if (piccapState) s.piccap = { power: piccapState.isRunning };
+      var huesyncState = huesync.getState();
+      if (huesyncState) s.huesync = { streaming: huesyncState.isStreaming };
       if (!tvOff) {
         if ((s.app && s.app !== lastApp) || (s.app_id && s.app_id !== lastAppId)) {
           lastApp = s.app || lastApp;
@@ -1382,6 +1437,15 @@ function setupHomeAssistant() {
        */
       var pub = {};
       for (var pk in s) if (pk !== 'apps' && pk !== 'temps' && pk !== 'cpuTimes') pub[pk] = s[pk];
+      /*
+       * What Input Source shows: the input just chosen, until the TV reports it
+       * or 10 s have passed. A B8 (webOS 4.4) took about 4 s to switch and
+       * meanwhile reported the input it was leaving, so the select jumped back
+       * to that before showing the new one.
+       */
+      if (pendingInput && (s.app === pendingInput.id || Date.now() > pendingInput.until)) pendingInput = null;
+      pub.input_source = pendingInput ? pendingInput.id : s.app;
+      lastPub = pub;
       mqttClient.publish(mqttTopics.telemetry, JSON.stringify(pub), true);
       MQTT_STATUS.lastPublish = Date.now();
       pusher.finished();
@@ -1411,6 +1475,16 @@ function setupHomeAssistant() {
       if (soundFormatCap && !lastSoundFormatCap) {
         lastSoundFormatCap = true;
         requestDiscoveryRepublish('sound format');
+      }
+      // Input Source's options are the names the TV's settings give its HDMI
+      // inputs, also in discovery. A renamed input updates the selector.
+      var inNames = telemetry.inputNameMap;
+      var inputSig = Object.keys(inNames).sort().map(function (k) {
+        return k + '=' + inNames[k];
+      }).join(',');
+      if (inputSig !== lastInputSig) {
+        lastInputSig = inputSig;
+        requestDiscoveryRepublish('input names');
       }
       // Launch App's options are the installed apps, and live in discovery too.
       var appSig = telemetry.getInstalledApps().map(function (a) { return a.id; }).sort().join(',');
@@ -1462,12 +1536,17 @@ function setupHomeAssistant() {
     // has not been scanned yet - without this it publishes the fallback list.
     oled.detectOled(function () {
       telemetry.detectLogoLight(function () {
-        telemetry.refreshInstalledApps(function () { publishDiscovery(); });
+        telemetry.refreshInstalledApps(function () {
+          // The Input Source select's options are the names the TV gives its
+          // HDMI inputs, so read them before publishing its discovery.
+          telemetry.refreshInputNames(function () { publishDiscovery(); });
+        });
       });
     });
     mqttClient.subscribe(mqttTopics.commands + '#');
     publishTelemetry();
     piccap.refreshAndPublishState(true);
+    huesync.refreshAndPublishState(true);
     publishUpdate();
   });
 
@@ -1476,8 +1555,21 @@ function setupHomeAssistant() {
     var action = topic.substring(mqttTopics.commands.length);
     var val = payload ? payload.trim() : '';
     console.log('mqtt: command received: ' + action + ' -> ' + val);
+    if (action === 'input' && val) {
+      pendingInput = { id: val, until: Date.now() + 10000 };
+      /*
+       * Said at once, not at the next telemetry: Home Assistant shows the
+       * choice, then puts back the state it last heard until a new one comes,
+       * and while it shows the old input, choosing that again sends nothing.
+       */
+      if (lastPub) {
+        lastPub.input_source = val;
+        mqttClient.publish(mqttTopics.telemetry, JSON.stringify(lastPub), true);
+      }
+    }
 
     if (piccap.handleMqttCommand(action, val)) return;
+    if (huesync.handleMqttCommand(action, val)) return;
 
     // A held arrow sends a stream of keys, and a telemetry read after each one
     // would queue a dozen luna calls per key. A key that changes the app
@@ -1717,6 +1809,7 @@ function startGlasshouseHome() {
   glasshouseHome.init({
     luna: luna,
     Subscription: lunaTransport.Subscription,
+    blockedBy: privacy.blockedBy,
     allowExperimental: function () { return CONFIG.allowExperimentalHome === true; },
     liveState: liveState,
     history: history,
@@ -1744,6 +1837,7 @@ function startGlasshouseHome() {
 
 if (!CLI_MODE) {
   heartbeat();
+  clockFormat.refresh();
   setInterval(heartbeat, 20000);
 
   // HDMI tile titles on webOS 9's Home (lib/homescreen.js): EIM cannot be
@@ -1769,6 +1863,7 @@ if (!CLI_MODE) {
   liveState.state.onChange(function (ev) {
     if (ev.group === 'power' && ev.key === 'state') power.stateChanged(ev.value);
   });
+  liveState.groups.power.onReply = idlesaver.powerReply;
   // Its own start, as the MQTT bridge starts every group only with a broker.
   liveState.startGroup('power');
   liveState.state.onChange(function (ev) {
@@ -1786,6 +1881,8 @@ if (!CLI_MODE) {
   history.start();
   screentime.init({ config: CONFIG, liveState: liveState, control: controls.doControl, injectKey: controls.injectKey, keyBack: controls.KEY_BACK });
   screentime.start();
+  saverPowerOff.init({ config: CONFIG, liveState: liveState, control: controls.doControl });
+  saverPowerOff.start();
 
   if (glasshouseHome && homePicture) startGlasshouseHome();
   else releaseUnloadedHome();

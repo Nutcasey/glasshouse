@@ -144,7 +144,7 @@ async function visitHomeOrder(browser, base, problems) {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   page.on('pageerror', e => problems.push('Home order: ' + e.message));
   const layout = { rows: ['app', 'dev', 'ch'], order: { app: [], dev: [], ch: [] },
-    sort: { app: 'custom', dev: 'custom', ch: 'custom' }, hidden: { app: [], dev: [], ch: [] }, channels: [], hintSeen: true };
+    sort: { app: 'custom', dev: 'custom', ch: 'custom' }, hidden: { app: [], dev: [], ch: [] }, channels: [], hintSeen: true, searchHintSeen: true };
   const saves = [];
   await page.route('**/api/home**', async route => {
     const pathname = new URL(route.request().url()).pathname;
@@ -167,6 +167,7 @@ async function visitHomeOrder(browser, base, problems) {
   try {
     layout.sort.app = 'recent';
     await page.goto(base + '/?tab=home');
+    await page.locator('details.home-row[data-kind="app"] summary').click();
     await page.waitForSelector('#home-sort-app:not(:disabled)');
     if (!await page.locator('details.home-row[data-kind="app"] .home-tile button[aria-label="Later"]').first().isDisabled()) {
       problems.push('Home order: tiles in a Last opened row can be moved on the Home tab');
@@ -189,7 +190,7 @@ async function visitHomeEditor(browser, base, problems) {
   const page = await browser.newPage();
   page.on('pageerror', e => problems.push('Home editor: ' + e.message));
   let layout = { rows: ['app', 'dev', 'ch'], order: { app: [], dev: [], ch: [] },
-    hidden: { app: [], dev: [], ch: [] }, channels: ['a'], hintSeen: true };
+    hidden: { app: [], dev: [], ch: [] }, channels: ['a'], hintSeen: true, searchHintSeen: true };
   const channels = ['a', 'b', 'c'].map(id => ({ id, name: id.toUpperCase(), number: id }));
   const saves = [];
   let release = null, refuse = false, pendingRestore = false, portChanged = false;
@@ -223,8 +224,9 @@ async function visitHomeEditor(browser, base, problems) {
       return button && !button.disabled;
     });
     await ready();
+    await page.locator('details.home-row[data-kind="app"] summary').click();
     await page.locator('details.home-row[data-kind="ch"] summary').click();
-    await page.getByRole('button', { name: 'Show the TV’s channels', exact: true }).click();
+    await page.getByRole('button', { name: 'Show channels', exact: true }).click();
     const add = id => page.locator('#home-ch-list .prot-row').filter({ hasText: id + ' ' + id.toUpperCase() }).getByRole('button', { name: 'Add', exact: true });
     await add('b').click();
     await page.waitForTimeout(100);
@@ -257,7 +259,7 @@ async function visitHomeUploads(browser, base, problems) {
   const page = await context.newPage(), observer = await context.newPage();
   for (const p of [page, observer]) p.on('pageerror', e => problems.push('Home uploads: ' + e.message));
   const layout = { rows: ['app', 'dev', 'ch'], order: { app: [], dev: [], ch: [] },
-    hidden: { app: [], dev: [], ch: [] }, channels: [], hintSeen: true };
+    hidden: { app: [], dev: [], ch: [] }, channels: [], hintSeen: true, searchHintSeen: true };
   let uploading = false, uploaded = false, release, image;
   const wallpapers = () => ({ available: uploaded, uploading,
     slots: { morning: uploaded }, revision: uploaded ? '1' : '0' });
@@ -278,7 +280,7 @@ async function visitHomeUploads(browser, base, problems) {
       if (route.request().postDataJSON().removeUploads) uploaded = false;
       body = { ok: true, wallpapers: wallpapers() };
     } else if (pathname === '/api/home') {
-      body = { ok: true, supported: { ok: true }, installed: true, enabled: false, writable: true, layout, wallpapers: wallpapers() };
+      body = { ok: true, supported: { ok: true }, installed: true, enabled: true, writable: true, layout, wallpapers: wallpapers() };
     } else {
       body = { ok: true, layout, apps: [], devices: [], channels: [], order: { app: [], dev: [], ch: [] }, sources: { channels: 0 } };
     }
@@ -306,28 +308,53 @@ async function visitHomeUploads(browser, base, problems) {
   } finally { await context.close(); }
 }
 
-// Where Glasshouse Home is not offered its tab is left out; where it is on, the Apps tab says what LG's settings reach.
+/*
+ * The Home tab: left out where neither Glasshouse Home nor LG's Home's options
+ * are offered; with LG's Home's options alone (a B8) it shows only those, Open
+ * Home at power-on among them, usable without Glasshouse Home; and
+ * with Glasshouse Home on, LG's Home's layout is left out and hidden system
+ * apps stay.
+ */
 async function visitHomeAvailability(browser, base, problems) {
-  for (const st of [{ available: false, enabled: false }, { available: true, enabled: true }]) {
+  const lgHome = enabled => ({ writable: true, glasshouseHome: enabled,
+    homeScreen: { parts: [{ id: 'banner', title: 'Banner', desc: 'The banner.', shown: true }], inputs: null, experimental: null },
+    tileHidingAvailable: true, tileHidingEnabled: false, systemTiles: [], hiddenCount: 0 });
+  const cases = [
+    { name: 'unavailable', st: { available: false, enabled: false }, glasshouse: false },
+    { name: 'LG\'s Home only', st: { available: true, enabled: false, lgHomeAvailable: true, lgHome: lgHome(false), homeAutoLaunch: false }, glasshouse: false },
+    { name: 'Glasshouse Home on', st: { available: true, enabled: true, lgHomeAvailable: true, lgHome: lgHome(true) }, glasshouse: true }
+  ];
+  for (const c of cases) {
+    const st = c.st;
     const page = await browser.newPage();
     page.on('pageerror', e => problems.push('Home availability: ' + e.message));
     await page.route('**/api/home**', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(Object.assign({
-      ok: true, supported: { ok: st.available }, installed: true, restorePending: false, writable: true,
-      layout: { rows: ['app', 'dev', 'ch'], order: { app: [], dev: [], ch: [] }, hidden: { app: [], dev: [], ch: [] }, channels: [], hintSeen: true },
+      ok: true, supported: { ok: c.glasshouse }, installed: true, restorePending: false, writable: true,
+      layout: { rows: ['app', 'dev', 'ch'], order: { app: [], dev: [], ch: [] }, hidden: { app: [], dev: [], ch: [] }, channels: [], hintSeen: true, searchHintSeen: true },
       apps: [], devices: [], channels: [], order: { app: [], dev: [], ch: [] }, sources: { channels: 0 }, wallpapers: { slots: {} }
     }, st)) }));
+    const fail = what => problems.push('Home availability (' + c.name + '): ' + what);
     try {
       await page.goto(base + '/?tab=home');
       await page.waitForFunction(() => homeAvailable !== null);
       await page.waitForTimeout(100);
       const hidden = await page.locator('#tab-btn-home').isHidden();
-      if (hidden === st.available) problems.push('Home availability: tab ' + (hidden ? 'hidden' : 'shown') + ' with available ' + st.available);
-      if (!st.available && await page.evaluate(() => activeTab) !== 'control') problems.push('Home availability: an unavailable Home tab stayed open');
-      const notes = await page.locator('[data-glasshouse-home-note]:not([hidden])').count();
-      if (notes !== (st.enabled ? 2 : 0)) problems.push('Home availability: ' + notes + ' Apps tab notes with Glasshouse Home ' + (st.enabled ? 'on' : 'off'));
+      if (hidden === st.available) fail('tab ' + (hidden ? 'hidden' : 'shown'));
+      if (!st.available) {
+        if (await page.evaluate(() => activeTab) !== 'control') fail('an unavailable Home tab stayed open');
+        continue;
+      }
+      if (await page.locator('#home-hero').isVisible() !== c.glasshouse) fail('Glasshouse Home\'s switch ' + (c.glasshouse ? 'missing' : 'shown'));
+      if (!await page.locator('#disc-system-tiles').isVisible()) fail('system apps missing');
+      if (st.homeAutoLaunch !== undefined && (!await page.locator('#home-autolaunch').isVisible() || await page.locator('#home-autolaunch').isDisabled()))
+        fail('Open Home at power-on missing or unusable');
+      if (!c.glasshouse && await page.locator('#home-picture-row').isVisible()) fail('Glasshouse Home\'s options shown without it');
+      if (await page.locator('#disc-homescreen').isVisible() === st.enabled) fail('LG\'s Home layout ' + (st.enabled ? 'shown with Glasshouse Home on' : 'missing'));
     } finally { await page.close(); }
   }
 }
+
+
 
 async function visitTvDashboard(browser, base, problems) {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
@@ -451,6 +478,33 @@ async function visitTvDashboard(browser, base, problems) {
   }
 }
 
+async function visitTvAudio(browser, base, problems) {
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  page.on('pageerror', e => problems.push('TV audio: ' + e.message));
+  const state = await page.request.get(base + '/api/audio?with=settings').then(r => r.json());
+  let failed = false;
+  await page.route('**/api/audio*', route => route.fulfill({ status: failed ? 503 : 200, contentType: 'application/json',
+    body: JSON.stringify(failed ? { ok: false, error: 'Audio service unavailable' } : state) }));
+  const selected = () => page.locator('#rows .row.sel .lbl').textContent();
+  const readings = () => page.locator('#rows .row').filter({ hasText: 'Return channel' });
+  async function open() {
+    await page.goto(base + '/assets/dashboard.html?tab=audio');
+    await page.waitForSelector(failed ? '#rows .row:has-text("Audio readings unavailable")' : '#rows .row:has-text("Return channel")');
+  }
+  try {
+    await open();
+    if (await selected() !== 'Sound output') problems.push('TV audio: did not open on the Sound settings');
+    failed = true;
+    await open();
+    if (await readings().count()) problems.push('TV audio: a failed read left stale readings on screen');
+    failed = false;
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('#rows .row:has-text("Return channel")');
+    await page.goto(base + '/assets/dashboard.html?tab=options');
+    await page.waitForSelector('#rows .row');
+    if (await page.locator('#rows .row').filter({ hasText: /Audio capabilities|Sound output/ }).count()) problems.push('TV audio: sound still listed under System');
+  } finally { await page.close(); }
+}
 async function visitTvNonOled(browser, base, problems) {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   page.on('pageerror', e => problems.push('TV non-OLED: ' + e.message));
@@ -478,14 +532,16 @@ async function visitTvNonOled(browser, base, problems) {
   await visitAll(browser, web.map(t => ({ url: base + '/?tab=' + t, label: 'web ' + t }))
     .concat(tv.map(t => ({ url: base + '/assets/dashboard.html?tab=' + t, label: 'TV ' + t }))), problems);
   await visitTvDashboard(browser, base, problems);
+  await visitTvAudio(browser, base, problems);
   await visitTvNonOled(browser, base, problems);
   await visitHomeEditor(browser, base, problems);
   await visitHomeOrder(browser, base, problems);
   await visitHomeUploads(browser, base, problems);
   await visitHomeAvailability(browser, base, problems);
+  await visitAudio(browser, base, problems);
   await browser.close();
   for (const p of problems) console.log(p);
   console.log((web.length + tv.length) + ' tabs opened (' + web.length + ' web, ' + tv.length + ' TV app), ' +
-              'TV navigation and LCD profile, and the Home tab\'s editing, order, uploads and availability checked, ' + problems.length + ' problem' + (problems.length === 1 ? '' : 's'));
+              'TV navigation, audio and LCD profile, and the Home tab's editing, order, uploads and availability checked, ' + problems.length + ' problem' + (problems.length === 1 ? '' : 's'));
   process.exit(problems.length ? 1 : 0);
 })().catch(e => { console.error(e.message); process.exit(1); });

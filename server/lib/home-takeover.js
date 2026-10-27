@@ -40,6 +40,7 @@ var fs = require('fs');
 var path = require('path');
 var execFile = require('child_process').execFile;
 var mkdirp = require('./util').mkdirp;
+var toBuffer = require('./util').toBuffer;
 
 var LG_HOME = 'com.webos.app.home';
 var APP_DIR = '/usr/palm/applications/' + LG_HOME;
@@ -59,6 +60,7 @@ var sourceDir = path.join(__dirname, '..', 'assets', 'home-app');
 var EXE = 'glasshouse-home';
 var exeSource = path.join(__dirname, '..', 'native', EXE);
 var assetsDir = path.join(__dirname, '..', 'assets');
+var serverPort = 8080;
 var appDir = APP_DIR;
 var procDir = '/proc';
 var layoutDir = '/mnt/lg/cmn_data/manifest';
@@ -77,6 +79,7 @@ function init(opts) {
   if (opts.sourceDir) sourceDir = opts.sourceDir;
   if (opts.exeSource) exeSource = opts.exeSource;
   if (opts.assetsDir) assetsDir = opts.assetsDir;
+  if (opts.port) serverPort = Number(opts.port);
   if (opts.appDir) appDir = opts.appDir;
   if (opts.procDir) procDir = opts.procDir;
   if (opts.layoutDir) layoutDir = opts.layoutDir;
@@ -136,8 +139,9 @@ function copyExe(from, to) {
   return true;
 }
 
-function copyFile(from, to) {
+function copyFile(from, to, transform) {
   var data = fs.readFileSync(from);
+  if (transform) data = toBuffer(transform(data.toString('utf8')), 'utf8');
   var had = null;
   try { had = fs.readFileSync(to); } catch (e) {}
   if (had && had.toString('base64') === data.toString('base64')) return false;

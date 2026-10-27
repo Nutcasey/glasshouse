@@ -2296,6 +2296,57 @@ impl View {
             y += m26.normal();
         }
     }
+
+    #[allow(dead_code)]
+    fn search_strings(&self) {
+        let _ = self.t("home.search.rail", "Search");
+        let _ = self.t("home.search.placeholder", "Film or series");
+        let _ = self.t("home.search.blockedTitle", "Search is unavailable");
+        let _ = self.tv(
+            "home.search.blockedList",
+            "The ad blocker\u{2019}s hosts list blocks {host}, which LG\u{2019}s search needs. Take it out of the list on the dashboard\u{2019}s Privacy tab.",
+            &[("host", String::new())],
+        );
+        let _ = self.t(
+            "home.search.blockedLevel",
+            "The ad blocker\u{2019}s Everything setting blocks LG\u{2019}s search. Set it to Ads & telemetry or off on the dashboard\u{2019}s Privacy tab.",
+        );
+        let _ = self.t("home.search.ready", "Films and series on this TV\u{2019}s apps, from LG\u{2019}s search");
+        let _ = self.tv("home.search.looking", "Looking for \u{201c}{query}\u{201d}", &[("query", String::new())]);
+        let _ = self.t(
+            "home.search.failed",
+            "LG\u{2019}s search did not answer. It needs the TV online, and the ad blocker on Ads & telemetry or off.",
+        );
+        let _ = self.tv(
+            "home.search.onlyElsewhere",
+            "Nothing for \u{201c}{query}\u{201d} on this TV\u{2019}s apps. {n} more on apps it does not have.",
+            &[("query", String::new()), ("n", String::new())],
+        );
+        let _ = self.tv("home.search.none", "Nothing for \u{201c}{query}\u{201d}", &[("query", String::new())]);
+        let _ = self.tv(
+            "home.search.foundOneMore",
+            "1 title on this TV\u{2019}s apps, {more} more on apps it does not have",
+            &[("more", String::new())],
+        );
+        let _ = self.tv(
+            "home.search.foundMore",
+            "{n} titles on this TV\u{2019}s apps, {more} more on apps it does not have",
+            &[("n", String::new()), ("more", String::new())],
+        );
+        let _ = self.t("home.search.foundOne", "1 title on this TV\u{2019}s apps");
+        let _ = self.tv("home.search.found", "{n} titles on this TV\u{2019}s apps", &[("n", String::new())]);
+        let _ = self.tv("home.search.minutes", "{m} min", &[("m", String::new())]);
+        let _ = self.tv("home.search.hoursMinutes", "{h} h {m} min", &[("h", String::new()), ("m", String::new())]);
+        let _ = self.tv("home.search.hours", "{h} h", &[("h", String::new())]);
+        let _ = self.t("home.search.film", "Film");
+        let _ = self.t("home.search.series", "Series");
+        let _ = self.tv("home.search.opening", "Opening {title} on {app}", &[("title", String::new()), ("app", String::new())]);
+        let _ = self.t("home.search.hintTitle", "Search is left of the rows");
+        let _ = self.t(
+            "home.search.hintDesc",
+            "Press left on a row\u{2019}s first tile to find a film or series and open it in an app on this TV",
+        );
+    }
 }
 
 fn fmt_hz(v: f64) -> String {

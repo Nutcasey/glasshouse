@@ -19,6 +19,7 @@ Fails on:
   * a key used with two different English texts - one of them is stale
   * a key not written as lowercase words joined by dots and camelCase
   * t() called without a literal key and literal English
+  * English in t() or msg() built from pieces with + rather than one literal
   * an element tagged data-t that holds other elements, or whose text the page's
     script rewrites - either way the markup is not the whole string
   * visible text, or a title/aria-label/placeholder, without a key inside a part
@@ -209,6 +210,38 @@ def js_string(src, i):
     return ''.join(val), j + 1
 
 
+def rust_string(src, i):
+    """A Rust string literal at src[i]: (value, end) or None."""
+    if i >= len(src) or src[i] != '"':
+        return None
+    j, val = i + 1, []
+    while j < len(src) and src[j] != '"':
+        if src[j] == '\\':
+            nxt = src[j + 1]
+            if nxt == 'u' and src.startswith('{', j + 2):
+                close = src.find('}', j + 3)
+                if close > 0:
+                    val.append(chr(int(src[j + 3:close], 16)))
+                    j = close + 1
+                    continue
+            val.append({'n': '\n', 't': '\t', 'r': '\r', '"': '"', '\\': '\\'}.get(nxt, nxt))
+            j += 2
+            continue
+        val.append(src[j])
+        j += 1
+    return ''.join(val), j + 1
+
+
+def one_literal(src, end):
+    """Whether the literal ending at src[end] is the whole argument. English
+    built with + would be checked as its first piece only, while the caller
+    passes the whole, so the translation would never match it. Read in the
+    stripped code, so a comment after the literal does not count."""
+    while end < len(src) and src[end].isspace():
+        end += 1
+    return end < len(src) and src[end] in ',)'
+
+
 def scan_script(name, src, offset_line):
     code = strip_code(src)
     for m in re.finditer(r'(?<![\w$.])t\(', code):
@@ -234,6 +267,9 @@ def scan_script(name, src, offset_line):
         english = js_string(src, j)
         if not english:
             problems.append('%s: t(\'%s\', ...) needs literal English' % (where, key[0]))
+            continue
+        if not one_literal(code, english[1]):
+            problems.append('%s: t(\'%s\', ...) needs its English as one whole literal, not pieces joined with +' % (where, key[0]))
             continue
         note(key[0], english[0], where)
     for m in re.finditer(r'(?:\b(?:const|let|var)\s+t\b|\(\s*t\s*[,)]|\bt\s*=>|function\s*\w*\s*\(\s*t\s*[,)])', code):
@@ -308,9 +344,40 @@ for path in SERVER:
         if not english:
             problems.append("%s: msg('%s', ...) needs literal English" % (where, key[0]))
             continue
+        if not one_literal(code, english[1]):
+            problems.append("%s: msg('%s', ...) needs its English as one whole literal, not pieces joined with +" % (where, key[0]))
+            continue
         note(key[0], english[0], where)
     for m in re.finditer(r'(?:\b(?:const|let|var)\s+msg\s*=(?!\s*(?:say\.msg|require))|\(\s*msg\s*[,)]|function\s*\w*\s*\(\s*msg\s*[,)])', code):
         problems.append('%s:%d: a local named msg hides msg()' % (name, 1 + src.count('\n', 0, m.start())))
+
+NATIVE = sorted((ROOT / 'native' / 'home' / 'src').glob('*.rs')) if (ROOT / 'native' / 'home' / 'src').exists() else []
+for path in NATIVE:
+    src = path.read_text(encoding='utf-8')
+    name = str(path.relative_to(ROOT))
+    for m in re.finditer(r'\bself\.t(?:v)?\(', src):
+        where = '%s:%d' % (name, 1 + src.count('\n', 0, m.start()))
+        i = m.end()
+        while i < len(src) and src[i].isspace():
+            i += 1
+        key = rust_string(src, i)
+        if not key:
+            problems.append('%s: t() needs a literal key' % where)
+            continue
+        j = key[1]
+        while j < len(src) and src[j].isspace():
+            j += 1
+        if j >= len(src) or src[j] != ',':
+            problems.append("%s: t('%s') needs its English as the second argument" % (where, key[0]))
+            continue
+        j += 1
+        while j < len(src) and src[j].isspace():
+            j += 1
+        english = rust_string(src, j)
+        if not english:
+            problems.append("%s: t('%s', ...) needs literal English" % (where, key[0]))
+            continue
+        note(key[0], english[0], where)
 
 for key, texts in sorted(uses.items()):
     if len(texts) > 1:
