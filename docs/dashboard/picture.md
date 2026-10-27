@@ -37,8 +37,10 @@ While Gallery is on screen the picture is locked.
 
 ## On the TV
 
-In the TV app, Left and Right step a slider as in LG's menu; the value is sent
-once the presses stop. OK cycles a choice or switches a setting.
-Adjustments to different rows made in quick succession are all saved.
+In the TV app, OK on a slider starts adjusting it, with a bar under its value,
+as in LG's menu. Left and Right change it by one, faster while held; Up and
+Down jump a tenth of its range; OK or Back finish. The TV takes each value as
+it changes. Outside a slider, Left and Right switch tabs as everywhere else in
+the app. OK cycles a choice or switches a setting.
 
 ![Picture settings in the G3's TV app, with Contrast selected](../screenshots/picture-g3-tv.png)
