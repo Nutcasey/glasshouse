@@ -752,8 +752,9 @@ function lgRow(g) {
     var shown = g.type === 'switch' ? (g.on ? t('common.on', 'On') : t('common.off', 'Off')) : String(g.value);
     if (g.type === 'choice') for (var gc = 0; gc < g.choices.length; gc++) if (g.choices[gc].value === g.value) shown = g.choices[gc].label;
     if (g.type === 'number') shown = lgNumber(g, g.value);
-    return { label: g.title, value: shown, hint: g.desc + ' ' + (g.section === 'picture'
-      ? t('lgs.pictureInactive', 'Not available in the current picture mode, or for what is on screen.')
+    return { label: g.title, value: shown, hint: g.desc + ' ' + (g.inactive === 'game' ? t('pic.cms.game', 'Not used in Game mode.')
+      : g.inactive === 'colourAdjustment' ? t('pic.cms.needsUser', 'Set Colour adjustment to User Selection to use these.')
+      : g.section === 'picture' ? t('lgs.pictureInactive', 'Not available in the current picture mode, or for what is on screen.')
       : t('lgs.inactive', 'Not available with the TV’s current input or sound output.')) };
   }
   if (g.type === 'choice') {

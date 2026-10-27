@@ -149,6 +149,16 @@ TruMotion Off, Cinematic Movement, Natural, Smooth Movement and User
 Selection. `picture.aspectRatio` reads `16x9` with Home on screen while LG's
 menu shows Original, greyed; it is not what the menu uses.
 
+On a C2 (webOS 9.2.2), `dynamicColor` offers `off`, `low`, `medium`, `high`
+and `user`, and LG's menu calls it Colour adjustment, under Fine Tune. The
+`colorManagement{Saturation,Hue,Luminance}{Colour}` keys, -30 to 30, are kept
+for each input and mode, and LG's menu shows them, for the colour picked in
+`colorManagementColorSystem`, only under User Selection. In Game mode the TV
+describes them as visible and active and keeps written values, yet green at
++30 on all three changed nothing on screen with User Selection on; in ISF
+Expert the same adjustment did. A B8 (webOS 4.4.3) offers `dynamicColor` only
+`off` to `high`.
+
 ## The TV's 12 or 24 hour clock (webOS 4.4, 7.6, 9.2)
 
 `com.webos.service.systemservice/getPreferences` with `keys: ["timeFormat"]`

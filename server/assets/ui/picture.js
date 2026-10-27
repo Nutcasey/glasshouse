@@ -134,6 +134,11 @@ function cmsFold(rows) {
   const names = { red: t('pic.cms.red', 'Red'), green: t('pic.cms.green', 'Green'), blue: t('pic.cms.blue', 'Blue'),
     cyan: t('pic.cms.cyan', 'Cyan'), magenta: t('pic.cms.magenta', 'Magenta'), yellow: t('pic.cms.yellow', 'Yellow') };
   const colours = CMS_COLOURS.filter(c => rows.some(r => r.cms === c));
+  // Colour adjustment, where it switches them on, heads them, with why they are greyed out.
+  const gate = rows.find(r => !r.cms);
+  const off = rows.find(r => r.cms && r.inactive);
+  const head = (gate ? '<div class="prot-table pic-cms-gate">' + lgsRow(gate) + '</div>' : '') +
+    (off ? '<div class="sub pic-cms-note">' + esc(lgsInactive(off)) + '</div>' : '');
   // On a phone the columns stack, so each slider carries its own label.
   const cell = (c, part) => {
     const r = rows.find(x => x.cms === c && x.part === part[0]);
@@ -141,7 +146,7 @@ function cmsFold(rows) {
   };
   return '<details class="pv-d pic-fold" data-fold="cms"><summary><span class="pic-fold-t"><span>' + esc(t('pic.cms', 'Colour management')) + '</span>' +
     '<span class="pv-sub">' + esc(t('pic.cms.desc', 'Adjusts one colour at a time: how strong it is, which way its hue leans, and how bright it is.')) + '</span></span></summary>' +
-    '<div class="pic-cms"><div class="hh"></div>' + parts.map(p => '<div class="hh">' + esc(p[1]) + '</div>').join('') +
+    head + '<div class="pic-cms' + (off ? ' off' : '') + '"><div class="hh"></div>' + parts.map(p => '<div class="hh">' + esc(p[1]) + '</div>').join('') +
     colours.map(c => '<div class="in"><i class="pic-sw" data-colour="' + c + '"></i>' + esc(names[c]) + '</div>' + parts.map(p => cell(c, p)).join('')).join('') +
     '</div></details>';
 }

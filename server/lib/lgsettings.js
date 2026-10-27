@@ -649,6 +649,7 @@ function collect(section, cb, ttl) {
         if (r.hideable && !desc && descs[storeOf(r)] && Object.keys(descs[storeOf(r)]).length) return;
         out.push(rowValue(r, v, desc));
       });
+      if (sections.indexOf('picture') !== -1) colourManagementState(out, dims.picture);
       // A TV that describes none of its picture settings (an older webOS, or a
       // description that failed) gets no Picture rows: without LG's own
       // choices and ranges, the tab could offer what its menu does not.
@@ -682,6 +683,29 @@ function collect(section, cb, ttl) {
       });
     });
   }
+}
+
+/*
+ * Colour management as LG's menu has it. Where Dynamic colour offers User
+ * Selection, LG names it Colour adjustment and its per-colour sliders apply only
+ * there (a C2, webOS 9.2.2), so it heads them, and they are greyed out
+ * otherwise. Game mode ignores them though the TV reports them active: on a C2
+ * they changed nothing in Game and did in ISF Expert.
+ */
+function colourManagementState(rows, dimension) {
+  var gate = rows.filter(function (x) { return x.id === 'dynamicColor'; })[0];
+  var gated = !!(gate && gate.choices && gate.choices.some(function (c) { return c.value === 'user'; }));
+  if (gated) {
+    gate.group = 'cms';
+    gate.title = msg('srv.lgs.colourAdjustment', 'Colour adjustment');
+    gate.desc = msg('srv.lgs.colourAdjustment.desc', 'User Selection turns on the colour adjustments below.');
+  }
+  var game = /game/i.test(String(dimension && dimension.pictureMode || ''));
+  rows.forEach(function (x) {
+    if (x.group !== 'cms' || x === gate || x.active === false) return;
+    if (game) { x.active = false; x.inactive = 'game'; }
+    else if (gated && gate && gate.value !== 'user') { x.active = false; x.inactive = 'colourAdjustment'; }
+  });
 }
 
 // value: true or false for a switch, one of the values the TV offers for a

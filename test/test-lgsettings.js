@@ -158,7 +158,7 @@ var picDesc = {
   skinColor: { values: { range: { min: -5, max: 5 } } },
   backlight: { values: { range: { min: 0, max: 100 } } }
 };
-var picWrites = [], asked = [], onScreen = 'default';
+var picWrites = [], asked = [], onScreen = 'default', onMode = 'cinema';
 function picDescribe(payload) {
   return { returnValue: false, results: payload.keys.filter(function (k) { return picDesc[k]; })
     .map(function (k) { return { key: k, values: picDesc[k].values, ui: picDesc[k].ui || {} }; }) };
@@ -166,7 +166,7 @@ function picDescribe(payload) {
 function picRead(payload) {
   asked.push(payload);
   if (payload.app_id) return { returnValue: true, settings: payload.app_id === 'com.webos.app.hdmi4' ? { truMotionMode: 'off', arcPerApp: 'original' } : {} };
-  return { returnValue: true, settings: pic[payload.category] || {}, dimension: { input: onScreen, pictureMode: 'cinema' } };
+  return { returnValue: true, settings: pic[payload.category] || {}, dimension: { input: onScreen, pictureMode: onMode } };
 }
 lgs.init({
   lunaCached: function (uri, payload, ttl, cb) {
@@ -238,5 +238,41 @@ onScreen = 'gallery';
 lgs.set('contrast', 70, function (r) { assert.strictEqual(r.ok, false); });
 assert.strictEqual(picWrites.length, 4);
 console.log('  ✓ per-app settings are written as LG writes them, and Gallery is not changed');
+
+// Colour management: where Dynamic colour offers User Selection it is Colour
+// adjustment, heads the colours and turns them on; Game mode greys them out.
+pic.picture.dynamicColor = 'off';
+pic.picture.colorManagementSaturationGreen = 0;
+picDesc.dynamicColor = { values: { arrayExt: [{ value: 'off' }, { value: 'low' }, { value: 'user' }] } };
+picDesc.colorManagementSaturationGreen = { values: { range: { min: -30, max: 30 } } };
+function cmsRows(cb) {
+  lgs.collect('picture', function (r) {
+    var by = {};
+    r.rows.forEach(function (x) { by[x.id] = x; });
+    cb(by);
+  });
+}
+cmsRows(function (by) {
+  assert.strictEqual(by.dynamicColor.group, 'cms', 'Colour adjustment heads the colours');
+  assert.strictEqual(by.dynamicColor.title, 'Colour adjustment');
+  assert.deepEqual([by.cmsSaturationGreen.active, by.cmsSaturationGreen.inactive], [false, 'colourAdjustment']);
+});
+pic.picture.dynamicColor = 'user';
+cmsRows(function (by) {
+  assert.strictEqual(by.cmsSaturationGreen.active, undefined, 'User Selection turns the colours on');
+});
+onMode = 'game';
+cmsRows(function (by) {
+  assert.deepEqual([by.cmsSaturationGreen.active, by.cmsSaturationGreen.inactive], [false, 'game']);
+  assert.strictEqual(by.dynamicColor.active, undefined, 'Colour adjustment itself stays usable');
+});
+onMode = 'cinema';
+picDesc.dynamicColor = { values: { arrayExt: [{ value: 'off' }, { value: 'low' }] } };
+pic.picture.dynamicColor = 'off';
+cmsRows(function (by) {
+  assert.strictEqual(by.dynamicColor.group, 'colour', 'without User Selection it stays Dynamic colour');
+  assert.strictEqual(by.cmsSaturationGreen.active, undefined);
+});
+console.log('  ✓ colour management follows Colour adjustment, and is greyed out in Game mode');
 
 console.log('ALL test-lgsettings.js assertions passed!\n');

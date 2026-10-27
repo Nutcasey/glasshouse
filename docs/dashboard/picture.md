@@ -35,6 +35,12 @@ for each app and input, and show while video is on screen.
 Hidden settings and choices LG marks inactive cannot be written. If a change
 is refused, the web tab restores the value read from the TV.
 
+Colour management follows LG's **Colour adjustment** where the TV has one, as
+a C2 does: it heads the section, and the colours are greyed out until it is set
+to **User Selection**. On a TV without it, such as a B8, colour management
+stands on its own. In the game picture modes the colours are greyed out, since
+Game mode ignores them.
+
 Screen Off in the energy saving step is not offered, as it blanks the screen.
 Some TVs, such as those sold in Europe, ask on screen to confirm any other step
 but Auto, and go back to Auto if it is cancelled there.

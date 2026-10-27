@@ -127,10 +127,17 @@ function hdmiTable(rows, dims, inputs) {
 // One of lgsettings.js's rows, for a .prot-table.
 function lgsRow(r) {
   return '<div class="prot-row"><div class="prot-main"><div class="prot-title">' + esc(r.title) + '</div>' +
-    '<div class="prot-desc">' + esc(r.desc) + (r.active === false ? ' ' + esc(r.section === 'picture'
-      ? t('lgs.pictureInactive', 'Not available in the current picture mode, or for what is on screen.')
-      : t('lgs.inactive', 'Not available with the TV’s current input or sound output.')) : '') +
+    '<div class="prot-desc">' + esc(r.desc) + (r.active === false ? ' ' + esc(lgsInactive(r)) : '') +
     '</div></div><div class="prot-status">' + lgsControl(r) + '</div></div>';
+}
+
+// Why a setting is greyed out: colour management says which (lgsettings.js colourManagementState).
+function lgsInactive(r) {
+  if (r.inactive === 'game') return t('pic.cms.game', 'Not used in Game mode.');
+  if (r.inactive === 'colourAdjustment') return t('pic.cms.needsUser', 'Set Colour adjustment to User Selection to use these.');
+  return r.section === 'picture'
+    ? t('lgs.pictureInactive', 'Not available in the current picture mode, or for what is on screen.')
+    : t('lgs.inactive', 'Not available with the TV’s current input or sound output.');
 }
 
 // The Advanced tab's HDMI inputs and the SIMPLINK rows in Devices. Sound, and

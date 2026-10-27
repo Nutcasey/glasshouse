@@ -1520,6 +1520,8 @@ button.tools-jump:active{background:var(--w80)}
 .lgs-track[data-track="green"]{--trk:linear-gradient(90deg,var(--w12),#30DE61)}
 .lgs-track[data-track="blue"]{--trk:linear-gradient(90deg,var(--w12),#4C7DFF)}
 /* Colour management as a table: a colour per row, a property per column. */
+.pic-cms.off{opacity:.45}
+.pic-cms-note{margin:4px 0 12px}
 .pic-cms{display:grid;grid-template-columns:minmax(110px,.7fr) repeat(3,minmax(0,1fr));column-gap:24px;max-width:860px;margin-top:8px}
 .pic-cms>div{padding:13px 0;border-top:1px solid var(--w12);display:flex;align-items:center;min-width:0}
 .pic-cms .hh{font-size:12px;color:var(--w60);border-top:0;padding-top:0}

@@ -20,7 +20,9 @@ them after a successful retry.
 
 `test-lgsettings.js` checks that picture writes refuse hidden settings and
 inactive choices, alongside locked rows and values outside the TV's range, and
-that a TV which describes none of its picture settings is offered none.
+that a TV which describes none of its picture settings is offered none, and
+that colour management follows Colour adjustment where the TV offers User
+Selection and is greyed out in Game mode.
 
 The TV dashboard check adjusts two picture sliders before the first write
 answers. Both changes must be sent, including when the first write is refused
