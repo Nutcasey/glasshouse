@@ -77,7 +77,6 @@ retained that route. A real eight-second clip completed with EOS restoration;
 a killed native player restored the PCM route, and the next player recovered
 from its orphaned module. Lossless extensions and audible quality remain
 unqualified by these muted trials.
-
 ## Audio declarations and the negotiated link (G3, webOS 9.2.2)
 
 OLED55G36LA, firmware 23.25.55, kernel `5.4.268-320`, read on 25 October 2026:

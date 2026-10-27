@@ -708,6 +708,7 @@ async function visitHomeInputsEditor(browser, base, problems) {
   try {
     await page.goto(base + '/?tab=home');
     const row = page.locator('details.home-row[data-kind="dev"]');
+    await row.locator('summary').click();
     await row.locator('.home-tile').first().waitFor();
     if (await row.locator('button#home-hide-unused.pill').count() !== 1) problems.push('Home inputs editor: the Inputs row has no On and Off switch for inputs with nothing connected');
     const toggles = await row.locator('.home-tile').getByText(/^(Shown|Hidden)$/).count();
@@ -971,6 +972,7 @@ async function visitHomeOrder(browser, base, problems) {
 
     layout.sort.app = 'recent';
     await page.goto(base + '/?tab=home');
+    await page.locator('details.home-row[data-kind="app"] summary').click();
     await page.waitForSelector('#home-sort-app:not(:disabled)');
     if (!await page.locator('details.home-row[data-kind="app"] .home-tile button[aria-label="Later"]').first().isDisabled()) {
       problems.push('Home order: tiles in a Last opened row can be moved on the Home tab');
@@ -1027,6 +1029,7 @@ async function visitHomeEditor(browser, base, problems) {
       return button && !button.disabled;
     });
     await ready();
+    await page.locator('details.home-row[data-kind="app"] summary').click();
     await page.locator('details.home-row[data-kind="ch"] summary').click();
     await page.getByRole('button', { name: 'Show channels', exact: true }).click();
     const add = id => page.locator('#home-ch-list .prot-row').filter({ hasText: id + ' ' + id.toUpperCase() }).getByRole('button', { name: 'Add', exact: true });
@@ -1082,7 +1085,7 @@ async function visitHomeUploads(browser, base, problems) {
       if (route.request().postDataJSON().removeUploads) uploaded = false;
       body = { ok: true, wallpapers: wallpapers() };
     } else if (pathname === '/api/home') {
-      body = { ok: true, supported: { ok: true }, installed: true, enabled: false, writable: true, layout, wallpapers: wallpapers() };
+      body = { ok: true, supported: { ok: true }, installed: true, enabled: true, writable: true, layout, wallpapers: wallpapers() };
     } else {
       body = { ok: true, layout, apps: [], devices: [], channels: [], order: { app: [], dev: [], ch: [] }, sources: { channels: 0 } };
     }
@@ -1110,25 +1113,48 @@ async function visitHomeUploads(browser, base, problems) {
   } finally { await context.close(); }
 }
 
-// Where Glasshouse Home is not offered its tab is left out; where it is on, the Apps tab says what LG's settings reach.
+/*
+ * The Home tab: left out where neither Glasshouse Home nor LG's Home's options
+ * are offered; with LG's Home's options alone (a B8) it shows only those, Open
+ * Home at power-on among them, usable without Glasshouse Home; and
+ * with Glasshouse Home on, LG's Home's layout is left out and hidden system
+ * apps stay.
+ */
 async function visitHomeAvailability(browser, base, problems) {
-  for (const st of [{ available: false, enabled: false }, { available: true, enabled: true }]) {
+  const lgHome = enabled => ({ writable: true, glasshouseHome: enabled,
+    homeScreen: { parts: [{ id: 'banner', title: 'Banner', desc: 'The banner.', shown: true }], inputs: null, experimental: null },
+    tileHidingAvailable: true, tileHidingEnabled: false, systemTiles: [], hiddenCount: 0 });
+  const cases = [
+    { name: 'unavailable', st: { available: false, enabled: false }, glasshouse: false },
+    { name: 'LG\'s Home only', st: { available: true, enabled: false, lgHomeAvailable: true, lgHome: lgHome(false), homeAutoLaunch: false }, glasshouse: false },
+    { name: 'Glasshouse Home on', st: { available: true, enabled: true, lgHomeAvailable: true, lgHome: lgHome(true) }, glasshouse: true }
+  ];
+  for (const c of cases) {
+    const st = c.st;
     const page = await browser.newPage();
     page.on('pageerror', e => problems.push('Home availability: ' + e.message));
     await page.route('**/api/home**', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(Object.assign({
-      ok: true, supported: { ok: st.available }, installed: true, restorePending: false, writable: true,
+      ok: true, supported: { ok: c.glasshouse }, installed: true, restorePending: false, writable: true,
       layout: { rows: ['app', 'dev', 'ch'], order: { app: [], dev: [], ch: [] }, hidden: { app: [], dev: [], ch: [] }, channels: [], hintSeen: true, searchHintSeen: true },
       apps: [], devices: [], channels: [], order: { app: [], dev: [], ch: [] }, sources: { channels: 0 }, wallpapers: { slots: {} }
     }, st)) }));
+    const fail = what => problems.push('Home availability (' + c.name + '): ' + what);
     try {
       await page.goto(base + '/?tab=home');
       await page.waitForFunction(() => homeAvailable !== null);
       await page.waitForTimeout(100);
       const hidden = await page.locator('#tab-btn-home').isHidden();
-      if (hidden === st.available) problems.push('Home availability: tab ' + (hidden ? 'hidden' : 'shown') + ' with available ' + st.available);
-      if (!st.available && await page.evaluate(() => activeTab) !== 'control') problems.push('Home availability: an unavailable Home tab stayed open');
-      const notes = await page.locator('[data-glasshouse-home-note]:not([hidden])').count();
-      if (notes !== (st.enabled ? 2 : 0)) problems.push('Home availability: ' + notes + ' Apps tab notes with Glasshouse Home ' + (st.enabled ? 'on' : 'off'));
+      if (hidden === st.available) fail('tab ' + (hidden ? 'hidden' : 'shown'));
+      if (!st.available) {
+        if (await page.evaluate(() => activeTab) !== 'control') fail('an unavailable Home tab stayed open');
+        continue;
+      }
+      if (await page.locator('#home-hero').isVisible() !== c.glasshouse) fail('Glasshouse Home\'s switch ' + (c.glasshouse ? 'missing' : 'shown'));
+      if (!await page.locator('#disc-system-tiles').isVisible()) fail('system apps missing');
+      if (st.homeAutoLaunch !== undefined && (!await page.locator('#home-autolaunch').isVisible() || await page.locator('#home-autolaunch').isDisabled()))
+        fail('Open Home at power-on missing or unusable');
+      if (!c.glasshouse && await page.locator('#home-picture-row').isVisible()) fail('Glasshouse Home\'s options shown without it');
+      if (await page.locator('#disc-homescreen').isVisible() === st.enabled) fail('LG\'s Home layout ' + (st.enabled ? 'shown with Glasshouse Home on' : 'missing'));
     } finally { await page.close(); }
   }
 }
@@ -1162,6 +1188,8 @@ async function visitAudioOverride(browser, base, problems) {
     await page.goto(base + '/?tab=audio');
     await page.waitForFunction(() => audioState && audioState.override.running);
     if (!await page.locator('#audio-settings [data-lgs]').count()) problems.push('Audio tab: LG sound settings missing');
+    // The readings, refresh button and override are folded below the settings.
+    await page.locator('#audio-more > summary').click();
     await page.locator('#audio-override').click();
     await page.waitForFunction(() => !audioChanging);
     if (JSON.stringify(writes) !== '[{"enabled":false}]')
@@ -1190,7 +1218,8 @@ async function visitAudioOverride(browser, base, problems) {
     await page.waitForFunction(() => document.querySelector('#audio-error').hidden);
     if (!await page.locator('#audio-readings').isVisible() || await page.locator('#audio-override').isDisabled())
       problems.push('Web audio: controls did not recover after a failed read');
-  } finally { await page.close(); }
+  } catch (e) { problems.push('Web audio: ' + e.message); }
+  await page.close();
 }
 
 async function visitHomeReadiness(browser, base, problems) {

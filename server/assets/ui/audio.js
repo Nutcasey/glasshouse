@@ -18,9 +18,10 @@ function audioPolling(on) {
   audioTimer = setTimeout(() => loadAudio(true), 8000);
 }
 
+// As the page's other error banners (.err-note): what failed in bold, then why.
 function audioError(message) {
   const el = q('audio-error');
-  el.textContent = message || '';
+  el.innerHTML = message ? `<b>${esc(t('audio.readFailed', 'The TV’s sound settings and audio readings could not be read.'))}</b>${esc(sentence(message))}` : '';
   el.hidden = !message;
 }
 

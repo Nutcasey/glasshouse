@@ -157,7 +157,6 @@ match before enable; the helper retains its own kernel instruction guards.
 Disable calls the helper's complete restoration. The UI distinguishes the
 enabled preference, running supervisor and active kernel route. A failed or
 unknown state is not reported as successful forwarding.
-
 The audio output in the stats is named from the `soundOutput` of
 `com.webos.service.audio/master/getVolume`, which uses the sound settings'
 keys, or `tv_speaker_bt_surround` for `tv_speaker_bluetooth` when the
@@ -1236,7 +1235,7 @@ Home screen bloatware tile hiding allows built-in or preloaded system apps (whic
 
 ## Home Screen Layout
 
-The Apps tab's **Home screen layout** switches parts of LG's Home screen off by
+The Home tab's **Home screen layout** switches parts of LG's Home screen off by
 changing the home app's own layout file, which the app reads only when it
 starts. `lib/homescreen.js` lists one module per home app and uses the first
 whose `supported()` says yes; a TV with none has no Home screen section.

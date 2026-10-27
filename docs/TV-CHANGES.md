@@ -30,7 +30,6 @@ the owned declaration.
 The declaration also affects HDMI capability reporting; this package qualifies
 native playback only. The original HDMI helper retains its separate compatibility
 checks.
-
 Nothing on the read-only root filesystem is written. Everything below other
 than the server's own files happens only when the owner switches it on, and the
 riskier controls ask for confirmation in the dashboard first.
