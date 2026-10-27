@@ -52,12 +52,11 @@ body{font-family:'Manrope',sans-serif;color:#fff;
    on the right. A row's label and value never needed the full width, and the
    space buys somewhere to say what a setting means without a second screen. */
 #main{flex:1 1 auto;-webkit-flex:1 1 auto;display:flex;display:-webkit-flex;overflow:hidden;padding-right:4vw;min-height:0}
-#list{flex:1 1 62%;-webkit-flex:1 1 62%;height:100%;overflow:hidden;position:relative}
-/* webOS 2's WebKit 538.2 has no @supports and lays #list out as a block, so
-   it needs the height above. Chromium 53 (webOS 4) takes a percentage height
-   on a flex item as none, collapsing #list to 0 px and hiding every row; it
-   stretches the list to fit instead. */
-@supports (display:flex){#list{height:auto}}
+/* No height: the row is stretched to #main's. A percentage height resolves to
+   none on a flex item in Chromium 53 (webOS 4) and WebKit 538.2 (webOS 2),
+   collapsing #list to 0 px and hiding every row; position() covers an engine
+   that still leaves it at 0. */
+#list{flex:1 1 62%;-webkit-flex:1 1 62%;overflow:hidden;position:relative}
 #rows{position:absolute;left:0;right:0;-webkit-transition:-webkit-transform .28s cubic-bezier(.4,0,.2,1);transition:transform .28s cubic-bezier(.4,0,.2,1)}
 
 #hint{flex:0 0 31%;-webkit-flex:0 0 31%;margin-left:2.6vw;align-self:center;-webkit-align-self:center;border-left:1px solid rgba(255,255,255,.14);
@@ -1083,16 +1082,33 @@ function glasshouseHomeRows(d) {
              act: can ? 'homePicture' : null, on: picOn,
              press: picOn ? t('tv.press.switchOff', 'Press OK to switch off') : t('tv.press.switchOn', 'Press OK to switch on'),
              hint: t('home.pictureDesc', 'In the top right of Glasshouse Home: the resolution, refresh rate and HDR of what was last on, and the picture mode and brightness it gets.') });
-    var shows = [['showLastOn', t('home.showLast', 'Last watched'), t('home.showLastDesc', 'At the top of Glasshouse Home and on the input it was on: what the TV last showed.')],
+    var shows = [['showClock', t('home.showClock', 'Clock and date'), t('home.showClockDesc', 'At the top of Glasshouse Home. Switched off, the space stays empty.')],
+                 ['showLastOn', t('home.showLast', 'Last watched'), t('home.showLastDesc', 'At the top of Glasshouse Home and on the input it was on: what the TV last showed.')],
                  ['showAppCount', t('home.showAppCount', 'App count'), t('home.showAppCountDesc', 'Beside the Apps row: how many of the TV\u2019s apps it shows.')],
                  ['showCec', t('home.showCec', 'CEC addresses'), t('home.showCecDesc', 'On each input\u2019s tile: the HDMI-CEC address of the device behind it.')]];
     for (var si = 0; si < shows.length; si++) {
       var showOn = d.layout[shows[si][0]] !== false;
+      // Alternative View's rows have no titles, so no app count beside them.
+      var unused = shows[si][0] === 'showAppCount' && d.layout.view === 'alternative';
       r.push({ label: shows[si][1], key: shows[si][0],
-               value: showOn ? t('common.on', 'On') : t('common.off', 'Off'), cls: showOn ? 'on' : 'off',
-               act: can ? 'homeShow' : null, on: showOn,
+               value: showOn ? t('common.on', 'On') : t('common.off', 'Off'), cls: showOn && !unused ? 'on' : 'off',
+               act: can && !unused ? 'homeShow' : null, on: showOn,
                press: showOn ? t('tv.press.switchOff', 'Press OK to switch off') : t('tv.press.switchOn', 'Press OK to switch on'),
-               hint: shows[si][2] });
+               hint: unused ? t('home.showAppCountAlt', 'Not shown in Alternative View, whose rows have no titles.') : shows[si][2] });
+      if (si === 0) {
+        var bottomOn = d.layout.rowsBottom === true;
+        r.push({ label: t('home.rowsBottom', 'Rows along the bottom'), key: 'rowsBottom',
+                 value: bottomOn ? t('common.on', 'On') : t('common.off', 'Off'), cls: bottomOn ? 'on' : 'off',
+                 act: can ? 'homeShow' : null, on: bottomOn,
+                 press: bottomOn ? t('tv.press.switchOff', 'Press OK to switch off') : t('tv.press.switchOn', 'Press OK to switch on'),
+                 hint: t('home.rowsBottomDesc', 'The rows of apps and inputs sit along the bottom of the screen, as on LG\u2019s Home, rather than in the middle.') });
+        var altOn = d.layout.view === 'alternative';
+        r.push({ label: t('home.alternative', 'Alternative View'),
+                 value: altOn ? t('common.on', 'On') : t('common.off', 'Off'), cls: altOn ? 'on' : 'off',
+                 act: can ? 'homeAlternative' : null, on: altOn,
+                 press: altOn ? t('tv.press.switchOff', 'Press OK to switch off') : t('tv.press.switchOn', 'Press OK to switch on'),
+                 hint: t('home.alternativeDesc', 'A smaller clock on the right, and the rows as rounded, translucent tiles, titled only while arranging.') });
+      }
     }
     var searchOn = d.layout.search === true, blocked = d.layout.searchBlocked;
     var searchAbout = t('home.searchDesc', 'Left of the rows on Glasshouse Home: films and series on this TV\u2019s apps, opened in the app at the title.');
@@ -2458,6 +2474,7 @@ function renderQr(r) {
    of floating in the centre with half the screen empty. */
 function position() {
   var list = document.getElementById('list');
+  if (!list.clientHeight) list.style.height = document.getElementById('main').clientHeight + 'px';
   var off = 0, total = 0, i;
   for (i = 0; i < rows.length; i++) {
     if (i < sel) off += rowHeight(rows[i]);
@@ -2833,6 +2850,8 @@ function activate() {
       return homeLayout(showChange);
     case 'homeSearch':
       return homeLayout({ search: !r.on });
+    case 'homeAlternative':
+      return homeLayout({ view: r.on ? 'standard' : 'alternative' });
     case 'homeFade':
       return homeLayout({ fade: !r.on });
     case 'homeHideUnused':

@@ -142,13 +142,18 @@ function renderHome() {
     pic.disabled = !homeWritable();
   }
   document.querySelectorAll('.home-show-row').forEach(row => { row.hidden = !st.supported.ok; });
+  // Alternative View's rows have no titles, so no app count beside them.
+  const altView = !!st.layout && st.layout.view === 'alternative';
   HOME_SHOW.forEach(([key, id]) => {
     const el = q(id);
     if (!el) return;
     const on = !st.layout || st.layout[key] !== false;
-    updateToggle(el, { cls: on ? 'good' : 'idle', label: on ? t('common.on', 'On') : t('common.off', 'Off') });
-    el.disabled = !homeWritable();
+    const unused = key === 'showAppCount' && altView;
+    updateToggle(el, { cls: on && !unused ? 'good' : 'idle', label: on ? t('common.on', 'On') : t('common.off', 'Off') });
+    el.disabled = !homeWritable() || unused;
   });
+  const countAlt = q('home-show-count-alt');
+  if (countAlt) countAlt.hidden = !altView;
   const searchRow = q('home-search-row');
   if (searchRow) searchRow.hidden = !st.supported.ok;
   const searchPill = q('home-search');
@@ -167,7 +172,7 @@ function renderHome() {
       : t('home.searchBlockedLevel', 'Unavailable: the ad blocker\u2019s Everything setting blocks {host}, which LG\u2019s search needs, so the search mark is hidden on Glasshouse Home. Set the ad blocker to Ads & telemetry or off to use it. This switch keeps its setting.', { host: searchBlocked.host });
   }
   // Fading, as Picture details.
-  [['home-fade', 'fade']].forEach(([id, field]) => {
+  [['home-fade', 'fade'], ['home-rows-bottom', 'rowsBottom']].forEach(([id, field]) => {
     const row = q(id + '-row');
     if (row) row.hidden = !st.supported.ok;
     const btn = q(id);
@@ -176,6 +181,14 @@ function renderHome() {
     updateToggle(btn, { cls: on ? 'good' : 'idle', label: on ? t('common.on', 'On') : t('common.off', 'Off') });
     btn.disabled = !homeWritable();
   });
+  const altRow = q('home-alternative-row');
+  if (altRow) altRow.hidden = !st.supported.ok;
+  const alt = q('home-alternative');
+  if (alt) {
+    const on = !!st.layout && st.layout.view === 'alternative';
+    updateToggle(alt, { cls: on ? 'good' : 'idle', label: on ? t('common.on', 'On') : t('common.off', 'Off') });
+    alt.disabled = !homeWritable();
+  }
   const hide = q('home-hide-lg');
   if (hide) {
     const armed = homeArmed === 'hide';
@@ -295,17 +308,18 @@ function renderHomeRows() {
       const it = homeItem(kind, id);
       if (!it) return '';
       const hidden = kind !== 'ch' && homeLayout.hidden[kind].includes(id);
+      const folded = kind === 'app' && (homeLayout.folder || []).includes(id);
       // Hidden or not, an input with nothing plugged in is left out by the row's switch.
       const leftOut = kind === 'dev' && it.unused && homeLayout.hideUnused === true;
       const icon = it.icon ? `<img class="rk-ico" src="${esc(api(it.icon))}" alt="">` : '';
-      return `<div class="prot-row home-tile${hidden || leftOut ? ' home-hidden' : ''}">
+      return `<div class="prot-row home-tile${hidden || folded || leftOut ? ' home-hidden' : ''}">
         <div class="prot-main"><div class="prot-title">${icon}<span translate="no">${esc(it.title)}</span></div>
           ${it.sub ? `<div class="prot-desc">${esc(it.sub)}</div>` : ''}</div>
         <div class="prot-status">
           ${leftOut ? `<span class="pill idle">${esc(t('home.leftOut', 'Left out'))}</span>` : ''}
           <button type="button" class="pill idle home-move" ${movable && i > 0 ? '' : 'disabled'} onclick="homeMoveTile('${kind}', ${i}, -1)" aria-label="${esc(t('home.earlier', 'Earlier'))}">↑</button>
           <button type="button" class="pill idle home-move" ${movable && i < order.length - 1 ? '' : 'disabled'} onclick="homeMoveTile('${kind}', ${i}, 1)" aria-label="${esc(t('home.later', 'Later'))}">↓</button>
-          ${it.lg ? `<span class="pill idle home-fixed-pill">${esc(t('home.alwaysShown', 'Always shown'))}</span>` :
+          ${kind === 'app' ? homePlaceSelect(id, it, hidden, folded, usable) :
             kind === 'ch' ? `<button type="button" class="pill idle" ${usable ? '' : 'disabled'} onclick="homeToggleChannel('${jsq(id)}')">${esc(t('home.ch.remove', 'Remove'))}</button>` :
             renderToggle({ cls: hidden ? 'idle' : 'good', label: hidden ? t('home.hidden', 'Hidden') : t('home.shown', 'Shown'),
               disabled: !usable, onclick: `homeToggleTile('${kind}', '${jsq(id)}')` })}
@@ -398,6 +412,29 @@ function homeToggleTile(kind, id) {
   homeSaveLayout({ hidden });
 }
 
+/*
+ * An app is on the Apps row, in its More apps tile, or hidden. The LG Home
+ * tile is the way back to LG's Home, so it is never hidden, but it may go in
+ * the folder, where it is still reached.
+ */
+function homePlaceSelect(id, it, hidden, folded, usable) {
+  const place = hidden ? 'hidden' : folded ? 'folder' : 'row';
+  const opt = (value, label) => `<option value="${value}"${place === value ? ' selected' : ''}>${esc(label)}</option>`;
+  return `<select class="pill-sel" ${usable ? '' : 'disabled'} aria-label="${esc(t('home.place', 'Where it shows'))}"
+      onchange="homeSetPlace('${jsq(id)}', this.value)">
+    ${opt('row', t('home.shown', 'Shown'))}${opt('folder', t('home.folder.label', 'In More apps'))}${it.lg ? '' : opt('hidden', t('home.hidden', 'Hidden'))}
+  </select>`;
+}
+
+function homeSetPlace(id, place) {
+  const hidden = Object.assign({}, homeLayout.hidden);
+  hidden.app = hidden.app.filter(x => x !== id);
+  const folder = (homeLayout.folder || []).filter(x => x !== id);
+  if (place === 'hidden') hidden.app.push(id);
+  if (place === 'folder') folder.push(id);
+  homeSaveLayout({ hidden, folder });
+}
+
 function homeResetLayout() { homeSaveLayout({ reset: true }); }
 
 function homeChooseMode(wantOn) {
@@ -460,7 +497,7 @@ function homePicture() {
 }
 
 // The details Glasshouse Home shows unless switched off, and their toggles.
-const HOME_SHOW = [['showLastOn', 'home-show-last'], ['showAppCount', 'home-show-count'], ['showCec', 'home-show-cec']];
+const HOME_SHOW = [['showClock', 'home-show-clock'], ['showLastOn', 'home-show-last'], ['showAppCount', 'home-show-count'], ['showCec', 'home-show-cec']];
 
 function homeShow(key) {
   homeSaveLayout({ [key]: homeLayout[key] === false });
@@ -468,6 +505,14 @@ function homeShow(key) {
 
 function homeSearch() {
   homeSaveLayout({ search: homeLayout.search !== true });
+}
+
+function homeAlternative() {
+  homeSaveLayout({ view: homeLayout.view === 'alternative' ? 'standard' : 'alternative' });
+}
+
+function homeRowsBottom() {
+  homeSaveLayout({ rowsBottom: homeLayout.rowsBottom !== true });
 }
 
 function homeFade() {

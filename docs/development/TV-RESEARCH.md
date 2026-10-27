@@ -234,6 +234,14 @@ Measured on 17 October 2026 by rebooting over SSH with `lastInputApp` naming `co
 - Home pressed (over SSAP) at about 37 s brought LG's Home to the front: drawn in one run, black for about 6 s in another. The compositor key filter that sends Home to `com.tvweb.home` from the server's start onwards had not done so.
 - `/var/log` holds CRIU dump and restore logs for `com.webos.app.home` and `com.webos.app.inputcommon`, so those two are restored from snapshots at boot; whether that is why the started app is not drawn is not established.
 
+### What the boot hooks wait for (50QNED87T6B, webOS 10.2.2)
+
+Measured from bootd's log and each process's start time in `/proc/<pid>/stat`:
+
+- bootd signals `core-boot-done` at 16.1 s and Live TV is in front at 18 s, but the Homebrew Channel's service, which its `core-boot-done` activity starts, was started only at 27.5 s, and its `startup.sh` at about 29 s. It sleeps 2 s, then runs `init.d` with `run-parts`, one hook after the other.
+- `20-tvweb-services` took 7.2 s, almost all of it `systemctl daemon-reload`. With another hook that sleeps 5 s before its own work, `50-tvweb` started at about 50 s and Glasshouse Home was in front at 53.5 s.
+- With both hooks doing their work in the background, `50-tvweb` started at 32 s, Glasshouse Home was in place at 35 s, and bootd had it in front at 43.7 s.
+
 ## Replacing LG's Home under its id (webOS 9.2.2, G3)
 
 Measured on 17 October 2026 on an OLED55G36LA with a web app's directory
@@ -1701,11 +1709,12 @@ item with `position: absolute` children and no in-flow height collapses to 0 px.
 CSS transitions and transforms similarly require `-webkit-transition`,
 `-webkit-transform`, and `element.style.webkitTransform` in script (#746).
 
-On webOS 4 (Chromium 53, a B8 and a C9) the reverse holds: `height: 100%` on a
-flex item inside a flexed parent counts as no height, so the TV app's row list
-collapsed to 0 px and showed nothing in 0.121.0 and 0.122.0. The height is set
-back to `auto` inside `@supports (display: flex)`, which WebKit 538.2 does not
-read.
+`height: 100%` on that flex item does not rescue it. Chromium 53 (webOS 4, a
+B8 and a C9) and WebKit 538.2 (the 55UH600V on 0.122.1) both count it as no
+height, so the TV app's row list collapsed to 0 px: on webOS 4 nothing showed
+in 0.121.0 and 0.122.0, and on webOS 2 only the right-hand explainer. The list
+now has no height of its own and is stretched to its row, and the page sets
+it in pixels where an engine still leaves it at 0.
 
 On the B8 the TV app's page, kept in memory, went on showing the old layout
 after the server was updated, until the TV restarted: it came back without the
@@ -1724,3 +1733,12 @@ after the server was updated, until the TV restarted: it came back without the
 - Network-input key codes (`networkinput/test/sendKeyCode`) did not reach the
   Glasshouse app's page; key events written to the remote's input device
   (`LGE RCU`) did.
+
+## Glasshouse Home's first load after a cold start (C2, webOS 9.2.2)
+
+Opened as the boot hook opens it, 30 s after a reboot, Glasshouse Home's page
+waited for the server, which answered at 41 s, and the view's first heartbeat
+came at 50 s: about 9 s from the server answering to the view drawn. The
+first Home press after a reboot took up to 13 s on a CX (webOS 5.6.2), so a
+fixed wait from the server's start is too short for slower TVs; the page's
+own requests to the server show it is running.

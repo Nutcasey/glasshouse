@@ -19,7 +19,7 @@
  * first 4096 bytes of a downloaded tvweb.js for this line (up to 0.82.2), and
  * refuses a release where it is further down (#586).
  */
-var TVWEB_VERSION = '0.123.0';
+var TVWEB_VERSION = '0.125.0';
 
 var http = require('http');
 var fs = require('fs');
@@ -1395,6 +1395,13 @@ function setupHomeAssistant() {
     mqttClient.publish(mqttTopics.status, statusPayload(), true);
     lgSettings.collect(LGS_SECTIONS, function (ls) {
     telemetry.collectStats(function(s) {
+      // No collection has finished yet, as when the first after a cold boot
+      // runs past its limit. Retained, the stand-in would replace every
+      // reading Home Assistant has with an empty one, so the last stays.
+      if (s.ok === false) {
+        pusher.finished();
+        return;
+      }
       // Over the whole interval since the last publish, whoever else reads.
       var cpuOwn = telemetry.cpuSincePublish(s.coresTotal);
       if (cpuOwn !== null) s.load = cpuOwn;
@@ -1838,7 +1845,8 @@ function startGlasshouseHome() {
       if (on !== homeWatchesForeground) liveState[on ? 'startGroup' : 'stopGroup']('application');
       homeWatchesForeground = on;
     },
-    pictureDetails: function (on) { homePicture.want('details', on); }
+    pictureDetails: function (on) { homePicture.want('details', on); },
+    handOverTileHiding: function (hide) { appsModule.handOverToHome(hide); }
   });
   glasshouseHome.start();
 }
