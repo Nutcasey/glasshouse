@@ -1780,7 +1780,7 @@ function audioRows(d) {
   r.push({ label: t('audio.receiverNow', 'Return channel'), value: receiver.link === 'inactive'
       ? t('audio.linkInactive', 'No active ARC link') : receiver.link === 'unknown' ? t('audio.linkUnknown', 'Link unknown') : receiver.link,
     sub: receiver.name || '', hint: t('tv.audio.linkHint', 'The negotiated link is separate from the eARC setting. Standard DTS can use ARC; DTS-HD needs eARC. Receiver capability declarations do not prove reception.') });
-  r.push(head(t('audio.overrideTitle', 'Experimental DTS forwarding')));
+  if (helper.offered) r.push(head(t('audio.overrideTitle', 'Experimental DTS forwarding')));
   var on = helper.enabled || helper.running === true || helper.needsRestore === true;
   var can = d.writable !== false && !helper.busy && (on ? helper.canDisable : helper.available);
   var hint = on && !helper.verified ? helper.reason : helper.needsRestore

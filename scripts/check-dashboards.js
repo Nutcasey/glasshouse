@@ -1698,7 +1698,8 @@ async function visitTvAudio(browser, base, problems) {
     if (await selected() !== 'Sound output') problems.push('TV audio: did not open on the Sound settings');
     if (!await page.locator('#rows .row').filter({ hasText: 'HDMI channel information' }).filter({ hasText: '6 channels' }).count())
       problems.push('TV audio: source channel metadata missing');
-    if (await forwarding().count()) problems.push('TV audio: a TV with no forwarding helper shows the override');
+    if (await forwarding().count() || await page.locator('#rows .row').filter({ hasText: 'DTS forwarding' }).count())
+      problems.push('TV audio: a TV with no forwarding helper shows the override');
     // Installed but not verified: shown, and refused.
     state.override = { ...state.override, offered: true };
     await open();
