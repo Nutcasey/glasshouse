@@ -96,8 +96,13 @@ function renderAudio() {
     receiver.link === 'unknown' ? t('audio.linkUnknown', 'Link unknown') : receiver.link;
   const item = (label, value, detail) => '<li><div class="audio-label">' + esc(label) + '</div><div class="audio-value">' + esc(value) + '</div>' +
     (detail ? '<div class="prot-desc">' + esc(detail) + '</div>' : '') + '</li>';
+  const metadata = st.live.hdmi;
+  const metadataText = metadata ? [t('audio.channels', '{count} channels', { count: metadata.channels }),
+    metadata.sampleRate ? (metadata.sampleRate / 1000) + ' kHz' : null].filter(Boolean).join(' · ') : '';
   q('audio-path').innerHTML =
     item(t('audio.inputNow', 'Incoming audio'), sourceText, '') +
+    (metadata ? item(t('audio.hdmiChannels', 'HDMI channel information'), metadataText,
+      t('audio.hdmiMetadataHint', 'Channel metadata reported by the HDMI source. It can remain during a pause and does not confirm playback at the receiver.')) : '') +
     item(t('audio.outputNow', 'Sound output'), st.outputName || t('audio.unknown', 'Unknown'), st.live.output || '') +
     item(t('audio.receiverNow', 'Return channel'), linkText, receiver.name || '');
   q('audio-formats').innerHTML = tv.formats.map(f => '<tr><th scope="row">' + esc(f.name) + '</th>' +
@@ -153,6 +158,7 @@ function renderAudioOverride() {
   const helper = st.override;
   const on = helper.enabled || helper.running === true || helper.needsRestore === true;
   const btn = q('audio-override');
+  q('audio-forwarding').hidden = !helper.offered;
   const dts = st.tv.formats.find(f => f.id === 'dts');
   btn.disabled = audioChanging || helper.busy || !st.writable || !(helper.available || helper.canDisable);
   btn.setAttribute('aria-pressed', String(on));

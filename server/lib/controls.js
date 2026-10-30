@@ -1,5 +1,6 @@
 // Strict ES5 - node v0.12.2 on webOS 4 (LG OLED B8) has no ES6 support.
 var fs = require('fs');
+var path = require('path');
 var toInt = require('./util').toInt;
 var allocBuffer = require('./util').allocBuffer;
 var monotonicMs = require('./util').monotonicMs;
@@ -51,6 +52,11 @@ var RCU_KEYS = {
   // remote's Settings button opens them (a C2, webOS 9.2).
   settings: 139
 };
+
+// What one Keyboard Text entry may insert into the focused field.
+var KEYBOARD_TEXT_MAX = 100;
+// The dashboard's keyboard box: enough for a web address.
+var SEND_TEXT_MAX = 500;
 
 // The remote's volume keys: evdev codes, IR_KEY_VOL_UP and IR_KEY_VOL_DOWN in
 // /usr/share/X11/xkb/keycodes/lg less the 8 that xkb adds.
@@ -111,10 +117,43 @@ var fromHbcFn = null;
 var inputMap = null;
 var browserAppId = null;
 var toastSourceId = null;
+// Icons for notify: <name>.png here, beside config.json, so updates keep them.
+var toastIconDir = path.join(__dirname, '..', 'toast-icons');
 var tileHidingOffMsg = null;
 var writeSettingsFn = null;
+// Whether LG's on-screen keyboard is up, from the live window list.
+var keyboardVisibleFn = function () { return false; };
 
 var rcuDevicePath = null;
+// LG's toast types (SystemUI/Notification/Toast.qml): standard is the plain
+// toast at the bottom and has no icon slot; advanced is the same toast with a
+// 66 icon; light is the small one at the top right with a 36 icon.
+var TOAST_TYPES = ['standard', 'advanced', 'light'];
+
+/*
+ * A toast's luna payload. A string is the message of a standard toast. An
+ * object { type, text } is a notification, whose text may open with an icon:
+ * ":washer:" names a PNG in toastIconDir, ":@/usr/palm/.../icon.png:" is any
+ * image on the TV. The compositor only loads icons from local files, and LG's
+ * own toasts pass absolute paths too.
+ */
+function toastParams(value) {
+  var note = value && typeof value === 'object' ? value : { text: value };
+  var text = String(note.text || '');
+  var params = { sourceId: toastSourceId };
+  var iconMatch = typeof value === 'object' ? /^:(@\/[^:]+|[a-z0-9_-]+):\s*/i.exec(text) : null;
+  if (iconMatch) {
+    text = text.substring(iconMatch[0].length);
+    var iconPath = iconMatch[1].charAt(0) === '@' ? iconMatch[1].substring(1)
+      : path.join(toastIconDir, iconMatch[1] + '.png');
+    if (fs.existsSync(iconPath)) params.iconUrl = iconPath;
+    else console.error('toast: no icon at ' + iconPath);
+  }
+  if (note.type && note.type !== 'standard') params.type = note.type;
+  params.message = (text || 'hello').slice(0, 120);
+  return params;
+}
+
 function getRcuDevicePath() {
   if (rcuDevicePath) return rcuDevicePath;
   try {
@@ -232,6 +271,10 @@ function doTvApp(action, cb) { return tvAppFn(action, cb); }
  * for where the sound goes now is passed to telemetry, which stops offering
  * the volume there.
  */
+function imeAnswer(cb) {
+  return function (r) { cb({ ok: !!(r && r.returnValue), error: r && r.errorText }); };
+}
+
 function volumeAnswer(r) {
   if (r && /Current Scenario doesn't support/i.test(String(r.errorText || '')) && telemetry) {
     telemetry.noteVolumeRefused();
@@ -318,6 +361,37 @@ function doControl(action, value, cb) {
       return luna('com.webos.applicationManager/launch',
                   { id: names.inputAppId(value) },
                   function (r) { cb({ ok: !!(r && r.returnValue) }); });
+
+    case 'sendText':
+      /*
+       * The dashboard's keyboard box: types into the text field in focus on
+       * the TV, as it is typed. value is a string to insert, or { text,
+       * replace } with the characters to delete first. Both go through LG's
+       * input method on the urgent path, as keyboardText does: typing queued
+       * behind other calls stalled in Glasshouse Home's search, and a
+       * backspace sent as a key on the remote's device closed LG's keyboard
+       * there instead (a C2, webOS 9.2.2).
+       */
+      var typed, delCount;
+      if (value && typeof value === 'object') {
+        typed = String(value.text == null ? '' : value.text);
+        delCount = Math.max(0, toInt(value.replace, 0));
+      } else {
+        typed = String(value == null ? '' : value);
+        delCount = 0;
+      }
+      if (typed.length > SEND_TEXT_MAX || delCount > SEND_TEXT_MAX) {
+        return cb({ ok: false, error: 'at most ' + SEND_TEXT_MAX + ' characters at a time' });
+      }
+      var insertRest = function () {
+        if (!typed) return cb({ ok: true });
+        lunaUrgent('com.webos.service.ime/insertText', { text: typed }, imeAnswer(cb));
+      };
+      if (delCount <= 0) return insertRest();
+      return lunaUrgent('com.webos.service.ime/deleteCharacters', { count: delCount }, function (r) {
+        if (!r || !r.returnValue) return imeAnswer(cb)(r);
+        insertRest();
+      });
 
     case 'launch_app':
     case 'launchApp':
@@ -792,6 +866,19 @@ function doControl(action, value, cb) {
       if (!RCU_KEYS.hasOwnProperty(rcuName)) {
         return cb({ ok: false, error: 'unknown key: ' + rcuName });
       }
+      /*
+       * Keys from the network input service did not move LG's on-screen
+       * keyboard on a C1 (webOS 6.4). They go to the remote's own device
+       * while it is up, as a real press: network input releases in the same
+       * instant, which LG's key handling already mishandles for Home.
+       */
+      if (keyboardVisibleFn()) {
+        return injectKey(RCU_KEYS[rcuName], function (ok) {
+          console.debug('rcu ' + rcuName + ': on-screen keyboard, remote device, ' + (ok ? 'ok' : 'failed'));
+          telemetry.clearCache();
+          cb({ ok: ok });
+        });
+      }
       return lunaUrgent('com.webos.service.networkinput/test/sendKeyCode',
                   { keyCode: RCU_KEYS[rcuName] },
                   function (r, raw, timing) {
@@ -799,6 +886,21 @@ function doControl(action, value, cb) {
                     telemetry.clearCache();
                     cb({ ok: !!(r && r.returnValue) });
                   });
+
+    /*
+     * Typing into the focused text field through LG's input method service,
+     * whatever the on-screen keyboard shows. Urgent, so text, Enter and
+     * Backspace keep their order with remote keys.
+     */
+    case 'keyboardText':
+      var kbText = String(value === null || value === undefined ? '' : value).slice(0, KEYBOARD_TEXT_MAX);
+      if (!kbText) return cb({ ok: false, error: 'no text' });
+      return lunaUrgent('com.webos.service.ime/insertText', { text: kbText }, imeAnswer(cb));
+
+    case 'keyboardKey':
+      if (value === 'enter') return lunaUrgent('com.webos.service.ime/sendEnterKey', {}, imeAnswer(cb));
+      if (value === 'backspace') return lunaUrgent('com.webos.service.ime/deleteCharacters', { count: 1 }, imeAnswer(cb));
+      return cb({ ok: false, error: 'unknown keyboard key: ' + value });
 
     case 'screensaverMode':
       /*
@@ -825,13 +927,25 @@ function doControl(action, value, cb) {
     case 'toast':
       /* Both the payload's sourceId and luna-send's -a have to name an app the
          bus already knows; "tvweb" is rejected as an Unknown Source. */
-      return luna('com.webos.notification/createToast',
-                  { sourceId: toastSourceId, message: String(value || 'hello').slice(0, 120) },
-                  function (r) { cb({ ok: !!(r && r.returnValue), error: r && r.errorText }); },
-                  toastSourceId);
+      if (value && typeof value === 'object' && TOAST_TYPES.indexOf(value.type) === -1) {
+        return cb({ ok: false, error: 'toast type must be one of ' + TOAST_TYPES.join(', ') });
+      }
+      var toast = toastParams(value);
+      return luna('com.webos.notification/createToast', toast, function (r) {
+        if (r && r.returnValue) return cb({ ok: true });
+        // webOS 4.4 (a B8) refuses the advanced type, with or without an icon:
+        // "Message is not parsed". The message still goes out, as a plain toast.
+        if (!toast.type) return cb({ ok: false, error: r && r.errorText });
+        console.log('toast: the TV refused a ' + toast.type + ' toast (' + ((r && r.errorText) || 'no answer') + '); sending it as a standard one');
+        luna('com.webos.notification/createToast', { sourceId: toast.sourceId, message: toast.message },
+             function (r2) { cb({ ok: !!(r2 && r2.returnValue), error: r2 && r2.errorText }); }, toastSourceId);
+      }, toastSourceId);
 
     case 'tileHiding':
       if (isFromHbc()) return cb({ ok: false, error: tileHidingOffMsg });
+      if (value && homeModule && homeModule.enabled()) {
+        return cb({ ok: false, error: msg('srv.apps.tilesGlasshouseHome', 'Glasshouse Home hides apps itself: arrange them there') });
+      }
       return appsModule.setTileHidingEnabled(!!value, function (r) {
         telemetry.clearCache();
         cb(r);
@@ -928,7 +1042,8 @@ function doControl(action, value, cb) {
 
     case 'update':
       return updater.installUpdate(function (r) {
-        if (r && r.ok && r.updated) {
+        // A package update's own installer restarts the server once its files are in.
+        if (r && r.ok && r.updated && !r.restarting) {
           setTimeout(function () {
             if (!doRestartSelf()) console.error('update: no tvwebctl found - restart manually to apply');
           }, 600);
@@ -1153,7 +1268,9 @@ function init(opts) {
   if (opts.inputs) inputMap = opts.inputs;
   if (opts.browserApp) browserAppId = opts.browserApp;
   if (opts.toastSource) toastSourceId = opts.toastSource;
+  if (opts.toastIconDir) toastIconDir = opts.toastIconDir;
   if (opts.tileHidingOff) tileHidingOffMsg = opts.tileHidingOff;
+  if (opts.keyboardVisible) keyboardVisibleFn = opts.keyboardVisible;
 
   return {
     doControl: doControl,
@@ -1171,6 +1288,8 @@ module.exports = {
   sendPlayPause: sendPlayPause,
   RCU_KEY_CODES: RCU_KEY_CODES,
   RCU_KEYS: RCU_KEYS,
+  KEYBOARD_TEXT_MAX: KEYBOARD_TEXT_MAX,
+  SEND_TEXT_MAX: SEND_TEXT_MAX,
   KEY_BACK: KEY_BACK,
   SLEEP_TIMER_VALUES: SLEEP_TIMER_VALUES,
   ENERGY_SAVING_VALUES: ENERGY_SAVING_VALUES,

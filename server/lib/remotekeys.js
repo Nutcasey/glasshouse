@@ -120,6 +120,24 @@ var MEDIA_CODES = {
 };
 var MEDIA_ACTIONS = ['play', 'pause', 'stop', 'rewind', 'fastForward', 'volumeUp', 'volumeDown', 'mute'];
 var MEDIA_REPEATS = { volumeUp: true, volumeDown: true };
+/*
+ * Screen off, as the dashboard's: tvpower's turnOffScreen blanks the panel and
+ * any key brings the picture back (#1085). The key's own release brought it
+ * back on a C2 (webOS 9.2.2) when the press blanked it, so it is blanked on the
+ * release, and only where the press found the picture on: a press while it is
+ * off wakes it, and its release must not blank it again. The state is followed
+ * through a tvpower subscription, as asking at the press answered after the
+ * TV had woken.
+ */
+var SCREEN_OFF = 'action:screenOff';
+/*
+ * Home Assistant: the key does nothing on the TV, and its press reaches Home
+ * Assistant as a Remote Button event, which lib/remotebuttons reads from the
+ * remote's own device whatever the filter does (#1088). Offered for the keys
+ * that are reported, where MQTT is on.
+ */
+var HOME_ASSISTANT = 'action:homeAssistant';
+var reportedButtons = require('./remotebuttons').buttonNames;
 
 // webOS 11's native key filters; see the header.
 var NATIVE_FILTERS_KEY = 'com.webos.surfacemanager.keyFiltersCpp';
@@ -177,10 +195,12 @@ var KEYS = [
   { key: 'slingtv', symbol: 'WebOS.Key_webOS_SlingTV', title: 'Sling TV', regions: ['us'] },
   // The voice assistants' own buttons on recent Magic Remotes: LG's filters
   // launch Alexa or the Google Assistant on a press, as for a streaming
-  // button. The microphone button (Key_webOS_Voice) is not offered: it
-  // drives voice control itself.
+  // button. The microphone button (Key_webOS_Voice) drives voice control; set
+  // to anything else, a press and a hold both do that instead, and voice
+  // control comes back with LG's own (a CX, webOS 5.5).
   { key: 'alexa', symbol: 'WebOS.Key_webOS_ALEXA', title: 'Alexa' },
   { key: 'googleassistant', symbol: 'WebOS.Key_webOS_GoogleVoice', title: 'Google Assistant' },
+  { key: 'voice', symbol: 'WebOS.Key_webOS_Voice', title: 'Microphone', replacesVoice: true },
   { key: 'apps', symbol: 'WebOS.Key_webOS_Apps', title: 'Apps' },
   // Only webOS 11's native filters let these be changed (NATIVE_ACTIONS,
   // NATIVE_SETTINGS); the JavaScript filter leaves them out, so its file is
@@ -213,6 +233,8 @@ var switcherFound = null; // whether the TV has INPUT_SWITCHER, once answered
 var SubscriptionCtor = null; // luna.Subscription, to follow LG's settings
 /** @type {typeof import('./services') | null} */
 var servicesModule = null;  // to switch LG's voice assistant off and on
+// Whether MQTT is on, for the Home Assistant choice.
+var homeAssistantOn = function () { return false; };
 var messagesPath = MESSAGES_LOG;
 var reapplyDelayMs = 1000;
 
@@ -231,6 +253,7 @@ function init(opts) {
   followPresses({});
   if (toastsTimer) { clearTimeout(toastsTimer); toastsTimer = null; }
   servicesModule = opts.services || null;
+  homeAssistantOn = opts.homeAssistant || function () { return false; };
   messagesPath = opts.messagesPath || MESSAGES_LOG;
   if (typeof opts.reapplyDelayMs === 'number') reapplyDelayMs = opts.reapplyDelayMs;
   muteToastsMs = opts.muteToastsMs || 0;
@@ -337,6 +360,9 @@ function filterSource() {
     'var glasshouseHoldOver = false;',
     'var glasshouseMediaCodes = ' + JSON.stringify(MEDIA_CODES) + ';',
     'var glasshouseMediaRepeats = ' + JSON.stringify(MEDIA_REPEATS) + ';',
+    '// tvpower\'s state, and whether the Screen off key went down with the picture on.',
+    'var glasshousePowerState = "Active";',
+    'var glasshouseScreenOffArmed = false;',
     '',
     '// Key code by name; a name this firmware lacks is left out.',
     'function glasshouseKeyCodes() {',
@@ -366,6 +392,26 @@ function filterSource() {
     '    } catch (e) {',
     '        console.warn("glasshouse keyfilter: " + e + "; keys left as they were");',
     '    }',
+    '}',
+    '',
+    'function glasshousePowerChanged(payload) {',
+    '    try {',
+    '        var r = typeof payload === "string" ? JSON.parse(payload) : payload;',
+    '        if (r && typeof r.state === "string") glasshousePowerState = r.state;',
+    '    } catch (e) {',
+    '        console.warn("glasshouse keyfilter: " + e);',
+    '    }',
+    '}',
+    '',
+    '// Down with the picture on, the release blanks it; down with it off, the key only wakes it.',
+    'function glasshouseScreenOffKey(pressed, autoRepeat) {',
+    '    if (pressed) {',
+    '        if (!autoRepeat) glasshouseScreenOffArmed = glasshousePowerState === "Active";',
+    '        return;',
+    '    }',
+    '    if (!glasshouseScreenOffArmed) return;',
+    '    glasshouseScreenOffArmed = false;',
+    '    lunaCall.send("com.webos.service.tvpower", "/power/turnOffScreen", "{}", function () {});',
     '}',
     '',
     'function glasshouseSendKey(code) {',
@@ -409,6 +455,12 @@ function filterSource() {
     '    } catch (e) {',
     '        console.warn("glasshouse keyfilter: " + e + "; no keys set");',
     '    }',
+    '    try {',
+    '        lunaCall.subscribe("com.webos.service.tvpower", "/power/getPowerState",',
+    '            JSON.stringify({ "subscribe": true }), glasshousePowerChanged, true);',
+    '    } catch (e) {',
+    '        console.warn("glasshouse keyfilter: " + e + "; power state not followed");',
+    '    }',
     '}',
     '',
     // First in the chain, it sees every key, the arrows and OK included: an
@@ -434,6 +486,11 @@ function filterSource() {
     '                if (!autoRepeat) console.info("glasshouse keyfilter: key", key, "sends", id);',
     '                glasshouseMedia(media);',
     '            }',
+    '        } else if (id === ' + JSON.stringify(HOME_ASSISTANT) + ') {',
+    '            // Nothing on the TV: Glasshouse reads the press from the remote itself.',
+    '        } else if (id === ' + JSON.stringify(SCREEN_OFF) + ') {',
+    '            if (!pressed && glasshouseScreenOffArmed) console.info("glasshouse keyfilter: key", key, "turns the screen off");',
+    '            glasshouseScreenOffKey(pressed, autoRepeat);',
     '        } else if (pressed && !autoRepeat && id) {',
     '            console.info("glasshouse keyfilter: key", key, "opens", id);',
     // Home opened as the Home key opens it, so Glasshouse Home opens as Home.
@@ -1130,6 +1187,18 @@ function mediaChoices() {
   return MEDIA_ACTIONS.map(function (a) { return { id: MEDIA_PREFIX + a, title: titles[a], kind: 'media' }; });
 }
 
+// Screen off, where the JavaScript filter runs, and Home Assistant where MQTT is on too.
+function actionChoices() {
+  var out = [{ id: SCREEN_OFF, title: msg('srv.remoteKeys.screenOff', 'Screen off'), kind: 'action' }];
+  if (homeAssistantOn()) out.push({ id: HOME_ASSISTANT, title: msg('srv.remoteKeys.homeAssistant', 'Home Assistant'), kind: 'ha' });
+  return out;
+}
+
+// Whether a key's presses reach Home Assistant, so it can be set to send them there.
+function reported(key) {
+  return reportedButtons().indexOf(key) !== -1;
+}
+
 // Home as a choice, where the JavaScript filter opens it as the Home key would.
 function homeChoices(native) {
   return native ? [] : [{ id: HOME_APP, title: msg('srv.remoteKeys.home', 'Home'), kind: 'app' }];
@@ -1177,9 +1246,9 @@ function describeKeys(keys, inChain, cb, native) {
       var titles = {};
       (apps || []).forEach(function (a) { if (a && a.id) titles[a.id] = a.title || a.id; });
       var inputs = inputChoices();
-      var media = native ? [] : mediaChoices();
+      var media = native ? [] : actionChoices().concat(mediaChoices());
       var cc = country();
-      switchers.concat(inputs, mediaChoices(), homeChoices(false)).forEach(function (c) { titles[c.id] = c.title; });
+      switchers.concat(inputs, actionChoices(), mediaChoices(), homeChoices(false)).forEach(function (c) { titles[c.id] = c.title; });
       var out = keys.map(function (k) {
         var set = Object.prototype.hasOwnProperty.call(map, k.key);
         var id = set ? map[k.key] : null;
@@ -1193,7 +1262,9 @@ function describeKeys(keys, inChain, cb, native) {
         };
         if (k.noNothing) key.noNothing = true;
         if (k.turnsOffVoice) key.turnsOffVoice = true;
+        if (k.replacesVoice) key.replacesVoice = true;
         if (native && NATIVE_BLOCK_KEYS[k.key]) key.blocksApp = true;
+        if (!native && homeAssistantOn() && reported(k.key)) key.homeAssistant = true;
         return key;
       });
       cb({
@@ -1208,7 +1279,8 @@ function describeKeys(keys, inChain, cb, native) {
 /*
  * Sets a key: action 'lg' puts it back as LG has it, 'nothing' makes it do
  * nothing, 'open' opens id, an input, an app on the Home screen or LG's input
- * switcher, or sends a media control where the JavaScript filter runs. It takes
+ * switcher, or sends a media control or turns the screen off where the
+ * JavaScript filter runs. It takes
  * effect at once, through the filter's configd subscription or, on webOS 11,
  * LG's own values. cb({ ok, error }).
  */
@@ -1238,9 +1310,12 @@ function setOfferedKey(def, action, id, kind, cb) {
   switcherChoices(function (switchers) {
     listApps(function (apps) {
       if (!apps) return cb({ ok: false, error: msg('srv.remoteKeys.noApps', 'Could not read the TV\'s apps. Try again in a moment.') });
-      var media = kind === 'filter' ? mediaChoices() : [];
+      var media = kind === 'filter' ? actionChoices().concat(mediaChoices()) : [];
       var allowed = switchers.concat(media, inputChoices(), homeChoices(kind !== 'filter'), appChoices(apps))
         .some(function (c) { return c.id === id; });
+      if (id === HOME_ASSISTANT && !reported(def.key)) {
+        return cb({ ok: false, error: msg('srv.remoteKeys.notReported', 'Home Assistant does not receive this key\'s presses') });
+      }
       if (!allowed) return cb({ ok: false, error: msg('srv.remoteKeys.unknownApp', 'That app is not on this TV') });
       map[def.key] = id;
       save(map, cb);

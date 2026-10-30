@@ -70,7 +70,8 @@ use modern JavaScript.
 - `test/` - `node test/run-all.js` runs every `test-*.js`; fixtures are real
   stats from a B8 (webOS 4), a CX (webOS 5), and a G4 and a C4 (webOS 9).
 
-Before pushing, run what CI runs: `node test/run-all.js`, `npx tsc`, and
+Before pushing, run what CI runs: `scripts/check-all.sh` runs it all side
+by side. One at a time: `node test/run-all.js`, `npx tsc`, and
 `scripts/check-es5.py`, `check-module-calls.py`, `check-ui-ids.py`,
 `check-strings.py`, `check-screensavers.py`, `check-drift.py`,
 `check-entity-stability.py` and
@@ -122,10 +123,11 @@ and what wasn't tested. State them as facts, briefly, not as a story.
 
 Record decisions and their reasons, not the route taken to reach them.
 
-## Third person, always
+## Third person in PRs, commits and release notes
 
-These are project artefacts, not messages to a reader. Never "you", "your TV",
-"as you asked". Write "the TV", "the panel switch".
+PR descriptions, commit messages and release notes are project artefacts, not
+messages to a reader. Never "you", "your TV", "as you asked". Write "the TV",
+"the panel switch". The README and the docs may address the reader as "you".
 
 ## No filler structure
 

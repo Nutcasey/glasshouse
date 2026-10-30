@@ -73,6 +73,8 @@ Strings are cataloged in `server/assets/i18n/`. Refer to [Translating the dashbo
 
 Before opening a pull request, run the test suite and validation scripts locally:
 
+`scripts/check-all.sh` runs all of these side by side. One at a time:
+
 ```bash
 # Run all unit and integration tests
 node test/run-all.js
@@ -107,7 +109,7 @@ npm run emulate
 This starts the server against a virtual webOS environment with procfs, sysfs, Luna bus calls, apps, remote keys, and recent apps mocked. You can also specify a model or port:
 
 ```bash
-node scripts/emulate-tv.js [--model c2|b8|c3] [--port 8080] [--open]
+node scripts/emulate-tv.js [--model c2|b8|c3|cx|c1] [--webos 6.5.3] [--home on|off] [--port 8080] [--open]
 ```
 
 Direct URLs:

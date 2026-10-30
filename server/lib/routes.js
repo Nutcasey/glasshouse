@@ -118,6 +118,8 @@ var lunaFn = null;
 var getMqttStatusFn = null;
 var piccapStatusFn = function (cb) { cb(null); };
 var huesyncStatusFn = function (cb) { cb(null); };
+// Whether LG's on-screen keyboard is up: true, false, or null where the TV does not say.
+var keyboardUpFn = function () { return null; };
 var appsChangedFn = function () {};
 var versionStr = '';
 // With the commit of a git build: what a person reads, and what tells one
@@ -1083,6 +1085,8 @@ function lgHomeOptions(glasshouseHome, cb) {
       cb(lg);
     });
   }
+  // Glasshouse Home hides apps itself, and takes over what tile hiding hid.
+  if (glasshouseHome) lg.tileHidingAvailable = false;
   if (!lg.tileHidingAvailable) return withLayout();
   appsModule.getApps(function (d) {
     lg.systemTiles = d.systemTiles || [];
@@ -1292,6 +1296,8 @@ function handleRequest(req, res) {
   }
 
   if (pathname === '/api/caps') {
+    // Glasshouse Home's page waiting for the server (lib/home.js watchStart).
+    if (u.query && u.query.from === 'home' && fromTV(req) && homeModule) homeModule.pageAlive();
     var caps = {
       ok: true, allowControl: config.allowControl, allowPower: config.allowPower,
       // Bare: the Homebrew Channel app's launch page compares it with its own.
@@ -1597,6 +1603,19 @@ function handleRequest(req, res) {
     });
   }
 
+  /*
+   * The Picture tabs: LG's picture settings for the picture on screen, and the
+   * input, picture mode and dynamic range they belong to. Read fresh enough to
+   * follow a change made with the remote while the tab is open.
+   */
+  if (pathname === '/api/picture') {
+    return lgSettingsModule.collect('picture', function (r) {
+      // available false where the TV offers none: both dashboards then leave the tab out.
+      send(res, 200, JSON.stringify({ ok: true, available: r.rows.length > 0, writable: !!config.allowControl, rows: r.rows,
+        dimension: r.dimensions.picture || null, inputs: telemetryModule.inputNameMap }));
+    }, 4000);
+  }
+
   // Rows of lgsettings.js for the dashboards: ?section=sound,devices.
   if (pathname === '/api/lgsettings') {
     var secs = String(u.query.section || '').split(',').filter(Boolean);
@@ -1753,6 +1772,9 @@ function handleRequest(req, res) {
 
   if (pathname === '/api/apps/tile-hiding' && req.method === 'POST') {
     return readJsonBody(req, res, function (body) {
+      if (body && body.enabled && homeModule && homeModule.enabled()) {
+        return send(res, 400, JSON.stringify({ ok: false, error: msg('srv.apps.tilesGlasshouseHome', 'Glasshouse Home hides apps itself: arrange them there') }));
+      }
       appsModule.setTileHidingEnabled(body && body.enabled, function (r) {
         send(res, r && r.ok ? 200 : 400, JSON.stringify(r));
       });
@@ -1850,13 +1872,16 @@ function handleRequest(req, res) {
       // Advanced tab.
       piccapStatusFn(function (pc) {
         huesyncStatusFn(function (hs) {
-          if (!pc && !hs && !clockModule && u.query.with !== 'settings') return send(res, 200, JSON.stringify(s));
+          var keyboardUp = keyboardUpFn();
+          if (!pc && !hs && !clockModule && keyboardUp === null && u.query.with !== 'settings') return send(res, 200, JSON.stringify(s));
           // Copied, since s is telemetry's cache.
           var copy = {};
           for (var k in s) copy[k] = s[k];
           if (clockModule) copy.clockHour12 = clockHour12();
           if (pc) copy.piccapCapture = pc;
           if (hs) copy.huesyncStreaming = hs;
+          // For the Control tab's keyboard box.
+          if (keyboardUp !== null) copy.keyboardUp = keyboardUp;
           if (u.query.with !== 'settings') return send(res, 200, JSON.stringify(copy));
           // The TV dashboard's System page, which reads one endpoint, also
           // lists the sound and SIMPLINK settings.
@@ -2041,6 +2066,7 @@ function init(opts) {
   if (opts.restartSelf) restartSelfFn = opts.restartSelf;
   if (opts.piccapStatus) piccapStatusFn = opts.piccapStatus;
   if (opts.huesyncStatus) huesyncStatusFn = opts.huesyncStatus;
+  if (opts.keyboardUp) keyboardUpFn = opts.keyboardUp;
   if (opts.repo) repoModule = opts.repo;
   if (opts.installer) installerModule = opts.installer;
   if (opts.prometheus) prometheusModule = opts.prometheus;

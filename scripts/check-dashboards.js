@@ -302,6 +302,39 @@ async function visitHomeVisibility(browser, base, problems) {
     await page.clock.fastForward(5000);
     await release();
     if (await check(false) !== clock) problems.push('Home visibility: the clock moved when last watched was hidden');
+    // The clock switched off keeps its space; the rows along the bottom sit lower.
+    const place = () => page.evaluate(() => ({
+      when: getComputedStyle(document.getElementById('when')).visibility,
+      rowTop: document.querySelector('.row').getBoundingClientRect().top,
+      rowsBottom: document.getElementById('rows').getBoundingClientRect().bottom,
+      // The last row shown: an empty one is left out.
+      lastBottom: [].slice.call(document.querySelectorAll('.row')).filter(r => r.offsetHeight).pop().getBoundingClientRect().bottom
+    }));
+    const centred = await place();
+    layout.showClock = false;
+    layout.rowsBottom = true;
+    version++;
+    await page.clock.fastForward(5000);
+    await release();
+    const bottom = await place();
+    if (bottom.when !== 'hidden') problems.push('Home visibility: the clock stayed with it switched off');
+    // Only a row's own margin is left below the last row.
+    const gap = p => p.rowsBottom - p.lastBottom;
+    if (!(bottom.rowTop > centred.rowTop) || !(gap(bottom) < gap(centred) / 3)) {
+      problems.push('Home visibility: the rows are not along the bottom: ' + JSON.stringify({ centred, bottom }));
+    }
+    // Alternative View: the clock on the right, and the row titles hidden.
+    layout.showClock = true;
+    layout.view = 'alternative';
+    version++;
+    await page.clock.fastForward(5000);
+    await release();
+    const alt = await page.evaluate(() => ({
+      when: document.getElementById('when').getBoundingClientRect().left,
+      source: document.getElementById('source').getBoundingClientRect().left,
+      titles: [].slice.call(document.querySelectorAll('.row > h2')).filter(h => h.offsetHeight).length
+    }));
+    if (!(alt.when > alt.source) || alt.titles) problems.push('Home visibility: Alternative View did not apply: ' + JSON.stringify(alt));
   } finally { await page.close(); }
 }
 
@@ -869,6 +902,46 @@ async function visitHomeArrangement(browser, base, problems) {
 
 
 // Each row's Order, on Glasshouse Home's own view, the Home tab and the TV app's Home section.
+/*
+ * The Home tab's Recent apps: every app listed with its switch, and hiding one
+ * saves the list with it while its tile stays on the Apps row.
+ */
+async function visitHomeRecentsHidden(browser, base, problems) {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  page.on('pageerror', e => problems.push('Home Recents: ' + e.message));
+  const layout = { rows: ['app', 'dev', 'ch'], order: { app: [], dev: [], ch: [] },
+    sort: { app: 'custom', dev: 'custom', ch: 'custom' }, hidden: { app: [], dev: [], ch: [] }, folder: [], channels: [],
+    hintSeen: true, searchHintSeen: true, excludedRecents: [] };
+  const saves = [];
+  await page.route('**/api/home**', route => {
+    const url = new URL(route.request().url());
+    const catalogue = { ok: true, apps: [{ id: 'one', title: 'One' }, { id: 'two', title: 'Two' }], devices: [], channels: [],
+      sources: { channels: 0 }, order: { app: ['one', 'two', 'lg-home'], dev: [], ch: [] }, layout };
+    let body = { ok: true };
+    if (url.pathname === '/api/home') body = Object.assign({ ok: true, available: true, supported: { ok: true }, enabled: true, active: true,
+      writable: true, layout, history: true }, url.searchParams.get('with') ? { catalogue, channels: [] } : {});
+    else if (url.pathname === '/api/home/catalogue') body = catalogue;
+    else if (url.pathname === '/api/home/layout') {
+      const patch = route.request().postDataJSON();
+      saves.push(patch);
+      if (patch.excludedRecents) layout.excludedRecents = patch.excludedRecents;
+      body = { ok: true, layout: JSON.parse(JSON.stringify(layout)) };
+    }
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
+  });
+  try {
+    await page.goto(base + '/?tab=home');
+    await page.waitForFunction(() => document.querySelectorAll('#home-recents .prot-row').length === 2);
+    await page.evaluate(() => { document.querySelector('#home-recents details').open = true; });
+    await page.locator('#home-recents .prot-row').first().locator('button').click();
+    await page.waitForFunction(() => /1/.test((document.querySelector('#home-recents .home-row-move') || {}).textContent || ''));
+    if (JSON.stringify(saves) !== JSON.stringify([{ excludedRecents: ['one'] }])) problems.push('Home Recents: hiding One saved ' + JSON.stringify(saves));
+    if (layout.hidden.app.length) problems.push('Home Recents: hiding from Recents hid the tile too');
+  } catch (e) {
+    problems.push('Home Recents: ' + e.message);
+  } finally { await page.close(); }
+}
+
 async function visitHomeOrder(browser, base, problems) {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   page.on('pageerror', e => problems.push('Home order: ' + e.message));
@@ -1059,17 +1132,23 @@ async function visitHomeEditor(browser, base, problems) {
   } finally { await page.close(); }
 }
 
+// The wallpaper picker: a time of day chosen and uploaded to, the upload shown
+// pending in another tab, an image dropped on another time of day, then one
+// removed and all of them.
 async function visitHomeUploads(browser, base, problems) {
   const context = await browser.newContext();
   const page = await context.newPage(), observer = await context.newPage();
   for (const p of [page, observer]) p.on('pageerror', e => problems.push('Home uploads: ' + e.message));
   const layout = { rows: ['app', 'dev', 'ch'], order: { app: [], dev: [], ch: [] },
     hidden: { app: [], dev: [], ch: [] }, channels: [], hintSeen: true, searchHintSeen: true };
-  let uploading = false, uploaded = false, release, image;
-  const wallpapers = () => ({ available: uploaded, uploading,
-    slots: { morning: uploaded }, revision: uploaded ? '1' : '0' });
+  let uploading = false, hold = true, release, image, revision = 0, choice = 'black';
+  const has = {};
+  const wallpapers = () => ({ available: choice === 'own' && Object.keys(has).some(k => has[k]), uploading, choice,
+    choices: ['black', 'landscape', 'abstract', 'own'],
+    slots: { morning: !!has.morning, afternoon: !!has.afternoon, evening: !!has.evening, night: !!has.night }, revision: String(revision) });
   await context.route('**/api/home**', async route => {
-    const pathname = new URL(route.request().url()).pathname;
+    const url = new URL(route.request().url());
+    const pathname = url.pathname;
     let body;
     if (pathname === '/api/home/wallpaper') return route.fulfill({ contentType: 'image/jpeg', body: image });
     if (pathname.endsWith('/upload')) {
@@ -1078,11 +1157,15 @@ async function visitHomeUploads(browser, base, problems) {
         problems.push('Home uploads: PNG was not prepared as a JPEG');
       }
       uploading = true;
-      await new Promise(resolve => { release = resolve; });
-      uploading = false; uploaded = true;
+      if (hold) await new Promise(resolve => { release = resolve; });
+      uploading = false; has[url.searchParams.get('slot')] = true; revision++;
       body = { ok: true, wallpapers: wallpapers() };
     } else if (pathname === '/api/home/wallpapers') {
-      if (route.request().postDataJSON().removeUploads) uploaded = false;
+      const req = route.request().postDataJSON();
+      if (req.removeUploads) Object.keys(has).forEach(k => { has[k] = false; });
+      else if (req.remove) has[req.remove] = false;
+      else if (req.choose) choice = req.choose;
+      revision++;
       body = { ok: true, wallpapers: wallpapers() };
     } else if (pathname === '/api/home') {
       body = { ok: true, supported: { ok: true }, installed: true, enabled: true, writable: true, layout, wallpapers: wallpapers() };
@@ -1091,25 +1174,47 @@ async function visitHomeUploads(browser, base, problems) {
     }
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
   });
+  const card = (p, slot) => p.locator(`.wall-card[data-slot="${slot}"]`);
+  const ready = p => p.waitForSelector('.wall-card[data-slot="morning"] .wall-screen:not(:disabled)');
   try {
     await page.goto(base + '/?tab=home');
     await page.waitForFunction(() => typeof homeStatus !== 'undefined' && homeStatus && homeCat);
-    await page.waitForSelector('#home-wall-slot:not(:disabled)');
-    await page.locator('#home-wall-file').setInputFiles(path.join(ASSETS, 'dashboard-app/assets/icon130.png'));
-    const sent = page.waitForRequest(r => new URL(r.url()).pathname.endsWith('/wallpapers/upload'));
-    await page.locator('#home-wall-upload').click(); await sent;
+    // With Black chosen, a time of day is not a place to upload.
+    await page.waitForSelector('#home-wall-choice button');
+    if (!await card(page, 'morning').locator('.wall-screen').isDisabled()) problems.push('Home uploads: a time of day took uploads with Black chosen');
+    await page.locator('#home-wall-choice button', { hasText: 'Your own' }).click();
+    await ready(page);
+    // Choosing Morning opens the file chooser for it.
+    const chooser = page.waitForEvent('filechooser');
+    await card(page, 'morning').locator('.wall-screen').click();
+    const sent = page.waitForRequest(r => r.url().includes('/wallpapers/upload?slot=morning'));
+    await (await chooser).setFiles(path.join(ASSETS, 'dashboard-app/assets/icon130.png'));
+    await sent;
     await observer.goto(base + '/?tab=home');
-    await observer.getByRole('button', { name: 'Uploading…', exact: true }).waitFor();
-    if (!await observer.locator('#home-wall-slot').isDisabled()) problems.push('Home uploads: another tab did not show the pending upload');
+    await card(observer, 'morning').locator('.wall-sending').waitFor();
+    if (!await card(observer, 'evening').locator('.wall-screen').isDisabled()) problems.push('Home uploads: another tab did not show the pending upload');
     release();
-    await observer.waitForSelector('#home-wall-slot:not(:disabled)');
-    await page.waitForSelector('#home-wall-slot:not(:disabled)');
-    await page.waitForFunction(() => {
-      const image = document.querySelector('#home-walls img');
-      return image && image.complete && image.naturalWidth;
+    await ready(observer);
+    await ready(page);
+    await page.waitForFunction(() => document.querySelector('.wall-card[data-slot="morning"].has .wall-screen').style.backgroundImage.includes('/api/home/wallpaper'));
+    // An image dropped on Evening is Evening's.
+    hold = false;
+    const dropped = page.waitForRequest(r => r.url().includes('/wallpapers/upload?slot=evening'));
+    await page.evaluate(async () => {
+      const c = document.createElement('canvas'); c.width = 64; c.height = 36;
+      const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+      const dt = new DataTransfer();
+      dt.items.add(new File([blob], 'evening.png', { type: 'image/png' }));
+      document.querySelector('.wall-card[data-slot="evening"] .wall-screen').dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
     });
+    await dropped;
+    await page.waitForSelector('.wall-card[data-slot="evening"].has');
+    // Remove takes one time of day's picture alone.
+    await card(page, 'morning').getByRole('button', { name: 'Remove', exact: true }).click();
+    await page.waitForSelector('.wall-card[data-slot="morning"]:not(.has)');
+    if (!await card(page, 'evening').evaluate(el => el.classList.contains('has'))) problems.push('Home uploads: removing Morning took Evening\'s picture too');
     await page.locator('#home-wall-clear').click();
-    await page.waitForFunction(() => !document.querySelector('#home-walls img'));
+    await page.waitForFunction(() => !document.querySelector('.wall-card.has'));
   } finally { await context.close(); }
 }
 
@@ -1117,17 +1222,20 @@ async function visitHomeUploads(browser, base, problems) {
  * The Home tab: left out where neither Glasshouse Home nor LG's Home's options
  * are offered; with LG's Home's options alone (a B8) it shows only those, Open
  * Home at power-on among them, usable without Glasshouse Home; and
- * with Glasshouse Home on, LG's Home's layout is left out and hidden system
- * apps stay.
+ * with Glasshouse Home on, LG's Home's layout and hidden system apps are
+ * left out (lgHomeOptions in lib/routes.js offers no tile hiding then).
  */
 async function visitHomeAvailability(browser, base, problems) {
   const lgHome = enabled => ({ writable: true, glasshouseHome: enabled,
     homeScreen: { parts: [{ id: 'banner', title: 'Banner', desc: 'The banner.', shown: true }], inputs: null, experimental: null },
-    tileHidingAvailable: true, tileHidingEnabled: false, systemTiles: [], hiddenCount: 0 });
+    tileHidingAvailable: !enabled, tileHidingEnabled: false, systemTiles: [], hiddenCount: 0 });
   const cases = [
     { name: 'unavailable', st: { available: false, enabled: false }, glasshouse: false },
     { name: 'LG\'s Home only', st: { available: true, enabled: false, lgHomeAvailable: true, lgHome: lgHome(false), homeAutoLaunch: false }, glasshouse: false },
-    { name: 'Glasshouse Home on', st: { available: true, enabled: true, lgHomeAvailable: true, lgHome: lgHome(true) }, glasshouse: true }
+    { name: 'Glasshouse Home on', st: { available: true, enabled: true, lgHomeAvailable: true, lgHome: lgHome(true) }, glasshouse: true },
+    // webOS 5 and 6, where each switch restarts the app manager: their note shows there only.
+    { name: 'webOS 6', st: { available: true, enabled: true, lgHomeAvailable: true, lgHome: lgHome(true),
+      supported: { ok: true, experimental: true, restartsApps: true } }, glasshouse: true }
   ];
   for (const c of cases) {
     const st = c.st;
@@ -1150,7 +1258,11 @@ async function visitHomeAvailability(browser, base, problems) {
         continue;
       }
       if (await page.locator('#home-hero').isVisible() !== c.glasshouse) fail('Glasshouse Home\'s switch ' + (c.glasshouse ? 'missing' : 'shown'));
-      if (!await page.locator('#disc-system-tiles').isVisible()) fail('system apps missing');
+      const restarts = !!(st.supported && st.supported.restartsApps);
+      if (c.glasshouse && await page.locator('#home-restart-note').isVisible() !== restarts) {
+        fail('the note that a switch closes apps ' + (restarts ? 'missing' : 'shown on a TV it does not apply to'));
+      }
+      if (await page.locator('#disc-system-tiles').isVisible() === c.glasshouse) fail('system apps ' + (c.glasshouse ? 'shown with Glasshouse Home on' : 'missing'));
       if (st.homeAutoLaunch !== undefined && (!await page.locator('#home-autolaunch').isVisible() || await page.locator('#home-autolaunch').isDisabled()))
         fail('Open Home at power-on missing or unusable');
       if (!c.glasshouse && await page.locator('#home-picture-row').isVisible()) fail('Glasshouse Home\'s options shown without it');
@@ -1164,8 +1276,9 @@ async function visitAudioOverride(browser, base, problems) {
   page.on('pageerror', e => problems.push('Web audio: ' + e.message));
   try {
     const state = await page.request.get(base + '/api/audio?with=settings').then(r => r.json());
+    state.live.hdmi = { channels: 6, channelAllocation: 11, sampleRate: null };
     state.override = Object.assign({}, state.override, { available: true, verified: true, installed: true,
-      enabled: false, running: true, canDisable: true });
+      enabled: false, running: true, canDisable: true, offered: true });
     const writes = [];
     let failed = false, holdRead = false, readHeld, releaseRead;
     await page.route('**/api/audio*', route => {
@@ -1185,9 +1298,18 @@ async function visitAudioOverride(browser, base, problems) {
       }
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify(state) });
     });
+    // A TV with no forwarding helper has no forwarding section.
+    const offered = state.override;
+    state.override = { ...offered, offered: false };
+    await page.goto(base + '/?tab=audio');
+    await page.waitForFunction(() => audioState);
+    if (!await page.locator('#audio-forwarding').evaluate(el => el.hidden)) problems.push('Web audio: a TV with no forwarding helper shows the override');
+    state.override = offered;
     await page.goto(base + '/?tab=audio');
     await page.waitForFunction(() => audioState && audioState.override.running);
     if (!await page.locator('#audio-settings [data-lgs]').count()) problems.push('Audio tab: LG sound settings missing');
+    if (!/HDMI channel information[\s\S]*6 channels/.test(await page.locator('#audio-path').textContent()))
+      problems.push('Web audio: source channel metadata missing');
     // The readings, refresh button and override are folded below the settings.
     await page.locator('#audio-more > summary').click();
     await page.locator('#audio-override').click();
@@ -1551,6 +1673,7 @@ async function visitTvAudio(browser, base, problems) {
   page.on('pageerror', e => problems.push('TV audio: ' + e.message));
   const state = await page.request.get(base + '/api/audio?with=settings').then(r => r.json());
   const posts = [];
+  state.live.hdmi = { channels: 6, channelAllocation: 11, sampleRate: null };
   let failed = false;
   await page.route('**/api/audio*', async route => {
     if (route.request().method() === 'POST') {
@@ -1568,11 +1691,17 @@ async function visitTvAudio(browser, base, problems) {
   const forwardingSays = word => page.waitForFunction(w => document.querySelector('.bdg').parentNode.parentNode.textContent.indexOf(w) !== -1, word);
   async function open() {
     await page.goto(base + '/assets/dashboard.html?tab=audio');
-    await page.waitForSelector(failed ? '#rows .row:has-text("Audio readings unavailable")' : '#rows .bdg');
+    await page.waitForSelector(failed ? '#rows .row:has-text("Audio readings unavailable")' : state.override.offered ? '#rows .bdg' : '#rows .row');
   }
   try {
     await open();
     if (await selected() !== 'Sound output') problems.push('TV audio: did not open on the Sound settings');
+    if (!await page.locator('#rows .row').filter({ hasText: 'HDMI channel information' }).filter({ hasText: '6 channels' }).count())
+      problems.push('TV audio: source channel metadata missing');
+    if (await forwarding().count()) problems.push('TV audio: a TV with no forwarding helper shows the override');
+    // Installed but not verified: shown, and refused.
+    state.override = { ...state.override, offered: true };
+    await open();
     await forwarding().click();
     await page.keyboard.press('Enter');
     if (posts.length) problems.push('TV audio: unsupported helper offered an override');
@@ -1606,6 +1735,71 @@ async function visitTvAudio(browser, base, problems) {
     if (await page.locator('#rows .row').filter({ hasText: /Audio capabilities|Sound output/ }).count()) problems.push('TV audio: sound still listed under System');
   } finally { await page.close(); }
 }
+// A TV that offers no picture settings has no Picture tab in either dashboard.
+async function visitPictureUnavailable(browser, base, problems) {
+  const page = await browser.newPage();
+  page.on('pageerror', e => problems.push('Picture unavailable: ' + e.message));
+  await page.route('**/api/picture', route => route.fulfill({ json: { ok: true, available: false, writable: true, rows: [] } }));
+  try {
+    await page.goto(base + '/?tab=picture');
+    await page.waitForFunction(() => typeof activeTab === 'string' && activeTab !== 'picture', null, { timeout: 5000 })
+      .catch(() => problems.push('Picture unavailable: the web dashboard stayed on the tab'));
+    if (await page.locator('#tab-btn-picture').isVisible()) problems.push('Picture unavailable: the web dashboard shows the tab');
+    await page.goto(base + '/assets/dashboard.html');
+    await page.waitForTimeout(800);
+    const tabs = await page.evaluate(() => TABS.map(x => x.key));
+    if (tabs.indexOf('picture') !== -1) problems.push('Picture unavailable: the TV app shows the tab');
+  } finally { await page.close(); }
+}
+
+async function visitTvPictureWrites(browser, base, problems) {
+  for (const outcome of ['accepted', 'refused', 'disconnected']) {
+    const page = await browser.newPage();
+    const writes = [];
+    let releaseFirst, firstSeen, secondSeen;
+    const held = new Promise(resolve => { releaseFirst = resolve; });
+    const started = new Promise(resolve => { firstSeen = resolve; });
+    const secondStarted = new Promise(resolve => { secondSeen = resolve; });
+    page.on('pageerror', e => problems.push('TV picture: ' + e.message));
+    await page.route('**/api/picture', route => route.fulfill({ json: { ok: true, writable: true, rows: [
+      { id: 'backlight', title: 'Panel brightness', section: 'picture', group: 'brightness', type: 'number', value: 95, min: 0, max: 100 },
+      { id: 'contrast', title: 'Contrast', section: 'picture', group: 'brightness', type: 'number', value: 85, min: 0, max: 100 }
+    ] } }));
+    await page.route('**/api/control', async route => {
+      writes.push(route.request().postDataJSON().value);
+      if (writes.length === 2) secondSeen();
+      if (writes.length === 1) {
+        firstSeen();
+        await held;
+        if (outcome === 'disconnected') return route.abort();
+        if (outcome === 'refused') return route.fulfill({ json: { ok: false, error: 'Setting locked' } });
+      }
+      await route.fulfill({ json: { ok: true } });
+    });
+    try {
+      await page.goto(base + '/assets/dashboard.html?tab=picture');
+      await page.waitForSelector('#rows .row.sel:has-text("Panel brightness")');
+      for (const key of ['Enter', 'ArrowLeft', 'Enter', 'ArrowDown', 'Enter', 'ArrowLeft', 'Enter']) {
+        await page.keyboard.press(key);
+      }
+      await started;
+      const second = page.waitForRequest(request => request.url().endsWith('/api/control') &&
+        request.postDataJSON().value.id === 'contrast', { timeout: 2000 });
+      releaseFirst();
+      await second;
+      await secondStarted;
+      if (JSON.stringify(writes) !== JSON.stringify([{ id: 'backlight', value: 94 }, { id: 'contrast', value: 84 }])) {
+        problems.push('TV picture: incorrect slider writes after ' + outcome + ' response: ' + JSON.stringify(writes));
+      }
+    } catch (e) {
+      problems.push('TV picture: pending slider lost after ' + outcome + ' response: ' + e.message);
+    } finally {
+      releaseFirst();
+      await page.close();
+    }
+  }
+}
+
 async function visitTvNonOled(browser, base, problems) {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   page.on('pageerror', e => problems.push('TV non-OLED: ' + e.message));
@@ -1624,34 +1818,35 @@ async function visitTvNonOled(browser, base, problems) {
   }
 }
 
-(async () => {
+/*
+ * Four groups side by side, each against its own server and fake TV, as the
+ * Home checks change the layout and uploads they read back. Within a group
+ * the checks run in their order here. One after another this took 97 s in
+ * CI; the slowest group sets the length now.
+ */
+function groups(web, tv) {
+  return [
+    { tabs: web.map(t => ({ path: '/?tab=' + t, label: 'web ' + t })), visits: [] },
+    { tabs: tv.map(t => ({ path: '/assets/dashboard.html?tab=' + t, label: 'TV ' + t })),
+      visits: [visitTvDashboard, visitTvAudio, visitTvPictureWrites, visitPictureUnavailable, visitTvNonOled] },
+    { tabs: [], visits: [visitHomePicture, visitHomeFadeAndInputs, visitHomeOrder, visitHomeAvailability, visitHomeMotion, visitHomeSearch] },
+    { tabs: [], visits: [visitHomeArrangement, visitHomeVisibility, visitHomeColours, visitHomeInputsEditor, visitHomeEditor,
+      visitHomeRecentsHidden, visitHomeUploads, visitHomeReadiness, visitAudioOverride, visitHomeRecents, visitHomeScrolling, visitHomeGuide] }
+  ];
+}
+
+async function runGroup(browser, group, problems) {
   const server = await startServer();
   const base = 'http://127.0.0.1:' + server.port;
+  await visitAll(browser, group.tabs.map(t => ({ url: base + t.path, label: t.label })), problems);
+  for (const visitOne of group.visits) await visitOne(browser, base, problems);
+}
+
+(async () => {
   const browser = await chromium.launch(process.env.BROWSER_CHANNEL ? { channel: process.env.BROWSER_CHANNEL } : {});
   const problems = [];
   const web = webTabs(), tv = tvTabs();
-  await visitAll(browser, web.map(t => ({ url: base + '/?tab=' + t, label: 'web ' + t }))
-    .concat(tv.map(t => ({ url: base + '/assets/dashboard.html?tab=' + t, label: 'TV ' + t }))), problems);
-  await visitTvDashboard(browser, base, problems);
-  await visitTvAudio(browser, base, problems);
-  await visitTvNonOled(browser, base, problems);
-  await visitHomeArrangement(browser, base, problems);
-  await visitHomePicture(browser, base, problems);
-  await visitHomeVisibility(browser, base, problems);
-  await visitHomeColours(browser, base, problems);
-  await visitHomeFadeAndInputs(browser, base, problems);
-  await visitHomeInputsEditor(browser, base, problems);
-  await visitHomeEditor(browser, base, problems);
-  await visitHomeOrder(browser, base, problems);
-  await visitHomeUploads(browser, base, problems);
-  await visitHomeReadiness(browser, base, problems);
-  await visitHomeAvailability(browser, base, problems);
-  await visitAudioOverride(browser, base, problems);
-  await visitHomeRecents(browser, base, problems);
-  await visitHomeScrolling(browser, base, problems);
-  await visitHomeMotion(browser, base, problems);
-  await visitHomeGuide(browser, base, problems);
-  await visitHomeSearch(browser, base, problems);
+  await Promise.all(groups(web, tv).map(g => runGroup(browser, g, problems)));
   await browser.close();
   for (const p of problems) console.log(p);
   console.log((web.length + tv.length) + ' tabs opened (' + web.length + ' web, ' + tv.length + ' TV app), ' +
