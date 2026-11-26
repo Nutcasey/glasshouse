@@ -39,10 +39,10 @@ PANELS = [
     ('Channel guide reply on a return', 'ms', 'return', req_max('/api/home/guide')),
     ('Row redraws per return', 'render() calls', 'return', fn_n('render')),
     ('Time redrawing rows per return', 'ms', 'return', fn_ms('render')),
-    ('Rows rebuilt after a cold start', 'rows replaced', 'cold', lambda r: r['rowsReplaced']),
-    ('Longest task after a cold start', 'ms', 'cold', longest),
-    ('Worst frame after a cold start', 'ms', 'cold', lambda r: r['worst']),
-    ('Frames over 33 ms after a cold start', 'frames', 'cold', lambda r: r['over33']),
+    ('Rows rebuilt after a page reload', 'rows replaced', 'cold', lambda r: r['rowsReplaced']),
+    ('Longest task after a page reload', 'ms', 'cold', longest),
+    ('Worst frame after a page reload', 'ms', 'cold', lambda r: r['worst']),
+    ('Frames over 33 ms after a page reload', 'frames', 'cold', lambda r: r['over33']),
 ]
 
 def headline(b, a, lb, la, out):
@@ -110,7 +110,7 @@ def histogram(b, a, lb, la, scenarios, out, title):
 def worst(b, a, lb, la, out):
     scs = ['scroll', 'steps', 'rows', 'recents', 'return', 'cold']
     names = {'scroll': 'Scroll the Apps row', 'steps': 'Single steps', 'rows': 'Change rows', 'recents': 'Recent apps',
-             'return': 'Return from an app', 'cold': 'Cold start'}
+             'return': 'Return from an app', 'cold': 'Page reload'}
     fig, ax = plt.subplots(figsize=(11, 4.6))
     for i, sc in enumerate(scs):
         vb = values(b, sc, lambda r: r['worst']); va = values(a, sc, lambda r: r['worst'])
@@ -141,6 +141,6 @@ if __name__ == '__main__':
     b, a = load(bd), load(ad)
     headline(b, a, lb, la, os.path.join(out, 'home-perf-headline.png'))
     histogram(b, a, lb, la, ['cold'], os.path.join(out, 'home-perf-cold-frames.png'),
-              'Slow frames in the 10 s after a cold start, by length (frames under 17 ms left out)')
+              'Slow frames in the 10 s after a page reload (server running), by length; frames under 17 ms left out')
     worst(b, a, lb, la, os.path.join(out, 'home-perf-worst-frame.png'))
     print('written to', out)

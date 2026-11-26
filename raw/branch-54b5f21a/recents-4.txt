@@ -1,0 +1,8 @@
+bench: mode=recents at=2026-11-26T18:58:58Z tv=192.168.50.28 webos=9.2.2 build={"version":"0.160.0","commit":"54b5f21a","dirty":false} load=13.38/12.89/12.89
+forks: 49 (system-wide, threads included)
+frames {"frames":277,"over33":7,"over100":1,"worst":117,"long":[71,79],"fn":{"updateWall":{"n":1,"avg":0.1,"max":0},"openRecents":{"n":1,"avg":3.4,"max":3},"scrollTrack":{"n":9,"avg":3,"max":7},"focusRecents":{"n":9,"avg":3.3,"max":7},"showRecents":{"n":1,"avg":9.1,"max":9},"followPreview":{"n":1,"avg":1.1,"max":1},"stageClass":{"n":1,"avg":1.3,"max":1},"inView":{"n":8,"avg":0.3,"max":0}},"req":{"/api/home/beat":{"n":1,"avg":14,"max":14},"/api/home/recents":{"n":1,"avg":35,"max":35}},"rebuilds":0,"rowsReplaced":0,"hist":[268,2,3,3,0,1,0,0,0]}
+luna {"com.webos.service.networkinput/test/sendKeyCode":9,"com.webos.service.recent/listRecents":1}
+frames {"frames":297,"over33":1,"over100":0,"worst":50,"long":[],"fn":{"updateWall":{"n":1,"avg":0.1,"max":0},"followPreview":{"n":1,"avg":1.7,"max":2},"stageClass":{"n":1,"avg":2,"max":2},"closeRecents":{"n":1,"avg":2,"max":2}},"req":{"/api/home/beat":{"n":1,"avg":16,"max":16}},"rebuilds":0,"rowsReplaced":0,"hist":[295,1,1,0,0,0,0,0,0]}
+luna {"com.webos.settingsservice/getSystemSettings":2,"com.webos.service.systemservice/getPreferences":1,"com.webos.service.networkinput/test/sendKeyCode":1}
+frames {"frames":300,"over33":0,"over100":0,"worst":17,"long":[],"fn":{"updateWall":{"n":2,"avg":0.3,"max":0},"renderNow":{"n":1,"avg":1.9,"max":2}},"req":{"/api/home/beat":{"n":1,"avg":11,"max":11}},"rebuilds":0,"rowsReplaced":0,"hist":[300,0,0,0,0,0,0,0,0]}
+luna {}
