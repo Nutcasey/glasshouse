@@ -15,6 +15,7 @@ def parse(path):
             run['forks'] = int(line.split()[1])
         elif line.startswith('frames '):
             f = json.loads(line[7:])
+            run.setdefault('windows', []).append(f.get('frames', 0))
             for k in ('frames', 'over33', 'over100', 'rebuilds'):
                 run[k] += f.get(k, 0)
             run['rowsReplaced'] += f['rowsReplaced'] if 'rowsReplaced' in f else f.get('rebuilds', 0) * ROWS
@@ -52,6 +53,11 @@ def main(d):
             continue
         if m.group(1) == 'return' and not r['req'].get('/api/home/catalogue'):
             sys.stderr.write('skipped %s: no return seen\n' % name)
+            continue
+        # Home hidden behind the browser draws next to nothing: a run in which
+        # every 5 s drew over 100 frames never left Home.
+        if m.group(1) == 'return' and min(r.get('windows') or [0]) > 100:
+            sys.stderr.write('skipped %s: Home never hidden\n' % name)
             continue
         if m.group(1) == 'cold' and not r['boot']:
             sys.stderr.write('skipped %s: no boot marks\n' % name)

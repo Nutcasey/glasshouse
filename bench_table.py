@@ -5,13 +5,6 @@ def load(d): return json.loads(subprocess.check_output([sys.executable, os.path.
 b, a = load(sys.argv[1]), load(sys.argv[2])
 def req(name): return lambda r: r['req'][name]['max'] if name in r['req'] else None
 ROWS = [
-    ('Return', 'return', 'Catalogue reply, ms', req('/api/home/catalogue')),
-    ('Return', 'return', 'Channel guide reply, ms', req('/api/home/guide')),
-    ('Return', 'return', 'What is on (/now) reply, ms', req('/api/home/now')),
-    ('Return', 'return', 'Row redraws (render calls)', lambda r: r['fn'].get('render', {}).get('n', 0)),
-    ('Return', 'return', 'Time in render, ms', lambda r: round(r['fn']['render']['ms']) if 'render' in r['fn'] else 0),
-    ('Return', 'return', 'luna-send started (all, background included)', lambda r: r['lunaApp']),
-    ('Return', 'return', 'Worst frame, ms', lambda r: r['worst']),
     ('Cold start', 'cold', 'Navigation to first frame, ms', lambda r: r['boot']['firstFrame'] - r['boot']['navStart'] if r['boot'] else None),
     ('Cold start', 'cold', 'First render, ms', lambda r: r['boot']['firstRenderMs'] if r['boot'] else None),
     ('Cold start', 'cold', 'Rows replaced after first paint', lambda r: r['rowsReplaced']),

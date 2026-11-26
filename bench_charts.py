@@ -35,10 +35,6 @@ def boot_ms(r):
 
 # (title, unit, scenario, extractor)
 PANELS = [
-    ('Catalogue reply on a return', 'ms', 'return', req_max('/api/home/catalogue')),
-    ('Channel guide reply on a return', 'ms', 'return', req_max('/api/home/guide')),
-    ('Row redraws per return', 'render() calls', 'return', fn_n('render')),
-    ('Time redrawing rows per return', 'ms', 'return', fn_ms('render')),
     ('Rows rebuilt after a page reload', 'rows replaced', 'cold', lambda r: r['rowsReplaced']),
     ('Longest task after a page reload', 'ms', 'cold', longest),
     ('Worst frame after a page reload', 'ms', 'cold', lambda r: r['worst']),
@@ -46,7 +42,7 @@ PANELS = [
 ]
 
 def headline(b, a, lb, la, out):
-    fig, axes = plt.subplots(2, 4, figsize=(16, 8.4))
+    fig, axes = plt.subplots(1, 4, figsize=(16, 4.8))
     for ax, (title, unit, sc, fn) in zip(axes.flat, PANELS):
         vb, va = values(b, sc, fn), values(a, sc, fn)
         mb, ma = (st.median(vb) if vb else 0), (st.median(va) if va else 0)
@@ -108,7 +104,8 @@ def histogram(b, a, lb, la, scenarios, out, title):
     fig.savefig(out, dpi=150)
 
 def worst(b, a, lb, la, out):
-    scs = ['scroll', 'steps', 'rows', 'recents', 'return', 'cold']
+    # Return runs are left out: the browser was not always in front (see README).
+    scs = ['scroll', 'steps', 'rows', 'recents', 'cold']
     names = {'scroll': 'Scroll the Apps row', 'steps': 'Single steps', 'rows': 'Change rows', 'recents': 'Recent apps',
              'return': 'Return from an app', 'cold': 'Page reload'}
     fig, ax = plt.subplots(figsize=(11, 4.6))
