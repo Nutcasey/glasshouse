@@ -1,4 +1,4 @@
-bench: mode=return at=2026-11-26T18:11:24Z tv=192.168.50.28 webos=9.2.2 build={"version":"0.160.0","commit":"02ce6be4","dirty":false} load=12.55/12.72/12.73
+bench: mode=return at=2026-11-26T18:11:24Z tv=office-g3 webos=9.2.2 build={"version":"0.160.0","commit":"02ce6be4","dirty":false} load=12.55/12.72/12.73
 forks: 67 (system-wide, threads included)
 frames {"frames":300,"over33":0,"over100":0,"worst":17,"long":[],"fn":{"updateWall":{"n":1,"avg":0.3,"max":0}},"req":{"/api/home/beat":{"n":1,"avg":14,"max":14}},"rebuilds":0,"rowsReplaced":0,"hist":[300,0,0,0,0,0,0,0,0]}
 luna {"com.webos.settingsservice/getSystemSettings":2,"com.webos.service.systemservice/getPreferences":1,"com.webos.service.settings/getSystemSettings":1}

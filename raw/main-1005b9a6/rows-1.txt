@@ -1,4 +1,4 @@
-bench: mode=rows at=2026-11-26T17:31:52Z tv=192.168.50.28 webos=9.2.2 build={"version":"0.160.0","commit":"05d04a19","dirty":false} load=12.94/13.08/12.91
+bench: mode=rows at=2026-11-26T17:31:52Z tv=office-g3 webos=9.2.2 build={"version":"0.160.0","commit":"05d04a19","dirty":false} load=12.94/13.08/12.91
 forks: 106 (system-wide, threads included)
 frames {"frames":298,"over33":0,"over100":0,"worst":17,"long":[],"fn":{"updateWall":{"n":2,"avg":0.2,"max":0},"renderNow":{"n":1,"avg":1.9,"max":2}},"req":{},"rebuilds":0,"hist":[298,0,0,0,0,0,0,0,0]}
 frames {"frames":301,"over33":0,"over100":0,"worst":17,"long":[],"fn":{"updateWall":{"n":1,"avg":0.2,"max":0}},"req":{"/api/home/beat":{"n":1,"avg":15,"max":15}},"rebuilds":0,"hist":[301,0,0,0,0,0,0,0,0]}

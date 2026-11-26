@@ -1,4 +1,4 @@
-bench: mode=scroll at=2026-11-26T18:09:24Z tv=192.168.50.28 webos=9.2.2 build={"version":"0.160.0","commit":"02ce6be4","dirty":false} load=13.42/12.88/12.79
+bench: mode=scroll at=2026-11-26T18:09:24Z tv=office-g3 webos=9.2.2 build={"version":"0.160.0","commit":"02ce6be4","dirty":false} load=13.42/12.88/12.79
 forks: 193 (system-wide, threads included)
 frames {"frames":61,"over33":0,"over100":0,"worst":17,"long":[],"fn":{"updateWall":{"n":1,"avg":0.2,"max":0}},"req":{"/api/home/beat":{"n":1,"avg":11,"max":11}},"rebuilds":0,"rowsReplaced":0,"hist":[61,0,0,0,0,0,0,0,0]}
 luna {"com.webos.settingsservice/getSystemSettings":2,"com.webos.service.systemservice/getPreferences":1,"com.webos.service.networkinput/test/sendKeyCode":1}

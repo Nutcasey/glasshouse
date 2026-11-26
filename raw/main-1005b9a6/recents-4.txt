@@ -1,4 +1,4 @@
-bench: mode=recents at=2026-11-26T17:41:49Z tv=192.168.50.28 webos=9.2.2 build={"version":"0.160.0","commit":"05d04a19","dirty":false} load=12.66/12.72/12.81
+bench: mode=recents at=2026-11-26T17:41:49Z tv=office-g3 webos=9.2.2 build={"version":"0.160.0","commit":"05d04a19","dirty":false} load=12.66/12.72/12.81
 forks: 69 (system-wide, threads included)
 frames {"frames":281,"over33":5,"over100":1,"worst":117,"long":[61],"fn":{"updateWall":{"n":1,"avg":0.2,"max":0},"openRecents":{"n":1,"avg":2.8,"max":3},"scrollTrack":{"n":8,"avg":2.8,"max":5},"focusRecents":{"n":8,"avg":3,"max":5},"showRecents":{"n":1,"avg":6.8,"max":7},"followPreview":{"n":1,"avg":1.7,"max":2},"stageClass":{"n":1,"avg":1.7,"max":2},"inView":{"n":7,"avg":0.2,"max":0}},"req":{"/api/home/beat":{"n":1,"avg":10,"max":10},"/api/home/recents":{"n":1,"avg":38,"max":38}},"rebuilds":0,"hist":[271,5,4,0,0,1,0,0,0]}
 luna {"com.webos.service.networkinput/test/sendKeyCode":8,"com.webos.service.recent/listRecents":1}

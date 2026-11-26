@@ -1,4 +1,4 @@
-bench: mode=recents at=2026-11-26T18:20:48Z tv=192.168.50.28 webos=9.2.2 build={"version":"0.160.0","commit":"02ce6be4","dirty":false} load=13.27/12.93/12.84
+bench: mode=recents at=2026-11-26T18:20:48Z tv=office-g3 webos=9.2.2 build={"version":"0.160.0","commit":"02ce6be4","dirty":false} load=13.27/12.93/12.84
 forks: 49 (system-wide, threads included)
 frames {"frames":285,"over33":2,"over100":0,"worst":100,"long":[],"fn":{"updateWall":{"n":1,"avg":0.1,"max":0},"openRecents":{"n":1,"avg":1.5,"max":2},"scrollTrack":{"n":8,"avg":2.7,"max":5},"focusRecents":{"n":8,"avg":2.9,"max":6},"showRecents":{"n":1,"avg":6.6,"max":7},"followPreview":{"n":1,"avg":1.8,"max":2},"stageClass":{"n":1,"avg":2.2,"max":2},"inView":{"n":7,"avg":0.3,"max":0}},"req":{"/api/home/beat":{"n":1,"avg":11,"max":11},"/api/home/recents":{"n":1,"avg":36,"max":36}},"rebuilds":0,"rowsReplaced":0,"hist":[276,7,0,1,1,0,0,0,0]}
 luna {"com.webos.service.networkinput/test/sendKeyCode":8,"com.webos.service.recent/listRecents":1}

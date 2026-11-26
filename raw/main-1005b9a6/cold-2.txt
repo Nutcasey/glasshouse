@@ -1,4 +1,4 @@
-bench: mode=cold at=2026-11-26T17:36:30Z tv=192.168.50.28 webos=9.2.2 build={"version":"0.160.0","commit":"05d04a19","dirty":false} load=12.83/13.00/12.92
+bench: mode=cold at=2026-11-26T17:36:30Z tv=office-g3 webos=9.2.2 build={"version":"0.160.0","commit":"05d04a19","dirty":false} load=12.83/13.00/12.92
 forks: 4 (system-wide, threads included)
 frames {"frames":300,"over33":0,"over100":0,"worst":17,"long":[],"fn":{"updateWall":{"n":2,"avg":0.6,"max":1},"renderNow":{"n":2,"avg":2.8,"max":4},"followPreview":{"n":4,"avg":1,"max":2},"stageClass":{"n":2,"avg":1.2,"max":2},"applyFocus":{"n":2,"avg":1.7,"max":2},"placeRows":{"n":2,"avg":2.2,"max":4},"scrollTrack":{"n":2,"avg":0,"max":0},"render":{"n":2,"avg":10.8,"max":12}},"req":{"/api/home/beat":{"n":1,"avg":13,"max":13},"/api/home/now":{"n":1,"avg":13,"max":13},"/api/home/guide":{"n":1,"avg":28,"max":28}},"rebuilds":0,"hist":[300,0,0,0,0,0,0,0,0]}
 luna {}

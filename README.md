@@ -15,7 +15,31 @@ Measured with `scripts/tv.sh <tv> frames <scenario>`. All `main` runs came first
 
 "Cold start" in the raw files is the `cold` scenario: the page reloaded with the server already running, not a TV boot. `rowsReplaced` on main is derived as rebuilds × 5 sections, since that build replaced every row on each rebuild and had no counter.
 
-**The `return` runs are not used.** That scenario launched the web browser over SSH without a terminal, which on this TV can be dropped with no error, and then pressed Home after a fixed 20 s.
+## Coming back to Home from an app
+
+`raw/return-main-a9127c6b` and `raw/return-branch-68b1248d` hold five runs each of `tv.sh frames return`. The two sides ran in blocks of 3, 3, 2 and 2, with a fresh install before each block. In this version of the script:
+- the browser is launched with a terminal;
+- the run fails unless the browser comes in front and Home is back in front afterwards.
+
+All ten runs passed both checks. `ret_table.py` prints `bench-return-table.md`, and `ret_chart.py` draws `home-perf-return.png`:
+
+```bash
+python3 ret_table.py raw/return-main-a9127c6b raw/return-branch-68b1248d
+python3 ret_chart.py raw/return-main-a9127c6b raw/return-branch-68b1248d "main a9127c6b" "branch 68b1248d" home-perf-return.png
+```
+
+`a9127c6b` is `main` at `1005b9a6` plus the measuring commits, plus one reporting script errors in the trace. `68b1248d` is the pull request with the review fixes. The pull request's later commits change only docs.
+
+## Office checks
+
+`office-checks/` holds the screenshots of the checks run on the office G3 after the comparison below:
+- arranging by holding OK (an injected key hold), moving and hiding a tile, and saving;
+- a saved-page tile added and removed while Home was away;
+- Home pressed within 2 s of a return with the player open.
+
+## Earlier return runs (not used)
+
+**These `return` runs are not used.** That scenario launched the web browser over SSH without a terminal, which on this TV can be dropped with no error, and then pressed Home after a fixed 20 s.
 - In 1 of the 5 main runs, Home was never hidden.
 - In the others, it was hidden only in the last seconds before Home was pressed.
 

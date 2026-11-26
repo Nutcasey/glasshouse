@@ -1,4 +1,4 @@
-bench: mode=rows at=2026-11-26T18:55:06Z tv=192.168.50.28 webos=9.2.2 build={"version":"0.160.0","commit":"54b5f21a","dirty":false} load=12.49/12.62/12.83
+bench: mode=rows at=2026-11-26T18:55:06Z tv=office-g3 webos=9.2.2 build={"version":"0.160.0","commit":"54b5f21a","dirty":false} load=12.49/12.62/12.83
 forks: 115 (system-wide, threads included)
 frames {"frames":290,"over33":1,"over100":0,"worst":50,"long":[],"fn":{"updateWall":{"n":1,"avg":0.2,"max":0},"inView":{"n":8,"avg":3.2,"max":17},"tileSpans":{"n":8,"avg":0.8,"max":4},"columnUnder":{"n":4,"avg":1.7,"max":4},"scrollTrack":{"n":4,"avg":5.5,"max":11},"keepRowInView":{"n":4,"avg":1.3,"max":3},"followPreview":{"n":4,"avg":7.8,"max":12},"applyFocus":{"n":4,"avg":15.9,"max":22},"move":{"n":4,"avg":18.6,"max":23},"renderNow":{"n":6,"avg":3.1,"max":8}},"req":{"/api/home/beat":{"n":1,"avg":12,"max":12}},"rebuilds":0,"rowsReplaced":0,"hist":[281,8,1,0,0,0,0,0,0]}
 luna {"com.webos.service.settings/getSystemSettings":1,"com.webos.service.networkinput/test/sendKeyCode":4,"com.webos.service.videooutput/getStatus":1}
