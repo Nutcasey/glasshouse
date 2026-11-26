@@ -1,0 +1,18 @@
+bench: mode=rows at=2026-11-26T18:23:29Z tv=192.168.50.28 webos=9.2.2 build={"version":"0.160.0","commit":"02ce6be4","dirty":false} load=12.56/12.75/12.79
+forks: 190 (system-wide, threads included)
+frames {"frames":288,"over33":2,"over100":0,"worst":67,"long":[],"fn":{"updateWall":{"n":1,"avg":0.1,"max":0},"inView":{"n":8,"avg":2.3,"max":8},"tileSpans":{"n":8,"avg":0.5,"max":2},"columnUnder":{"n":4,"avg":1.2,"max":2},"scrollTrack":{"n":4,"avg":3.9,"max":5},"keepRowInView":{"n":4,"avg":1.3,"max":3},"followPreview":{"n":4,"avg":8.5,"max":16},"applyFocus":{"n":4,"avg":14.9,"max":24},"move":{"n":4,"avg":16.6,"max":25},"renderNow":{"n":6,"avg":2.4,"max":4}},"req":{"/api/home/beat":{"n":1,"avg":13,"max":13}},"rebuilds":0,"rowsReplaced":0,"hist":[279,7,1,1,0,0,0,0,0]}
+luna {"com.webos.service.settings/getSystemSettings":2,"com.webos.service.videooutput/getStatus":1,"com.webos.service.networkinput/test/sendKeyCode":4}
+frames {"frames":300,"over33":0,"over100":0,"worst":17,"long":[],"fn":{"updateWall":{"n":2,"avg":0.1,"max":0},"renderNow":{"n":1,"avg":1.6,"max":2}},"req":{"/api/home/beat":{"n":1,"avg":18,"max":18},"/api/home/picture":{"n":1,"avg":2091,"max":2091}},"rebuilds":0,"rowsReplaced":0,"hist":[300,0,0,0,0,0,0,0,0]}
+luna {}
+frames {"frames":300,"over33":0,"over100":0,"worst":17,"long":[],"fn":{"updateWall":{"n":1,"avg":0.2,"max":0}},"req":{"/api/home/beat":{"n":1,"avg":13,"max":13}},"rebuilds":0,"rowsReplaced":0,"hist":[300,0,0,0,0,0,0,0,0]}
+luna {}
+frames {"frames":300,"over33":0,"over100":0,"worst":17,"long":[],"fn":{"updateWall":{"n":1,"avg":0.2,"max":0}},"req":{"/api/home/beat":{"n":1,"avg":11,"max":11}},"rebuilds":0,"rowsReplaced":0,"hist":[300,0,0,0,0,0,0,0,0]}
+luna {}
+frames {"frames":300,"over33":0,"over100":0,"worst":17,"long":[],"fn":{"updateWall":{"n":2,"avg":0.1,"max":0},"renderNow":{"n":1,"avg":1.8,"max":2}},"req":{"/api/home/beat":{"n":1,"avg":13,"max":13}},"rebuilds":0,"rowsReplaced":0,"hist":[300,0,0,0,0,0,0,0,0]}
+luna {}
+frames {"frames":300,"over33":0,"over100":0,"worst":17,"long":[],"fn":{"updateWall":{"n":1,"avg":0.1,"max":0}},"req":{"/api/home/beat":{"n":1,"avg":14,"max":14}},"rebuilds":0,"rowsReplaced":0,"hist":[300,0,0,0,0,0,0,0,0]}
+luna {}
+frames {"frames":300,"over33":0,"over100":0,"worst":17,"long":[],"fn":{"updateWall":{"n":1,"avg":0.1,"max":0}},"req":{"/api/home/beat":{"n":1,"avg":20,"max":20}},"rebuilds":0,"rowsReplaced":0,"hist":[300,0,0,0,0,0,0,0,0]}
+luna {"com.webos.settingsservice/getSystemSettings":2,"com.webos.service.systemservice/getPreferences":1}
+frames {"frames":300,"over33":0,"over100":0,"worst":17,"long":[],"fn":{"updateWall":{"n":2,"avg":0.2,"max":0},"renderNow":{"n":2,"avg":1.6,"max":2},"followPreview":{"n":2,"avg":1.1,"max":1},"stageClass":{"n":1,"avg":1.4,"max":1},"applyFocus":{"n":1,"avg":1.5,"max":2},"placeRows":{"n":1,"avg":3.8,"max":4},"scrollTrack":{"n":1,"avg":0.3,"max":0},"render":{"n":1,"avg":11.7,"max":12}},"req":{"/api/home/beat":{"n":1,"avg":16,"max":16},"/api/home/now":{"n":1,"avg":10,"max":10},"/api/home/guide":{"n":1,"avg":14,"max":14}},"rebuilds":0,"rowsReplaced":0,"hist":[300,0,0,0,0,0,0,0,0]}
+luna {}

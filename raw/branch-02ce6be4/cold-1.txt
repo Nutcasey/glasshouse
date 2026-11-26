@@ -1,0 +1,6 @@
+bench: mode=cold at=2026-11-26T18:12:09Z tv=192.168.50.28 webos=9.2.2 build={"version":"0.160.0","commit":"02ce6be4","dirty":false} load=12.35/12.64/12.71
+forks: 4 (system-wide, threads included)
+frames {"frames":300,"over33":0,"over100":0,"worst":17,"long":[],"fn":{"updateWall":{"n":1,"avg":0.1,"max":0}},"req":{"/api/home/beat":{"n":1,"avg":14,"max":14}},"rebuilds":0,"rowsReplaced":0,"hist":[300,0,0,0,0,0,0,0,0]}
+luna {}
+frames {"frames":275,"over33":1,"over100":0,"worst":83,"long":[52],"fn":{"updateWall":{"n":1,"avg":0.2,"max":0},"renderNow":{"n":1,"avg":1.6,"max":2},"followPreview":{"n":4,"avg":1.1,"max":1},"stageClass":{"n":2,"avg":1.3,"max":2},"applyFocus":{"n":2,"avg":2.1,"max":2},"placeRows":{"n":2,"avg":15,"max":22},"scrollTrack":{"n":2,"avg":0.2,"max":0},"render":{"n":2,"avg":33.6,"max":50}},"req":{},"rebuilds":2,"rowsReplaced":2,"hist":[272,2,0,0,1,0,0,0,0]}
+boot {"opened":1795716743904,"navStart":1795716743772,"catalogueSent":1795716743912,"scriptEnd":1795716743918,"catalogueReply":1795716743958,"firstRender":1795716743975,"firstRenderMs":94,"firstFrame":1795716744073}

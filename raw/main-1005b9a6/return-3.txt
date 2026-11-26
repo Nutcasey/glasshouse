@@ -1,0 +1,16 @@
+bench: mode=return at=2026-11-26T17:38:57Z tv=192.168.50.28 webos=9.2.2 build={"version":"0.160.0","commit":"05d04a19","dirty":false} load=12.68/12.89/12.89
+forks: 84 (system-wide, threads included)
+frames {"frames":300,"over33":0,"over100":0,"worst":17,"long":[],"fn":{"updateWall":{"n":1,"avg":0.2,"max":0}},"req":{"/api/home/beat":{"n":1,"avg":12,"max":12}},"rebuilds":0,"hist":[300,0,0,0,0,0,0,0,0]}
+luna {}
+frames {"frames":301,"over33":0,"over100":0,"worst":17,"long":[],"fn":{"updateWall":{"n":2,"avg":0.1,"max":0},"renderNow":{"n":1,"avg":5.9,"max":6}},"req":{"/api/home/beat":{"n":1,"avg":15,"max":15}},"rebuilds":0,"hist":[301,0,0,0,0,0,0,0,0]}
+luna {}
+frames {"frames":300,"over33":0,"over100":0,"worst":17,"long":[],"fn":{"updateWall":{"n":1,"avg":0.2,"max":0}},"req":{"/api/home/beat":{"n":1,"avg":16,"max":16}},"rebuilds":0,"hist":[300,0,0,0,0,0,0,0,0]}
+luna {"com.webos.service.settings/getSystemSettings":1}
+frames {"frames":300,"over33":0,"over100":0,"worst":17,"long":[],"fn":{"updateWall":{"n":1,"avg":0.1,"max":0}},"req":{"/api/home/beat":{"n":1,"avg":14,"max":14}},"rebuilds":0,"hist":[300,0,0,0,0,0,0,0,0]}
+luna {}
+frames {"frames":168,"over33":0,"over100":0,"worst":17,"long":[],"fn":{"updateWall":{"n":2,"avg":0.2,"max":0},"followPreview":{"n":2,"avg":3.4,"max":5},"stageClass":{"n":2,"avg":3.4,"max":5},"closeRecents":{"n":1,"avg":4.8,"max":5}},"req":{"/api/home/beat":{"n":1,"avg":15,"max":15}},"rebuilds":0,"hist":[168,0,0,0,0,0,0,0,0]}
+luna {"com.webos.applicationManager/launch":1}
+frames {"frames":300,"over33":0,"over100":0,"worst":17,"long":[],"fn":{"load":{"n":1,"avg":5.9,"max":6},"returned":{"n":1,"avg":18.1,"max":18},"updateWall":{"n":3,"avg":0.2,"max":0},"renderNow":{"n":3,"avg":2.4,"max":4},"followPreview":{"n":9,"avg":1.1,"max":2},"stageClass":{"n":5,"avg":1.3,"max":2},"applyFocus":{"n":4,"avg":2,"max":3},"placeRows":{"n":4,"avg":2.8,"max":6},"scrollTrack":{"n":4,"avg":0.1,"max":0},"render":{"n":4,"avg":11.2,"max":16}},"req":{"/api/home/beat":{"n":1,"avg":20,"max":20},"/api/home/now":{"n":1,"avg":26,"max":26},"/api/home/catalogue":{"n":1,"avg":657,"max":657},"/api/iptv/guide":{"n":1,"avg":8,"max":8},"/api/home/guide":{"n":1,"avg":526,"max":526}},"rebuilds":0,"hist":[300,0,0,0,0,0,0,0,0]}
+luna {"com.webos.settingsservice/getSystemSettings":2,"com.webos.applicationManager/listLaunchPoints":1,"com.webos.service.systemservice/getPreferences":1,"com.webos.applicationManager/getAppInfo":6,"com.webos.service.utp.boot/getLastChannelId":1,"com.webos.service.eim/getAllInputStatus":1,"com.webos.service.attachedstoragemanager/listDevices":1,"com.webos.service.apiadapter/tv/getChannelCurrentProgramInfo":9}
+frames {"frames":300,"over33":0,"over100":0,"worst":17,"long":[],"fn":{"updateWall":{"n":1,"avg":0.2,"max":0}},"req":{"/api/home/beat":{"n":1,"avg":11,"max":11}},"rebuilds":0,"hist":[300,0,0,0,0,0,0,0,0]}
+luna {}

@@ -1,0 +1,6 @@
+bench: mode=cold at=2026-11-26T17:39:43Z tv=192.168.50.28 webos=9.2.2 build={"version":"0.160.0","commit":"05d04a19","dirty":false} load=12.41/12.79/12.85
+forks: 4 (system-wide, threads included)
+frames {"frames":300,"over33":0,"over100":0,"worst":17,"long":[],"fn":{"updateWall":{"n":1,"avg":0.1,"max":0}},"req":{"/api/home/beat":{"n":1,"avg":12,"max":12}},"rebuilds":0,"hist":[300,0,0,0,0,0,0,0,0]}
+luna {}
+frames {"frames":268,"over33":2,"over100":1,"worst":200,"long":[156],"fn":{"updateWall":{"n":1,"avg":0.3,"max":0},"renderNow":{"n":1,"avg":2,"max":2},"followPreview":{"n":2,"avg":1.3,"max":2},"stageClass":{"n":1,"avg":1.6,"max":2},"applyFocus":{"n":1,"avg":3,"max":3},"placeRows":{"n":1,"avg":84.3,"max":84},"scrollTrack":{"n":1,"avg":0.7,"max":1},"render":{"n":1,"avg":154.2,"max":154}},"req":{},"rebuilds":1,"hist":[266,0,1,0,0,0,1,0,0]}
+boot {"opened":1795714798127,"navStart":1795714797974,"catalogueSent":1795714798137,"scriptEnd":1795714798164,"catalogueReply":1795714798203,"firstRender":1795714798220,"firstRenderMs":110,"firstFrame":1795714798334}

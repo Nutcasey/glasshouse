@@ -1,0 +1,10 @@
+bench: mode=scroll at=2026-11-26T17:36:55Z tv=192.168.50.28 webos=9.2.2 build={"version":"0.160.0","commit":"05d04a19","dirty":false} load=12.84/12.99/12.92
+forks: 146 (system-wide, threads included)
+frames {"frames":300,"over33":0,"over100":0,"worst":17,"long":[],"fn":{"updateWall":{"n":1,"avg":0.4,"max":0},"inView":{"n":23,"avg":0.8,"max":3},"scrollTrack":{"n":15,"avg":2.7,"max":4},"keepRowInView":{"n":15,"avg":0.1,"max":0},"followPreview":{"n":15,"avg":1.6,"max":4},"applyFocus":{"n":15,"avg":5.9,"max":9},"move":{"n":15,"avg":7.2,"max":13}},"req":{"/api/home/beat":{"n":1,"avg":11,"max":11}},"rebuilds":0,"hist":[300,0,0,0,0,0,0,0,0]}
+luna {"com.webos.service.networkinput/test/sendKeyCode":15}
+frames {"frames":300,"over33":0,"over100":0,"worst":17,"long":[],"fn":{"updateWall":{"n":2,"avg":0.2,"max":0},"inView":{"n":28,"avg":0.8,"max":1},"scrollTrack":{"n":21,"avg":2.5,"max":4},"keepRowInView":{"n":21,"avg":0.1,"max":0},"followPreview":{"n":21,"avg":1.2,"max":2},"applyFocus":{"n":21,"avg":5.1,"max":6},"move":{"n":21,"avg":6.2,"max":7},"renderNow":{"n":1,"avg":4,"max":4}},"req":{"/api/home/beat":{"n":1,"avg":16,"max":16}},"rebuilds":0,"hist":[300,0,0,0,0,0,0,0,0]}
+luna {"com.webos.service.networkinput/test/sendKeyCode":21}
+frames {"frames":300,"over33":0,"over100":0,"worst":17,"long":[],"fn":{"updateWall":{"n":1,"avg":0.1,"max":0},"inView":{"n":1,"avg":1.2,"max":1}},"req":{"/api/home/beat":{"n":1,"avg":18,"max":18}},"rebuilds":0,"hist":[300,0,0,0,0,0,0,0,0]}
+luna {"com.webos.service.settings/getSystemSettings":1}
+frames {"frames":300,"over33":0,"over100":0,"worst":17,"long":[],"fn":{"updateWall":{"n":1,"avg":0.2,"max":0}},"req":{"/api/home/beat":{"n":1,"avg":13,"max":13}},"rebuilds":0,"hist":[300,0,0,0,0,0,0,0,0]}
+luna {"com.webos.settingsservice/getSystemSettings":2,"com.webos.service.systemservice/getPreferences":1}
